@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { execFile, spawn } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { performance } from 'node:perf_hooks';
+import { test, type TestContext } from 'node:test';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { resolveNative, nativeTargets } from '../../packages/npm/src/runtime.js';
 import { resolveNpmCli } from '../_helpers/npmCli.js';
@@ -42,6 +43,41 @@ async function waitForDaemon(port: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error('Wrapped daemon did not start');
+}
+
+function benchmarkLaunchers(
+  t: TestContext,
+  native: string,
+  wrapper: string,
+  installed: string,
+  env: NodeJS.ProcessEnv
+) {
+  if (process.env.BBX_BENCH_NPM !== '1') return;
+  const cases = [
+    { name: 'direct Go', command: native, args: ['--version'] },
+    { name: 'Node wrapper', command: process.execPath, args: [wrapper, '--version'] },
+    {
+      name: 'npm entry',
+      command: process.platform === 'win32' ? process.execPath : installed,
+      args: process.platform === 'win32' ? [wrapper, '--version'] : ['--version'],
+    },
+  ];
+  const samples = cases.map(() => [] as number[]);
+  for (let iteration = 0; iteration < 24; iteration++) {
+    for (const [index, entry] of cases.entries()) {
+      const start = performance.now();
+      const result = spawnSync(entry.command, entry.args, { env, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || String(result.error));
+      if (iteration >= 3) samples[index].push(performance.now() - start);
+    }
+  }
+  t.diagnostic(`npm launch benchmark: ${process.platform}-${process.arch}, ${process.version}`);
+  for (const [index, entry] of cases.entries()) {
+    const times = samples[index].sort((a, b) => a - b);
+    t.diagnostic(
+      `${entry.name}: min=${times[0].toFixed(1)} median=${times[10].toFixed(1)} max=${times[20].toFixed(1)} ms`
+    );
+  }
 }
 
 test(
@@ -159,16 +195,36 @@ test(
     );
     const installed = path.join(project, 'node_modules/@browserbridge/bbx');
     const bin = (name: string) => path.join(installed, pkg.bin[name]);
-    const cli = (...args: string[]) =>
-      exec(process.execPath, [bin('bbx'), ...args], { cwd: project, env, timeout: 15_000 });
+    const entry = (name: string) =>
+      process.platform === 'win32'
+        ? { command: process.execPath, args: [bin(name)] }
+        : { command: path.join(project, 'node_modules/.bin', name), args: [] };
+    const runEntry = (name: string, args: string[]) => {
+      const command = entry(name);
+      return exec(command.command, [...command.args, ...args], {
+        cwd: project,
+        env,
+        timeout: 15_000,
+      });
+    };
+    const cli = (...args: string[]) => runEntry('bbx', args);
     assert.equal((await cli('--version')).stdout.trim(), pkg.version);
     assert.equal(JSON.parse((await cli('update', 'status')).stdout).distribution, 'npm');
+    assert.equal(
+      JSON.parse((await exec(process.execPath, [bin('bbx'), 'update', 'status'], { env })).stdout)
+        .distribution,
+      'npm'
+    );
+    benchmarkLaunchers(t, cached, bin('bbx'), path.join(project, 'node_modules/.bin/bbx'), {
+      ...env,
+      BBX_NPM_VERSION: pkg.version,
+    });
     await assert.rejects(
       cli('unknown-command'),
       (error: unknown) =>
         typeof error === 'object' && error !== null && 'code' in error && error.code === 1
     );
-    const mcp = exec(process.execPath, [bin('bbx-mcp')], { env, cwd: project, timeout: 15_000 });
+    const mcp = runEntry('bbx-mcp', []);
     mcp.child.stdin?.end(
       JSON.stringify({
         jsonrpc: '2.0',
@@ -185,10 +241,7 @@ test(
       result: { serverInfo: { version: string } };
     };
     assert.equal(initialized.result.serverInfo.version, pkg.version);
-    await assert.rejects(
-      exec(process.execPath, [bin('bbx-install'), '--browser', 'invalid'], { env, cwd: project }),
-      /unsupported browser/
-    );
+    await assert.rejects(runEntry('bbx-install', ['--browser', 'invalid']), /unsupported browser/);
     if (process.platform !== 'win32') {
       // Real global initialization is isolated by HOME. Windows registration is
       // covered by fixtures rather than writing the developer's HKCU registry.
@@ -213,8 +266,20 @@ test(
       assert(launcher.includes(cached));
       assert(launcher.includes('BBX_NPM_VERSION'));
       assert(!launcher.includes(process.execPath));
+      const globalEntry = path.join(prefix, 'bin/bbx');
+      assert((await fs.readlink(globalEntry)).endsWith('/.native/bbx'));
+      assert.equal(
+        JSON.parse((await exec(globalEntry, ['update', 'status'], { env })).stdout).distribution,
+        'npm'
+      );
+      await npmRun(
+        ['uninstall', '--global', '--prefix', prefix, '--offline', '@browserbridge/bbx'],
+        project
+      );
+      await assert.rejects(fs.lstat(globalEntry), { code: 'ENOENT' });
     }
-    const daemon = spawn(process.execPath, [bin('bbx-daemon')], {
+    const daemonEntry = entry('bbx-daemon');
+    const daemon = spawn(daemonEntry.command, daemonEntry.args, {
       env,
       cwd: project,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -227,5 +292,57 @@ test(
     assert.equal(JSON.parse((await cli('call', 'health.ping')).stdout).daemon, 'ok');
     daemon.kill('SIGTERM');
     await exited;
+    if (process.platform !== 'win32') {
+      assert((await fs.readlink(entry('bbx').command)).endsWith('/.native/bbx'));
+      await npmRun(['rebuild', '--offline'], project);
+      assert.equal((await cli('--version')).stdout.trim(), pkg.version);
+      assert.equal((await fs.stat(cached)).size, bytes.length);
+    }
+    try {
+      await fs.writeFile(cached, Buffer.alloc(bytes.length));
+      await assert.rejects(cli('--version'), /failed verification/);
+      await assert.rejects(
+        exec(process.execPath, [bin('bbx'), '--version'], { env }),
+        /failed verification/
+      );
+    } finally {
+      await fs.writeFile(cached, bytes);
+    }
+    if (process.platform !== 'win32') {
+      const mockFetch = path.join(directory, 'fetch-release.mjs');
+      const fetched = path.join(directory, 'fetch-url');
+      const expected = `https://github.com/koltyakov/browser-bridge/releases/download/v${pkg.version}/${nativeTargets[target]}`;
+      await fs.writeFile(
+        mockFetch,
+        `import fs from 'node:fs/promises';
+globalThis.fetch = async (url) => {
+  if (String(url) !== ${JSON.stringify(expected)}) throw new Error('Unexpected download URL');
+  await fs.writeFile(${JSON.stringify(fetched)}, String(url));
+  return new Response(await fs.readFile(${JSON.stringify(native)}));
+};\n`
+      );
+      await fs.unlink(cached);
+      const restored = await exec(entry('bbx').command, ['--version'], {
+        env: {
+          ...env,
+          NODE_OPTIONS: `${env.NODE_OPTIONS || ''} --import=${pathToFileURL(mockFetch).href}`,
+        },
+        timeout: 15_000,
+      });
+      assert.equal(restored.stdout.trim(), pkg.version);
+      assert.equal(await fs.readFile(fetched, 'utf8'), expected);
+      assert.deepEqual(await fs.readFile(cached), bytes);
+    }
+    const noScripts = path.join(directory, 'no-scripts');
+    await fs.mkdir(noScripts);
+    await npmRun(
+      ['install', '--ignore-scripts', '--offline', '--no-audit', '--no-fund', tarball],
+      noScripts
+    );
+    const fallback = path.join(noScripts, 'node_modules/@browserbridge/bbx', pkg.bin.bbx);
+    assert.equal(
+      (await exec(process.execPath, [fallback, '--version'], { env })).stdout.trim(),
+      pkg.version
+    );
   }
 );

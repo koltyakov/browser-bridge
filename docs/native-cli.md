@@ -16,7 +16,11 @@ A global npm install initializes browser registration. A local dependency instal
 
 If the extension does not connect, run `bbx install`, or `bbx install --browser chrome` for Google Chrome on Linux. Choose your agent under **Connect agent** in the extension, then enable window access. See the [quickstart](./quickstart.md).
 
-Node runs only the npm bootstrap and launcher. The downloaded Go executable runs without Node and contains the runtime metadata and agent skills it needs.
+On macOS and Linux, postinstall replaces npm-owned command symlinks with shell launchers. Each invocation verifies the cached executable against its package-pinned SHA-256 using `/usr/bin/openssl`, then replaces the shell process with Go. The launchers preserve npm version ownership and all four command aliases. They keep the executable outside `node_modules` and leave the original JavaScript entrypoints intact.
+
+If OpenSSL or the cached executable is missing, the shell delegates to the verified Node launcher, which can download the pinned executable again. Windows, skipped install scripts, and package managers without npm-style symlinks also use the Node launcher. A checksum mismatch fails before Go executes; it does not bypass verification or select another version.
+
+The downloaded Go executable runs without Node and contains the runtime metadata and agent skills it needs. Node is still required for npm installation and launcher fallback.
 
 ## Install without Node.js
 

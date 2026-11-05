@@ -89,9 +89,12 @@ make test-runtime TEST_FILES=packages/extension/test/background-files.test.ts TE
 make fixture-browser ARGS='--port 4317'
 make run ARGS='call health.ping'
 make bench-runtime
+make bench-npm-launch
 ```
 
 `test-js` and `test-runtime` build the extension and Go executable before testing. `test-js` replaces the coverage results, so use `test-runtime` for focused runs when retaining full-suite coverage. Set `BBX_TEST_CHROME` to your browser executable to include the real-Chrome tests.
+
+`make bench-npm-launch` packs and installs an isolated npm fixture using a preseeded native cache, without downloading a release or changing your browser registration. It compares direct Go execution, the original Node wrapper, and the installed npm command with `--version`. It interleaves 21 samples per command after three warm-ups and reports minimum, median, and maximum startup time. Windows measures the Node fallback for the npm entry; it has no shell fast path.
 
 `make test-go` writes race-enabled unit-test coverage to `dist/coverage/go-unit.out`, separately from c8. `make check` and CI enforce a 68% statement baseline for `internal/bridge` and 85% for `internal/protocol`. These percentages exclude separately launched integration binaries and the CLI entry point. Use the Go report to target uncovered error and lifecycle paths rather than relying on the JS/TS coverage total.
 

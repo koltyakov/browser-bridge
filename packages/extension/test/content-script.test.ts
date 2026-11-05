@@ -1979,6 +1979,8 @@ test('frame wait probes preserve scoped descendant-text matching', async (t) => 
 });
 
 test('role locators reach late editor controls without spending the semantic budget on chart decoration', async (t) => {
+  // Test the semantic candidate budget independently of elapsed scan time.
+  t.mock.method(performance, 'now', () => 0);
   const harness = createChromeHarness();
   const tabs = [1, 2].map(() =>
     createFakeElement({
@@ -2011,6 +2013,59 @@ test('role locators reach late editor controls without spending the semantic bud
   assert.equal(result.count, 2, 'later duplicates remain visible to uniqueness checks');
   assert.equal(result.truncated, false);
   assert.equal(result.scanned, 6002);
+});
+
+test('role locator deadlines report partial matches and input refuses unproven uniqueness', async (t) => {
+  let now = 0;
+  t.mock.method(performance, 'now', () => now);
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const focus = t.mock.fn(() => {});
+  const tabs = [1, 2].map(() => {
+    const tab = inputs.createButton({ textContent: 'Visual' });
+    tab.attributes?.set('role', 'tab');
+    tab.focus = focus;
+    return tab;
+  });
+  // Cross the deadline while accepting the first match, before visiting its duplicate.
+  Reflect.set(tabs[0], 'checkVisibility', () => {
+    now += 101;
+    return true;
+  });
+  const document = createDocumentHarness(inputs.createBody(tabs), {});
+  await loadContentScript(t, {
+    withHelpers: true,
+    chrome: harness.chrome,
+    document,
+    window: { scrollX: 0, scrollY: 0, innerWidth: 100, innerHeight: 100 },
+  });
+  const listener = harness.getListener();
+  const locator = { role: 'tab', name: 'Visual', exact: true };
+  const result = expectFindResult(
+    await executeBridgeMethod(listener, 'dom.find_by_role', { ...locator, maxResults: 10 })
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.found, true);
+  assert.equal(result.count, 1);
+  assert.equal(result.nodes.length, 1);
+  assert.equal(result.nodes[0].name, 'Visual');
+  assert.equal(result.scanned, 1);
+  assert.equal(result.truncated, true);
+  assert.equal(result.truncationReason, 'scanLimit');
+
+  for (const method of ['input.focus', 'input.click']) {
+    now = 0;
+    const response = await executeBridgeMethod(listener, method, { target: locator });
+    const error = expectRecord(response.error);
+    assert.equal(error.code, 'RESULT_TRUNCATED');
+    assert.match(String(error.message), /uniqueness could not be proven/);
+    const details = expectRecord(error.details);
+    assert.equal(details.reason, 'scanLimit');
+    assert.equal(details.scanned, 1);
+    assert.equal(focus.mock.callCount(), 0);
+    assert.equal(document.activeElement, null);
+    for (const tab of tabs) assert.deepEqual(tab.eventLog, []);
+  }
 });
 
 test('role locators still report incomplete traversal on oversized decorative DOMs', async (t) => {

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { resolveNative, isSourceCheckout } from '../src/runtime.js';
+import { installNativeLaunchers } from '../src/native-launchers.js';
 
 const exec = promisify(execFile);
 
@@ -24,8 +25,16 @@ export function shouldInitialize(env) {
  */
 export async function postinstall(options = {}) {
   if (await isSourceCheckout(options.root)) return;
-  const { binary, version } = await resolveNative(options);
+  const release = await resolveNative(options);
+  const { binary, version } = release;
   const env = { ...(options.env || process.env), BBX_NPM_VERSION: version };
+  try {
+    await installNativeLaunchers(release, options);
+  } catch (error) {
+    console.error(
+      `Browser Bridge: native command optimization skipped; keeping the verified Node launcher: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
   if (!shouldInitialize(env)) return;
   try {
     if (options.initialize) await options.initialize(binary, env);

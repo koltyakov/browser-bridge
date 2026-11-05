@@ -34,7 +34,7 @@ endif
 	check-release-version check check-extension-zip package-extension package-native \
 	package-native-all package-npm pack pack-dry-run release-check prepublish-check \
 	publish-native publish-npm fixture-browser fixture-interaction bench-interaction \
-	run status daemon install-manifest install sync-version bench-runtime test-visual-live test-inspection-live test-workflows-live
+	run status daemon install-manifest install sync-version bench-runtime bench-npm-launch test-visual-live test-inspection-live test-workflows-live
 
 help: ## Show available tasks; the default when running make
 	@"$(NODE)" -e "const fs = require('node:fs'); for (const m of fs.readFileSync('Makefile', 'utf8').matchAll(/^([a-z][a-z-]+):.*?## (.+)$$/gm)) console.log(m[1].padEnd(24) + m[2]);"
@@ -181,6 +181,10 @@ bench-interaction: build-native ## Run the interaction benchmark
 
 bench-runtime: ## Benchmark daemon routing while storage is blocked; optional ARGS='-benchtime=2s'
 	$(GO) test -run '^$$' -bench BenchmarkDaemonHealthWhileStorageBlocked -benchmem $(ARGS) ./internal/bridge
+
+bench-npm-launch: export BBX_BENCH_NPM = 1
+bench-npm-launch: build-native ## Compare direct Go, Node wrapper, and installed npm command startup
+	"$(NODE)" --import tsx --test tests/native/npm-wrapper.test.ts
 
 run: generate-protocol ## Run the workspace Go CLI; e.g. make run ARGS='call health.ping'
 	$(GO) run -ldflags="$(DEVELOPMENT_LDFLAGS)" ./cmd/bbx $(ARGS)

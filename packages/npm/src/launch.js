@@ -1,14 +1,15 @@
 // @ts-check
 import { spawn } from 'node:child_process';
 import { resolveNative } from './runtime.js';
+import { entrypoints } from './entrypoints.js';
 
 /** Forward stdio, arguments, signals, and exit status without interpreting RPC.
- * @param {string[]} prefix @returns {Promise<void>}
+ * @param {keyof typeof entrypoints} name @returns {Promise<void>}
  */
-export async function launch(prefix) {
+export async function launch(name) {
   try {
     const { binary, version } = await resolveNative();
-    const child = spawn(binary, [...prefix, ...process.argv.slice(2)], {
+    const child = spawn(binary, [...entrypoints[name], ...process.argv.slice(2)], {
       stdio: 'inherit',
       windowsHide: true,
       env: { ...process.env, BBX_NPM_VERSION: version },

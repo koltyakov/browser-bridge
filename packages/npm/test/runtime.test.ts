@@ -294,3 +294,37 @@ test('npm postinstall downloads locally, initializes globally, and skips source 
   });
   assert.equal(initializations, 1);
 });
+
+test(
+  'npm postinstall keeps the Node entry and initializes even if command optimization fails',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const f = await fixture(t);
+    const root = path.join(f.root, 'node_modules/@browserbridge/bbx');
+    await fs.mkdir(path.join(root, 'packages/npm/bin'), { recursive: true });
+    await fs.cp(path.join(f.root, 'package.json'), path.join(root, 'package.json'));
+    await fs.cp(
+      path.join(f.root, 'packages/npm/native-manifest.json'),
+      path.join(root, 'packages/npm/native-manifest.json')
+    );
+    const wrapper = path.join(root, 'packages/npm/bin/bbx.js');
+    const link = path.join(f.root, 'node_modules/.bin/bbx');
+    await fs.writeFile(wrapper, 'original Node entry');
+    await fs.mkdir(path.dirname(link));
+    await fs.symlink(wrapper, link);
+    await fs.writeFile(path.join(root, 'packages/npm/bin/.native'), 'not a directory');
+    const errors = t.mock.method(console, 'error', () => {});
+    let initialized = false;
+    await postinstall({
+      ...f.options,
+      root,
+      env: { ...f.options.env, BBX_POSTINSTALL_FORCE: '1' },
+      initialize: async () => {
+        initialized = true;
+      },
+    });
+    assert.equal(initialized, true);
+    assert.match(String(errors.mock.calls[0].arguments[0]), /native command optimization skipped/);
+    assert.equal(await fs.readFile(link, 'utf8'), 'original Node entry');
+  }
+);

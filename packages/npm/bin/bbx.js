@@ -1,4 +1,4 @@
 #!/usr/bin/env node
 // @ts-check
 import { launch } from '../src/launch.js';
-await launch([]);
+await launch('bbx');
