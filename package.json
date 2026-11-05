@@ -55,20 +55,26 @@
     "prepack": "node scripts/prepare-npm.mjs"
   },
   "devDependencies": {
-    "@babel/parser": "^8.0.8",
+    "@babel/parser": "^8.1.0",
     "@modelcontextprotocol/client": "^2.4.0",
     "@types/chrome": "^0.3.7",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "c8": "^12.0.0",
     "esbuild": "^0.28.2",
     "har-schema": "^2.0.0",
-    "linkedom": "^0.18.14",
-    "oxfmt": "^0.75.0",
-    "oxlint": "^1.90.0",
+    "linkedom": "^0.18.15",
+    "oxfmt": "^0.76.0",
+    "oxlint": "^1.91.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
+  },
+  "overrides": {
+    "c8": {
+      "glob": "^14.0.3",
+      "minimatch": "^11.0.4"
+    }
   },
   "engines": {
     "node": ">=20"
