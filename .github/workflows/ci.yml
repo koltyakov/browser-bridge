@@ -93,26 +93,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04]
-        node-version: [20, 22, 24]
-        include:
-          - os: macos-latest
-            node-version: 22
-          # The Windows leg activates the Named Pipe transport tests that
-          # skip on other platforms. Blocking since the daemon pid startup
-          # fix (348f655) stabilized the restart test.
-          - os: windows-latest
-            node-version: 22
+        # Windows activates Named Pipe transport tests that skip on other platforms.
+        os: [ubuntu-24.04, macos-latest, windows-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js 24
         uses: actions/setup-node@v7
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 24
           cache: npm
 
       - name: Install Make on Windows

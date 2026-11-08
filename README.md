@@ -108,12 +108,27 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 ## Setup
 
 1. Install [Browser Bridge from the Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/jjjkmmcdkpcgamlopogicbnnhdgebhie) in Chrome or another Chromium-based browser
-2. With Node.js 20 or later installed, run `npm install -g @browserbridge/bbx`. The npm launcher downloads the latest stable Go executable, verifies its release SHA-256 checksum, and registers the native messaging host.
+2. Install the native CLI with the script for your platform. No Node.js, npm, or Go installation is needed.
+
+   **macOS / Linux:**
+
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.sh | sh
+   ```
+
+   **Windows x64, PowerShell:**
+
+   ```powershell
+   irm https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.ps1 | iex
+   ```
+
 3. Return to the extension and choose your agent under **Connect your agent**. Start with MCP.
 4. Enable access for the browser window you want the agent to use.
 5. Ask your agent to use Browser Bridge.
 
-The npm package is a bootstrap and launcher with zero runtime npm dependencies. Its version does not select the binary version. It downloads the latest stable release for macOS arm64/x64, Linux arm64/x64, or Windows x64 from GitHub Releases. Set `BBX_VERSION` to your extension's release line, such as `2.0`, to install its newest stable patch, or to an exact native version. The Go executable runs the CLI, daemon, native host, and MCP server. Local dependency installs do not register a browser; if install scripts were skipped, the first command downloads the executable, then run `bbx install` to register it. See the [native CLI guide](https://github.com/koltyakov/browser-bridge/blob/main/docs/native-cli.md).
+The installers download the latest stable executable from GitHub Releases, verify its SHA-256 against the release's `checksums.txt`, install to `~/.local/bin`, register Chrome, and restart the daemon. Supported platforms are macOS arm64/x64, Linux arm64/x64, and Windows x64. Keep `~/.local/bin` on your shell's `PATH` on macOS and Linux. Windows adds it to your user `PATH`; open a new terminal afterward.
+
+To match your extension's release line, use the install command shown in its setup panel. The scripts accept `BBX_VERSION=2.0` on macOS/Linux or `-Version '2.0'` in PowerShell to select the newest stable `2.0.x` patch, or an exact version. They also try to remove an existing global `@browserbridge/bbx` npm package so its launchers do not shadow the standalone CLI. See the [installer options](https://github.com/koltyakov/browser-bridge/blob/main/docs/native-cli.md#install-without-nodejs) for browser, version, and installation-directory overrides.
 
 Generated MCP configurations use the Go binary's absolute path, not npm, npx, Node, or a `bbx` shim. Native messaging launchers also execute the binary directly.
 
@@ -122,6 +137,16 @@ If the extension does not connect, run `bbx install`. Register a specific browse
 On Ubuntu, Chromium is commonly installed as a strict snap, and Flatpak Chromium is similarly sandboxed. If native messaging stays disconnected there, use a non-sandboxed Chromium-based browser such as Google Chrome, Brave, or Edge.
 
 MCP mode is self-contained: the dual-era stdio server supports legacy MCP clients and modern stateless MCP revision `2026-07-28`, and exposes tools and matching startup instructions without requiring a separate CLI skill.
+
+### Alternative: install with npm
+
+With Node.js 20 or later installed:
+
+```sh
+npm install -g @browserbridge/bbx
+```
+
+The npm package is a bootstrap and launcher with zero runtime npm dependencies. It downloads and verifies the latest stable Go executable independently of the npm package version, then registers the native host. Set `BBX_VERSION` to select a release line or exact native version. Local dependency installs do not register a browser; if install scripts were skipped, the first command downloads the executable, then run `bbx install` to register it. See the [native CLI guide](https://github.com/koltyakov/browser-bridge/blob/main/docs/native-cli.md).
 
 ## How it works
 
