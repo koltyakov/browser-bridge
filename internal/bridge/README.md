@@ -1,6 +1,6 @@
 # Native runtime
 
-This Go runtime implements the agent CLI, native messaging host, daemon, MCP server, installation, and agent setup. The root module is `github.com/koltyakov/browser-bridge`; `cmd/bbx` is the executable entrypoint. The npm package is a bootstrap and launcher with zero runtime npm dependencies. It downloads the exact package version's native asset and verifies the SHA-256 digest pinned in its manifest.
+This Go runtime implements the agent CLI, native messaging host, daemon, MCP server, installation, and agent setup. The root module is `github.com/koltyakov/browser-bridge`; `cmd/bbx` is the executable entrypoint. The npm package is a bootstrap and launcher with zero runtime npm dependencies. It selects the latest stable GitHub release, or a release selected with `BBX_VERSION`, independently of its npm version. It verifies the release checksum, size, and executable self-test.
 
 ## Build and verify
 
@@ -53,21 +53,21 @@ Measured with Go 1.27.3 and the packaging flags above:
 
 ## npm release packaging
 
-After tests, `make package-native-all` builds the five supported targets for the current version. `scripts/prepare-npm.mjs` validates the five expected files and reads their sizes directly, then atomically generates `packages/npm/native-manifest.json`. It pins asset names, sizes, and SHA-256 digests for `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, and `win32-x64`. Do not commit generated hashes.
+After tests, `make package-native-all` builds the five supported targets for the current version. Native publishing uses `scripts/prepare-npm.mjs` to validate the five expected files and read their sizes directly, then atomically generates `packages/npm/native-manifest.json` for release verification. It records asset names, sizes, and SHA-256 digests for `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, and `win32-x64`. Do not commit generated hashes or include this manifest in npm. The npm launcher can be packed without native builds.
 
 The release workflow publishes and verifies these assets on the public GitHub `v<version>` release before npm publication. Existing assets must match exactly; publishing never overwrites them. The npm tarball contains only the launcher, bootstrap, generated manifest, and package metadata/license/docs. It does not export a JavaScript client library.
 
-Global npm installation downloads the matching binary and initializes native messaging registration. Local dependency installation does not register browsers, and source checkouts skip bootstrap. If install scripts were skipped, the launcher downloads on first use and the user runs `bbx install` explicitly. See [publishing](../../docs/publishing.md).
+Global npm installation downloads the selected stable binary and initializes native messaging registration. Local dependency installation does not register browsers, and source checkouts skip bootstrap. If install scripts were skipped, the launcher downloads on first use and the user runs `bbx install` explicitly. See [publishing](../../docs/publishing.md).
 
 Use isolated `BROWSER_BRIDGE_HOME` and `BBX_TCP_PORT` values when testing a daemon. Continue testing packaged installation, upgrades, repair, and rollback on every supported OS; cross-compilation does not verify platform behavior.
 
 ## Native updates
 
-For npm installations, `bbx update status` reports `distribution: "npm"`; npm controls the runtime version. The wrapper and generated browser launchers carry `BBX_NPM_VERSION`, which prevents native update forwarding or self-update from replacing npm's selection.
+For npm installations, `bbx update status` reports `distribution: "npm"`; the npm bootstrap selects the runtime release independently of its package version. The wrapper and generated browser launchers carry `BBX_NPM_VERSION` with the selected native version, which prevents native update forwarding or self-update from replacing that verified selection.
 
 For separately installed native executables, `bbx update status` reports whether signed updates are configured. Management commands are `update check`, `update apply`, `update install`, `update repair`, and `update rollback`. The existing `bbx rollback` command still rolls back browser patches.
 
-Native signed updates are separate from npm's pinned GitHub release downloads. Builds that enable native updates must pin `internal/bridge.nativeUpdateFeedURL` and `internal/bridge.nativeUpdateKeysJSON` through Go linker flags, using the full module import path. The latter is a JSON object mapping key IDs to base64 Ed25519 public keys. Environment variables and runtime configuration cannot replace those trust keys. Publishing npm assets alone does not enable the signed updater.
+Native signed updates are separate from npm's checksum-verified GitHub release downloads. Builds that enable native updates must pin `internal/bridge.nativeUpdateFeedURL` and `internal/bridge.nativeUpdateKeysJSON` through Go linker flags, using the full module import path. The latter is a JSON object mapping key IDs to base64 Ed25519 public keys. Environment variables and runtime configuration cannot replace those trust keys. Publishing npm assets alone does not enable the signed updater.
 
 The HTTPS feed is an envelope with `signed`, the base64-encoded manifest bytes, and `signatures`, an array of `{keyId, signature}` objects. Each signature covers the exact decoded manifest bytes. The manifest includes `schemaVersion: 1`, `channel: "stable"`, an increasing `sequence`, `issuedAt`, `expiresAt`, and `releases`. Releases contain `version`, `protocolMajor`, and `artifacts` keyed by `go-<os>-<arch>`, each with HTTPS `url`, `sha256`, and `size`.
 

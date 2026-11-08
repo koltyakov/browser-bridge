@@ -18,7 +18,7 @@ With npm, using Node.js 20 or later:
 npm install -g @browserbridge/bbx
 ```
 
-The npm package is a bootstrap and launcher with zero runtime npm dependencies. It downloads the Go executable for the exact installed package version and your platform from GitHub Releases, verifies its pinned SHA-256 digest, then registers the native messaging host for a global install. Supported platforms are macOS arm64/x64, Linux arm64/x64, and Windows x64.
+The npm package is a bootstrap and launcher with zero runtime npm dependencies. It downloads the latest stable Go executable for your platform from GitHub Releases, verifies its release SHA-256 checksum, then registers the native messaging host for a global install. The npm version does not constrain the binary version. Set `BBX_VERSION` during installation to your extension's release line, such as `2.0`, to select its newest stable patch, or to an exact native version. Supported platforms are macOS arm64/x64, Linux arm64/x64, and Windows x64.
 
 Alternatively, [download a standalone binary](https://github.com/koltyakov/browser-bridge/releases/latest) and follow the [manual installation steps](./native-cli.md#install-without-nodejs). This path does not require Node.js or npm.
 

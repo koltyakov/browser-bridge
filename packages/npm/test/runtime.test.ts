@@ -29,13 +29,7 @@ async function fixture(t: TestContext) {
     },
   };
   await fs.mkdir(path.join(root, 'packages/npm'), { recursive: true });
-  await fs.writeFile(
-    path.join(root, 'package.json'),
-    JSON.stringify({ version: manifest.version })
-  );
-  const writeManifest = () =>
-    fs.writeFile(path.join(root, 'packages/npm/native-manifest.json'), JSON.stringify(manifest));
-  await writeManifest();
+  await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ version: '0.1.0' }));
   let downloads = 0;
   let probes = 0;
   const urls: string[] = [];
@@ -48,6 +42,22 @@ async function fixture(t: TestContext) {
       XDG_CACHE_HOME: path.join(root, 'cache'),
     },
     fetchFn: async (url) => {
+      if (String(url).startsWith('https://api.github.com/'))
+        return Response.json({
+          tag_name: `v${manifest.version}`,
+          draft: false,
+          prerelease: false,
+          assets: Object.values(manifest.artifacts).map((artifact) => ({
+            name: artifact.asset,
+            size: artifact.bytes,
+          })),
+        });
+      if (String(url).endsWith('/checksums.txt'))
+        return new Response(
+          Object.values(manifest.artifacts)
+            .map((artifact) => `${artifact.sha256}  ${artifact.asset}`)
+            .join('\n')
+        );
       downloads++;
       urls.push(String(url));
       return new Response(body);
@@ -58,6 +68,8 @@ async function fixture(t: TestContext) {
       assert.equal(release.version, '1.14.2');
     },
   };
+  const writeManifest = () => loadRelease({ ...options, refresh: true });
+  await writeManifest();
   return {
     root,
     target,
@@ -70,7 +82,7 @@ async function fixture(t: TestContext) {
   };
 }
 
-test('npm bootstrap pins version and platform, verifies cache, and serializes concurrent downloads', async (t) => {
+test('npm bootstrap selects a release independently of npm, verifies cache, and serializes concurrent downloads', async (t) => {
   const f = await fixture(t);
   const releases = await Promise.all(Array.from({ length: 8 }, () => resolveNative(f.options)));
   const binaries = releases.map((release) => release.binary);
@@ -94,7 +106,7 @@ test('npm bootstrap pins version and platform, verifies cache, and serializes co
   if (process.platform !== 'win32') assert.equal((await fs.stat(binaries[0])).mode & 0o777, 0o755);
 });
 
-test('npm bootstrap never substitutes another platform or version', async (t) => {
+test('npm bootstrap never substitutes another platform and can refresh beyond the npm version', async (t) => {
   const f = await fixture(t);
   await assert.rejects(
     loadRelease({ ...f.options, platform: 'win32', arch: 'arm64' }),
@@ -102,8 +114,146 @@ test('npm bootstrap never substitutes another platform or version', async (t) =>
   );
   f.manifest.version = '1.14.3';
   await f.writeManifest();
-  await assert.rejects(resolveNative(f.options), /does not match npm version/);
+  assert.equal((await loadRelease(f.options)).version, '1.14.3');
   assert.deepEqual(f.counts(), { downloads: 0, probes: 0 });
+});
+
+test('npm bootstrap selects the newest stable patch in the extension release line across pages', async (t) => {
+  const f = await fixture(t);
+  const candidate = (version: string, extra = {}) => ({
+    tag_name: `v${version}`,
+    draft: false,
+    prerelease: false,
+    assets: [{ name: nativeTargets[f.target], size: f.body.length }],
+    ...extra,
+  });
+  const pages: string[] = [];
+  const release = await loadRelease({
+    ...f.options,
+    env: { ...f.options.env, BBX_VERSION: 'v1.14' },
+    fetchFn: async (url) => {
+      if (String(url).includes('?per_page=')) {
+        pages.push(String(url));
+        return Response.json(
+          pages.length === 1
+            ? [
+                ...Array.from({ length: 96 }, () => candidate('2.0.0')),
+                candidate('1.14.99', { draft: true }),
+                candidate('1.14.20', { prerelease: true }),
+                candidate('1.14.11-beta'),
+                candidate('1.14.2'),
+              ]
+            : [candidate('1.14.10'), candidate('1.14.9')]
+        );
+      }
+      return f.options.fetchFn!(url);
+    },
+  });
+  assert.equal(release.version, '1.14.10');
+  assert.equal(pages.length, 2);
+  assert.match(release.url, /\/v1\.14\.10\//);
+  await assert.rejects(
+    loadRelease({
+      ...f.options,
+      env: { ...f.options.env, BBX_VERSION: '9.0' },
+      fetchFn: async () => Response.json([candidate('1.14.10')]),
+    }),
+    /No published stable release found for 9\.0/
+  );
+});
+
+test('npm bootstrap honors exact native versions without consulting npm metadata', async (t) => {
+  const f = await fixture(t);
+  await fs.rm(path.join(f.root, 'package.json'));
+  const urls: string[] = [];
+  const release = await loadRelease({
+    ...f.options,
+    env: { ...f.options.env, BBX_VERSION: '1.14.2' },
+    fetchFn: async (url) => {
+      urls.push(String(url));
+      return f.options.fetchFn!(url);
+    },
+  });
+  assert.equal(release.version, '1.14.2');
+  assert.match(urls[0], /\/releases\/tags\/v1\.14\.2$/);
+  await assert.rejects(
+    loadRelease({
+      ...f.options,
+      env: { ...f.options.env, BBX_VERSION: '1.14.3' },
+    }),
+    /Invalid published stable release/
+  );
+});
+
+test('npm bootstrap retains each installation selection without a persistent environment override', async (t) => {
+  const f = await fixture(t);
+  await loadRelease({ ...f.options, env: { ...f.options.env, BBX_VERSION: '1.14.2' } });
+  f.manifest.version = '1.14.3';
+  const other = await loadRelease({
+    ...f.options,
+    root: path.join(f.root, 'other-install'),
+    refresh: true,
+  });
+  assert.equal(other.version, '1.14.3');
+  const original = await loadRelease({
+    ...f.options,
+    fetchFn: async () => {
+      throw new Error('offline');
+    },
+  });
+  assert.equal(original.version, '1.14.2');
+  assert.equal(
+    (await loadRelease({ ...f.options, root: path.join(f.root, 'other-install') })).version,
+    '1.14.3'
+  );
+});
+
+test('npm bootstrap rejects unavailable, draft, malformed, or unverifiable release selections', async (t) => {
+  const f = await fixture(t);
+  for (const value of [
+    null,
+    { tag_name: 'v1.14.2', draft: true, prerelease: false },
+    { tag_name: 'v1.14.2', draft: false, prerelease: false },
+    { tag_name: 'v1.14.2', draft: false, prerelease: false, assets: [] },
+  ]) {
+    await assert.rejects(
+      loadRelease({ ...f.options, refresh: true, fetchFn: async () => Response.json(value) }),
+      /Invalid|Missing/
+    );
+  }
+  for (const checksum of [
+    '',
+    `invalid  ${nativeTargets[f.target]}`,
+    `${f.manifest.artifacts[f.target].sha256}  ${nativeTargets[f.target]}\n`.repeat(2),
+  ]) {
+    await assert.rejects(
+      loadRelease({
+        ...f.options,
+        refresh: true,
+        fetchFn: async (url) =>
+          String(url).endsWith('/checksums.txt') ? new Response(checksum) : f.options.fetchFn!(url),
+      }),
+      /checksum|Invalid native artifact/
+    );
+  }
+  await assert.rejects(
+    loadRelease({
+      ...f.options,
+      refresh: true,
+      fetchFn: async () => new Response('x'.repeat(8 * 1024 * 1024 + 1)),
+    }),
+    /size limit/
+  );
+  await assert.rejects(
+    loadRelease({
+      ...f.options,
+      refresh: true,
+      fetchFn: async () => new Response(null, { status: 403 }),
+    }),
+    /HTTP 403/
+  );
+  assert.equal((await loadRelease(f.options)).version, '1.14.2');
+  assert.equal(f.counts().downloads, 0);
 });
 
 test('npm bootstrap validates all supported artifact mappings', async (t) => {
@@ -138,29 +288,21 @@ test('Linux npm cache ignores relative XDG overrides', async (t) => {
   }
 });
 
-test('npm bootstrap rejects missing or malformed release metadata before download', async (t) => {
+test('npm bootstrap rejects malformed release metadata before download', async (t) => {
   const f = await fixture(t);
-  const filename = path.join(f.root, 'packages/npm/native-manifest.json');
   for (const artifact of [
-    null,
-    { asset: '../bbx' },
     { ...f.manifest.artifacts[f.target], bytes: 10_000_000 },
     { ...f.manifest.artifacts[f.target], sha256: 'invalid' },
   ]) {
-    await fs.writeFile(
-      filename,
-      JSON.stringify({ version: f.manifest.version, artifacts: { [f.target]: artifact } })
-    );
-    await assert.rejects(resolveNative(f.options), /Invalid native/);
+    f.manifest.artifacts[f.target] = artifact;
+    await assert.rejects(f.writeManifest(), /Invalid native/);
   }
-  await fs.rm(filename);
-  await assert.rejects(resolveNative(f.options), /manifest is missing/);
-  await f.writeManifest();
-  await fs.writeFile(
-    path.join(f.root, 'package.json'),
-    JSON.stringify({ version: '../../latest' })
+  await assert.rejects(
+    loadRelease({ ...f.options, env: { BBX_VERSION: '../../latest' } }),
+    /Invalid BBX_VERSION/
   );
-  await assert.rejects(resolveNative(f.options), /Invalid npm package version/);
+  f.manifest.version = '../../latest';
+  await assert.rejects(f.writeManifest(), /Invalid published stable release/);
   assert.equal(f.counts().downloads, 0);
 });
 
@@ -229,7 +371,7 @@ test('npm bootstrap follows HTTPS release redirects and fails explicitly for una
   const other = await fixture(t);
   await assert.rejects(
     resolveNative({ ...other.options, fetchFn: async () => new Response(null, { status: 404 }) }),
-    /1\.14\.2.*HTTP 404/
+    /HTTP 404.*1\.14\.2/
   );
   await assert.rejects(
     resolveNative({
@@ -271,11 +413,12 @@ test('npm postinstall downloads locally, initializes globally, and skips source 
   const initialize = async () => {
     initializations++;
   };
-  await postinstall({ ...f.options, initialize });
+  await postinstall({ ...f.options, refresh: false, initialize });
   assert.equal(f.counts().downloads, 1);
   assert.equal(initializations, 0);
   await postinstall({
     ...f.options,
+    refresh: false,
     env: { ...f.options.env, npm_config_global: 'true' },
     initialize,
   });
@@ -303,10 +446,6 @@ test(
     const root = path.join(f.root, 'node_modules/@browserbridge/bbx');
     await fs.mkdir(path.join(root, 'packages/npm/bin'), { recursive: true });
     await fs.cp(path.join(f.root, 'package.json'), path.join(root, 'package.json'));
-    await fs.cp(
-      path.join(f.root, 'packages/npm/native-manifest.json'),
-      path.join(root, 'packages/npm/native-manifest.json')
-    );
     const wrapper = path.join(root, 'packages/npm/bin/bbx.js');
     const link = path.join(f.root, 'node_modules/.bin/bbx');
     await fs.writeFile(wrapper, 'original Node entry');

@@ -11,11 +11,6 @@ import { nativePlatforms, nativeMaxBytes } from '../packages/npm/src/install-tar
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
-/** @param {unknown} value @returns {value is Record<string, unknown>} */
-function isRecord(value) {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /**
  * Validate every registered native asset and pin the exact bytes shipped on GitHub.
  * @param {string} [directory]
@@ -24,11 +19,6 @@ function isRecord(value) {
  */
 export async function readNativeBuild(directory = root, env = process.env) {
   const { version } = resolveVersion({ root: directory, env });
-  /** @type {unknown} */
-  const pkg = JSON.parse(await fs.readFile(path.join(directory, 'package.json'), 'utf8'));
-  if (!isRecord(pkg) || pkg.version !== version) {
-    throw new Error(`package.json version must match ${version}; run make sync-version`);
-  }
   /** @type {NativeManifest} */
   const manifest = { version, artifacts: {} };
   for (const platform of nativePlatforms) {

@@ -11,12 +11,16 @@ import { nativePlatforms, nativeTargets, nativeMaxBytes } from './install-target
 
 /** @typedef {{asset: string, sha256: string, bytes: number}} Artifact */
 /** @typedef {{version: string, target: string, artifact: Artifact, url: string, binary: string}} Release */
-/** @typedef {{root?: string, env?: NodeJS.ProcessEnv, platform?: string, arch?: string, fetchFn?: typeof fetch, probeFn?: typeof probeExecutable}} InstallOptions */
+/** @typedef {{root?: string, env?: NodeJS.ProcessEnv, platform?: string, arch?: string, fetchFn?: typeof fetch, probeFn?: typeof probeExecutable, refresh?: boolean}} InstallOptions */
 
 export const packageRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const exec = promisify(execFile);
 const maxBytes = nativeMaxBytes;
 export { nativeTargets };
+const repository = 'https://api.github.com/repos/koltyakov/browser-bridge';
+const downloads = 'https://github.com/koltyakov/browser-bridge/releases/download';
+const stableVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const metadataMaxBytes = 8 * 1024 * 1024;
 
 /** @param {unknown} value @returns {Record<string, unknown>} */
 function object(value) {
@@ -48,38 +52,85 @@ function cacheDirectory(env, platform) {
   );
 }
 
-/** @param {InstallOptions} [options] @returns {Promise<Release>} */
-export async function loadRelease({
-  root = packageRoot,
-  env = process.env,
-  platform = process.platform,
-  arch = process.arch,
-} = {}) {
-  const target = `${platform}-${arch}`;
-  const asset = nativeTargets[target];
-  if (!asset)
-    throw new Error(
-      `Browser Bridge does not publish a native binary for ${target}. Supported targets: ${Object.keys(nativeTargets).join(', ')}`
-    );
-  const pkg = object(JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')));
-  const version = pkg.version;
-  if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version))
-    throw new Error('Invalid npm package version');
-  let manifest;
+/** Read bounded release metadata using the same HTTPS redirect rules as binaries.
+ * @param {string} url @param {typeof fetch} fetchFn @returns {Promise<string>}
+ */
+async function metadata(url, fetchFn) {
+  const response = await fetchResponse(url, fetchFn, AbortSignal.timeout(15_000));
+  const reader = /** @type {ReadableStream<Uint8Array>} */ (response.body).getReader();
+  /** @type {Uint8Array[]} */
+  const chunks = [];
+  let bytes = 0;
   try {
-    manifest = object(
-      JSON.parse(await fs.readFile(path.join(root, 'packages/npm/native-manifest.json'), 'utf8'))
-    );
-  } catch (error) {
-    if (hasCode(error, 'ENOENT'))
-      throw new Error(
-        'Native release manifest is missing. In a source checkout run `make package-npm`; otherwise reinstall @browserbridge/bbx.'
-      );
-    throw error;
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > metadataMaxBytes)
+        throw new Error('Native release metadata exceeds its size limit');
+      chunks.push(chunk.value);
+    }
+  } finally {
+    await reader.cancel();
   }
-  if (manifest.version !== version)
-    throw new Error(`Native release manifest does not match npm version ${version}`);
-  const entry = object(object(manifest.artifacts)[target]);
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/** @param {unknown} value @returns {string | undefined} */
+function releaseVersion(value) {
+  const release = object(value);
+  if (
+    release.draft !== false ||
+    release.prerelease !== false ||
+    typeof release.tag_name !== 'string' ||
+    !release.tag_name.startsWith('v')
+  )
+    return undefined;
+  const version = release.tag_name.replace(/^v/, '');
+  return stableVersion.test(version) ? version : undefined;
+}
+
+/** @param {string} selector @param {typeof fetch} fetchFn @returns {Promise<Record<string, unknown>>} */
+async function selectRelease(selector, fetchFn) {
+  if (selector === 'latest' || stableVersion.test(selector)) {
+    const release = object(
+      JSON.parse(
+        await metadata(
+          `${repository}/releases/${selector === 'latest' ? 'latest' : `tags/v${selector}`}`,
+          fetchFn
+        )
+      )
+    );
+    const version = releaseVersion(release);
+    if (!version || (selector !== 'latest' && version !== selector))
+      throw new Error(`Invalid published stable release for ${selector}`);
+    return release;
+  }
+  /** @type {Record<string, unknown> | undefined} */
+  let best;
+  let patch = -1n;
+  for (let page = 1; ; page++) {
+    /** @type {unknown} */
+    const releases = JSON.parse(
+      await metadata(`${repository}/releases?per_page=100&page=${page}`, fetchFn)
+    );
+    if (!Array.isArray(releases)) throw new Error('Invalid GitHub release list');
+    for (const candidate of releases) {
+      const version = releaseVersion(candidate);
+      if (version?.startsWith(`${selector}.`) && BigInt(version.split('.')[2]) > patch) {
+        best = object(candidate);
+        patch = BigInt(version.split('.')[2]);
+      }
+    }
+    if (releases.length < 100) break;
+  }
+  if (!best) throw new Error(`No published stable release found for ${selector}.x`);
+  return best;
+}
+
+/** @param {unknown} value @param {string} asset @param {string} target @returns {Artifact} */
+function validateArtifact(value, asset, target) {
+  const entry = object(value);
   if (
     entry.asset !== asset ||
     typeof entry.sha256 !== 'string' ||
@@ -90,12 +141,98 @@ export async function loadRelease({
     entry.bytes >= maxBytes
   )
     throw new Error(`Invalid native artifact for ${target}`);
-  const artifact = /** @type {Artifact} */ (entry);
+  return /** @type {Artifact} */ (entry);
+}
+
+/** @param {string} filename @returns {Promise<Record<string, unknown> | undefined>} */
+async function readSelection(filename) {
+  try {
+    return object(JSON.parse(await fs.readFile(filename, 'utf8')));
+  } catch (error) {
+    if (!hasCode(error, 'ENOENT')) throw error;
+    return undefined;
+  }
+}
+
+/** @param {string} filename @param {Record<string, unknown>} selection @returns {Promise<void>} */
+async function writeSelection(filename, selection) {
+  await fs.mkdir(path.dirname(filename), { recursive: true, mode: 0o700 });
+  const temporary = `${filename}.${randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(temporary, JSON.stringify(selection), { flag: 'wx', mode: 0o600 });
+    await fs.rename(temporary, filename);
+  } finally {
+    await fs.rm(temporary, { force: true });
+  }
+}
+
+/** Resolve a native release independently of the npm package version.
+ * BBX_VERSION accepts an extension release line, an exact stable version, or latest.
+ * @param {InstallOptions} [options] @returns {Promise<Release>}
+ */
+export async function loadRelease({
+  root = packageRoot,
+  env = process.env,
+  platform = process.platform,
+  arch = process.arch,
+  fetchFn = fetch,
+  refresh = false,
+} = {}) {
+  const target = `${platform}-${arch}`;
+  const asset = nativeTargets[target];
+  if (!asset)
+    throw new Error(
+      `Browser Bridge does not publish a native binary for ${target}. Supported targets: ${Object.keys(nativeTargets).join(', ')}`
+    );
+  const directory = cacheDirectory(env, platform);
+  // Remember each installation's selected release, including on Windows where
+  // every invocation uses Node. Other npm installations must not change it.
+  const identity = createHash('sha256').update(path.resolve(root)).digest('hex');
+  const installation = path.join(directory, `installation-${identity}-${target}.json`);
+  const installed = await readSelection(installation);
+  const requested = env.BBX_VERSION || (!refresh && installed?.selector) || 'latest';
+  if (typeof requested !== 'string') throw new Error('Invalid cached native release selector');
+  const selector = requested.replace(/^v/, '');
+  if (selector !== 'latest' && !/^(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?$/.test(selector))
+    throw new Error('Invalid BBX_VERSION: expected latest, X.Y, or X.Y.Z');
+  const selection = path.join(directory, `release-${selector}-${target}.json`);
+  let cached =
+    !refresh && installed?.selector === selector ? installed : await readSelection(selection);
+  if (!cached || refresh) {
+    const release = await selectRelease(selector, fetchFn);
+    const version = releaseVersion(release);
+    if (!Array.isArray(release.assets)) throw new Error('Invalid native release assets');
+    const assets = release.assets.map(object).filter((entry) => entry.name === asset);
+    if (assets.length !== 1) throw new Error(`Missing or duplicate native artifact for ${target}`);
+    const checksums = await metadata(`${downloads}/v${version}/checksums.txt`, fetchFn);
+    const matches = checksums
+      .split(/\r?\n/)
+      .map((line) => line.trim().split(/\s+/))
+      .filter((entry) => entry[1] === asset);
+    if (matches.length !== 1) throw new Error(`Missing or duplicate native checksum for ${target}`);
+    const artifact = validateArtifact(
+      { asset, bytes: assets[0].size, sha256: matches[0][0] },
+      asset,
+      target
+    );
+    cached = { selector, version, artifact };
+    await writeSelection(selection, cached);
+  }
+  const version = cached.version;
+  if (
+    cached.selector !== selector ||
+    typeof version !== 'string' ||
+    !stableVersion.test(version) ||
+    (selector !== 'latest' && version !== selector && !version.startsWith(`${selector}.`))
+  )
+    throw new Error('Invalid cached native release version');
+  const artifact = validateArtifact(cached.artifact, asset, target);
+  if (cached !== installed) await writeSelection(installation, cached);
   return {
     version,
     target,
     artifact,
-    url: `https://github.com/koltyakov/browser-bridge/releases/download/v${version}/${asset}`,
+    url: `${downloads}/v${version}/${asset}`,
     // Keep running binaries outside node_modules so npm upgrades on Windows do
     // not try to replace a locked daemon executable. Versions never overwrite.
     binary: path.join(
@@ -158,9 +295,9 @@ export async function probeExecutable(binary, release, env) {
   }
 }
 
-/** @param {Release} release @param {typeof fetch} fetchFn @param {AbortSignal} signal @returns {Promise<Response>} */
-async function fetchBinary(release, fetchFn, signal) {
-  let url = release.url;
+/** @param {string} initialURL @param {typeof fetch} fetchFn @param {AbortSignal} signal @returns {Promise<Response>} */
+async function fetchResponse(initialURL, fetchFn, signal) {
+  let url = initialURL;
   for (let redirects = 0; redirects <= 5; redirects++) {
     const response = await fetchFn(url, { redirect: 'manual', signal });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
@@ -176,7 +313,7 @@ async function fetchBinary(release, fetchFn, signal) {
     if (!response.ok) {
       await response.body?.cancel();
       throw new Error(
-        `Cannot download Browser Bridge ${release.version} for ${release.target}: HTTP ${response.status}. Expected release asset: ${release.url}`
+        `Cannot download Browser Bridge release: HTTP ${response.status}. URL: ${initialURL}`
       );
     }
     if (!response.body) throw new Error('Native download returned an empty body');
@@ -193,8 +330,8 @@ async function downloadBinary(release, options) {
   );
   const file = await fs.open(temporary, 'wx', 0o700);
   try {
-    const response = await fetchBinary(
-      release,
+    const response = await fetchResponse(
+      release.url,
       options.fetchFn || fetch,
       AbortSignal.timeout(120_000)
     );
@@ -227,7 +364,7 @@ async function downloadBinary(release, options) {
   }
 }
 
-/** Download the package-pinned release, or reuse a verified cached executable.
+/** Download the selected GitHub release, or reuse a verified cached executable.
  * @param {InstallOptions} [options] @returns {Promise<Release>}
  */
 export async function resolveNative(options = {}) {

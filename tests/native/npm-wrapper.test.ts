@@ -96,6 +96,7 @@ test(
       files: string[];
       bin: Record<string, string>;
     };
+    pkg.version = '0.0.1';
     assert.equal(Object.keys(pkg.dependencies || {}).length, 0);
     await fs.writeFile(path.join(source, 'package.json'), JSON.stringify(pkg));
     await fs.cp(path.join(root, 'packages/npm/bin'), path.join(source, 'packages/npm/bin'), {
@@ -124,19 +125,7 @@ test(
       { cwd: root, env: { ...process.env, CGO_ENABLED: '0' } }
     );
     const bytes = await fs.readFile(native);
-    await fs.writeFile(
-      path.join(source, 'packages/npm/native-manifest.json'),
-      JSON.stringify({
-        version: pkg.version,
-        artifacts: {
-          [target]: {
-            asset: nativeTargets[target],
-            sha256: createHash('sha256').update(bytes).digest('hex'),
-            bytes: bytes.length,
-          },
-        },
-      })
-    );
+    const nativeVersion = (await exec(native, ['--version'])).stdout.trim();
     const tcpPort = await port();
     const env: NodeJS.ProcessEnv = {
       ...process.env,
@@ -160,10 +149,21 @@ test(
       root: source,
       env,
       fetchFn: async (url) => {
+        if (String(url).startsWith('https://api.github.com/'))
+          return Response.json({
+            tag_name: `v${nativeVersion}`,
+            draft: false,
+            prerelease: false,
+            assets: [{ name: nativeTargets[target], size: bytes.length }],
+          });
+        if (String(url).endsWith('/checksums.txt'))
+          return new Response(
+            `${createHash('sha256').update(bytes).digest('hex')}  ${nativeTargets[target]}\n`
+          );
         downloads++;
         assert.equal(
           String(url),
-          `https://github.com/koltyakov/browser-bridge/releases/download/v${pkg.version}/${nativeTargets[target]}`
+          `https://github.com/koltyakov/browser-bridge/releases/download/v${nativeVersion}/${nativeTargets[target]}`
         );
         return new Response(bytes);
       },
@@ -208,7 +208,7 @@ test(
       });
     };
     const cli = (...args: string[]) => runEntry('bbx', args);
-    assert.equal((await cli('--version')).stdout.trim(), pkg.version);
+    assert.equal((await cli('--version')).stdout.trim(), nativeVersion);
     assert.equal(JSON.parse((await cli('update', 'status')).stdout).distribution, 'npm');
     assert.equal(
       JSON.parse((await exec(process.execPath, [bin('bbx'), 'update', 'status'], { env })).stdout)
@@ -217,7 +217,7 @@ test(
     );
     benchmarkLaunchers(t, cached, bin('bbx'), path.join(project, 'node_modules/.bin/bbx'), {
       ...env,
-      BBX_NPM_VERSION: pkg.version,
+      BBX_NPM_VERSION: nativeVersion,
     });
     await assert.rejects(
       cli('unknown-command'),
@@ -240,7 +240,7 @@ test(
     const initialized = JSON.parse((await mcp).stdout) as {
       result: { serverInfo: { version: string } };
     };
-    assert.equal(initialized.result.serverInfo.version, pkg.version);
+    assert.equal(initialized.result.serverInfo.version, nativeVersion);
     await assert.rejects(runEntry('bbx-install', ['--browser', 'invalid']), /unsupported browser/);
     if (process.platform !== 'win32') {
       // Real global initialization is isolated by HOME. Windows registration is
@@ -295,7 +295,7 @@ test(
     if (process.platform !== 'win32') {
       assert((await fs.readlink(entry('bbx').command)).endsWith('/.native/bbx'));
       await npmRun(['rebuild', '--offline'], project);
-      assert.equal((await cli('--version')).stdout.trim(), pkg.version);
+      assert.equal((await cli('--version')).stdout.trim(), nativeVersion);
       assert.equal((await fs.stat(cached)).size, bytes.length);
     }
     try {
@@ -311,7 +311,7 @@ test(
     if (process.platform !== 'win32') {
       const mockFetch = path.join(directory, 'fetch-release.mjs');
       const fetched = path.join(directory, 'fetch-url');
-      const expected = `https://github.com/koltyakov/browser-bridge/releases/download/v${pkg.version}/${nativeTargets[target]}`;
+      const expected = `https://github.com/koltyakov/browser-bridge/releases/download/v${nativeVersion}/${nativeTargets[target]}`;
       await fs.writeFile(
         mockFetch,
         `import fs from 'node:fs/promises';
@@ -329,7 +329,7 @@ globalThis.fetch = async (url) => {
         },
         timeout: 15_000,
       });
-      assert.equal(restored.stdout.trim(), pkg.version);
+      assert.equal(restored.stdout.trim(), nativeVersion);
       assert.equal(await fs.readFile(fetched, 'utf8'), expected);
       assert.deepEqual(await fs.readFile(cached), bytes);
     }
@@ -342,7 +342,7 @@ globalThis.fetch = async (url) => {
     const fallback = path.join(noScripts, 'node_modules/@browserbridge/bbx', pkg.bin.bbx);
     assert.equal(
       (await exec(process.execPath, [fallback, '--version'], { env })).stdout.trim(),
-      pkg.version
+      nativeVersion
     );
   }
 );

@@ -72,8 +72,8 @@ bbx restart
 bbx doctor
 ```
 
-The npm launcher downloads the exact package version's Go executable and
-verifies its pinned digest. `bbx update status` reports `distribution: "npm"`;
+The npm launcher downloads a stable GitHub release independently of its package version and
+verifies its release checksum. `bbx update status` reports `distribution: "npm"`;
 native self-update does not replace npm's selected runtime.
 
 Separately installed native executables can use a configured signed update

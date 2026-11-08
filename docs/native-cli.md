@@ -10,15 +10,23 @@ Install the [Chrome extension](https://chromewebstore.google.com/detail/browser-
 npm install -g @browserbridge/bbx
 ```
 
-The wrapper selects macOS arm64/x64, Linux arm64/x64, or Windows x64. It downloads the exact npm package version from `https://github.com/koltyakov/browser-bridge/releases/download/v<version>/<asset>` and verifies the size and SHA-256 digest pinned in the package's `native-manifest.json`. There is no latest-version fallback.
+The wrapper selects macOS arm64/x64, Linux arm64/x64, or Windows x64. The npm package version does not constrain the native version. Installation queries GitHub Releases for the latest stable binary and verifies its size, its SHA-256 from the release's `checksums.txt`, and its executable self-test. Drafts and prereleases are excluded.
+
+To match your extension's release line, set `BBX_VERSION` during installation:
+
+```sh
+BBX_VERSION=2.0 npm install -g @browserbridge/bbx
+```
+
+This selects the highest published stable `2.0.x` patch. An exact native version such as `2.0.3` also works. If the requested release or platform asset is unavailable, installation fails instead of substituting another release line. Without a selector, or with `BBX_VERSION=latest`, installation uses GitHub's latest stable release. The bootstrap does not detect the installed extension version automatically.
 
 A global npm install initializes browser registration. A local dependency install downloads the binary without registering a browser. If install scripts were skipped, the launcher fetches the binary on first use; run `bbx install` to register it. Source checkouts skip the npm bootstrap so development does not download a published runtime.
 
 If the extension does not connect, run `bbx install`, or `bbx install --browser chrome` for Google Chrome on Linux. Choose your agent under **Connect agent** in the extension, then enable window access. See the [quickstart](./quickstart.md).
 
-On macOS and Linux, postinstall replaces npm-owned command symlinks with shell launchers. Each invocation verifies the cached executable against its package-pinned SHA-256 using `/usr/bin/openssl`, then replaces the shell process with Go. The launchers preserve npm version ownership and all four command aliases. They keep the executable outside `node_modules` and leave the original JavaScript entrypoints intact.
+On macOS and Linux, postinstall replaces npm-owned command symlinks with shell launchers. Each invocation verifies the cached executable against the selected release's SHA-256 using `/usr/bin/openssl`, then replaces the shell process with Go. The launchers preserve npm installation ownership and all four command aliases. They keep the executable outside `node_modules` and leave the original JavaScript entrypoints intact.
 
-If OpenSSL or the cached executable is missing, the shell delegates to the verified Node launcher, which can download the pinned executable again. Windows, skipped install scripts, and package managers without npm-style symlinks also use the Node launcher. A checksum mismatch fails before Go executes; it does not bypass verification or select another version.
+If OpenSSL or the cached executable is missing, the shell delegates to the verified Node launcher, which can download the selected executable again. Windows, skipped install scripts, and package managers without npm-style symlinks also use the Node launcher. A checksum mismatch fails before Go executes; it does not bypass verification or select another version.
 
 The downloaded Go executable runs without Node and contains the runtime metadata and agent skills it needs. Node is still required for npm installation and launcher fallback.
 
@@ -73,9 +81,9 @@ No Node.js, npm, or Go installation is needed to run these binaries. Return to t
 
 ## Versions and updates
 
-Update an npm-managed installation with `npm install -g @browserbridge/bbx@latest`, or specify an exact npm version. Published native assets are immutable; a rerun can reuse an identical asset but cannot replace it with different bytes.
+Rerun `npm install -g @browserbridge/bbx` to refresh native release selection. Any npm launcher version with this selection logic can install a newer binary. Use `BBX_VERSION` to choose an extension-compatible release line or exact native version, not an npm version suffix. Published native assets remain immutable.
 
-For npm installations, `bbx update status` identifies npm as the version manager. Native self-update and forwarding to another native release are disabled, so commands and browser launchers keep using npm's exact version. Binaries live in a per-user, versioned cache outside `node_modules`, allowing npm upgrades while a Windows daemon is running.
+For npm installations, `bbx update status` identifies npm as the installation manager. Native self-update and forwarding are disabled so commands and browser launchers keep using the verified release selected at installation. Normal launches reuse cached selection metadata without a network request. An offline npm install also reuses that selection if available; a fresh installation needs network access. Binaries live in a per-user, versioned cache outside `node_modules`, allowing npm upgrades while a Windows daemon is running.
 
 Separately installed native executables support `bbx update` through a signed release feed and built-in trust keys. Publishing npm assets does not configure that feed. Retained cached versions and rollback payloads consume disk space in addition to the active executable.
 

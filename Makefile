@@ -15,7 +15,7 @@ GO_COVER_PROFILE = dist/coverage/go-unit.out
 GOLANGCI_LINT_VERSION ?= v2.14.0
 INSTALL_DIR ?=
 TARGET ?=
-TARBALL ?= ./browserbridge-bbx-$(shell "$(NODE)" scripts/version.mjs --print).tgz
+TARBALL ?= ./browserbridge-bbx-$(shell "$(NODE)" -p "require('./package.json').version").tgz
 ARGS ?=
 TEST_ARGS ?=
 TEST_FILES ?= packages/*/test/*.test.ts protocol/test/*.test.ts tests/integration/*.test.ts tests/fixtures/*/*.test.ts tests/native/*.test.ts
@@ -152,17 +152,17 @@ package-native: generate-protocol ## Build a size-checked native release binary;
 package-native-all: generate-protocol ## Build all five size-checked native release targets
 	"$(NODE)" scripts/build-native.mjs --all
 
-pack: sync-version ## Pack npm using existing native assets; prepack generates pinned hashes
+pack: ## Pack the npm launcher independently of native builds
 	$(NPM) pack
 
-pack-dry-run: sync-version ## Validate npm contents using existing native assets
+pack-dry-run: ## Validate npm launcher contents without native builds
 	$(NPM) pack --dry-run
 
-package-npm: package-native-all pack ## Build all native assets and create the npm tarball
+package-npm: pack ## Create the npm launcher tarball without native builds
 
 release-check: check package-extension check-extension-zip package-native-all pack-dry-run ## Validate and build release artifacts without publishing
 
-prepublish-check: check package-native-all ## Validate source and prepare all native assets for npm publication
+prepublish-check: check ## Validate source before npm publication
 
 publish-native: ## Publish and verify existing immutable native assets on GitHub
 	"$(NODE)" scripts/publish-native.mjs

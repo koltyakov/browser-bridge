@@ -25,7 +25,10 @@ export function shouldInitialize(env) {
  */
 export async function postinstall(options = {}) {
   if (await isSourceCheckout(options.root)) return;
-  const release = await resolveNative(options);
+  const release = await resolveNative({
+    refresh: (options.env || process.env).npm_config_offline !== 'true',
+    ...options,
+  });
   const { binary, version } = release;
   const env = { ...(options.env || process.env), BBX_NPM_VERSION: version };
   try {

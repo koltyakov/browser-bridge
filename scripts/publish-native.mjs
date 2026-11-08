@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { readNativeBuild } from './prepare-npm.mjs';
+import { prepareNpm } from './prepare-npm.mjs';
 import { resolveVersion } from './version.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -21,7 +21,7 @@ function gh(args) {
 }
 
 const resolved = resolveVersion({ root });
-const manifest = await readNativeBuild();
+const manifest = await prepareNpm();
 const checksumBytes = Buffer.from(
   Object.values(manifest.artifacts)
     .map((artifact) => `${artifact.sha256}  ${artifact.asset}\n`)

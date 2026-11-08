@@ -7,18 +7,18 @@ This repo publishes three kinds of release artifacts:
 
 1. The Chrome extension ZIP for the Chrome Web Store
 2. Five Go executables on the public GitHub `v<version>` release
-3. The npm bootstrap/launcher package with the executables' pinned hashes
+3. The npm bootstrap/launcher package, which selects native releases at installation
 
-The extension depends on the local native host installed by `bbx install`. npm is the bootstrap and launcher, with zero runtime npm dependencies; the Go executable provides the CLI, native host, daemon, and MCP server. Global npm installation downloads the matching binary and initializes browser registration. Local dependency installation does not register browsers. If scripts were skipped, the first command downloads the binary and the user runs `bbx install` explicitly.
+The extension depends on the local native host installed by `bbx install`. npm is the bootstrap and launcher, with zero runtime npm dependencies; the Go executable provides the CLI, native host, daemon, and MCP server. Global npm installation downloads the latest stable binary, or a native version selected with `BBX_VERSION`, and initializes browser registration. Local dependency installation does not register browsers. If scripts were skipped, the first command downloads the binary and the user runs `bbx install` explicitly.
 The native runtime embeds the Browser Bridge store extension ID, so end-user docs should default to plain `bbx install`. Only unpacked or non-store builds should require `bbx install <extension-id>` or `BROWSER_BRIDGE_EXTENSION_ID=<extension-id>`.
 
 ## Version source
 
-For local work, edit only `manifest.json.version`. `make sync-version` mirrors it into `package.json` and both root version entries in `package-lock.json`. Build and packaging targets synchronize these files automatically. `make generate-protocol` also refreshes the embedded Go catalog.
+For local work, edit only `manifest.json.version`. `make sync-version` mirrors it into `package.json` and both root version entries in `package-lock.json`. Extension/native build targets synchronize these files automatically. Packing the npm launcher does not synchronize versions or require native binaries. `make generate-protocol` also refreshes the embedded Go catalog.
 
 In release pipelines, the Git tag is authoritative even when the checkout contains an older version. The workflow resolves `refs/tags/vX.Y.Z`, synchronizes the extension/npm metadata, and regenerates the catalog before checking or building artifacts. Other pipeline systems can supply the same tag through `RELEASE_TAG`. Branch and pull-request refs do not override the manifest.
 
-All artifacts use that resolved version. Tags must use stable `vX.Y.Z` versions compatible with Chrome's numeric manifest version; prerelease suffixes are rejected.
+The combined release workflow labels all artifacts with that resolved version. This naming convention does not bind npm installations to that native version. Tags must use stable `vX.Y.Z` versions compatible with Chrome's numeric manifest version; prerelease suffixes are rejected.
 
 ## Release checklist
 
@@ -49,7 +49,7 @@ dist/browser-bridge-extension-v<version>.zip
 
 ## Publish native assets and npm
 
-The npm manifest contract is:
+The native publishing manifest contract is:
 
 ```ts
 {
@@ -68,13 +68,13 @@ It contains exactly these platform keys and GitHub asset names:
 | `linux-x64` | `bbx-linux-x64` |
 | `win32-x64` | `bbx-windows-x64.exe` |
 
-The wrapper downloads `https://github.com/koltyakov/browser-bridge/releases/download/v<packageVersion>/<asset>`. It never selects a newer release. Size and SHA-256 verification use the values shipped in npm.
+The wrapper queries GitHub Releases independently of its npm version. By default it installs the latest stable release. `BBX_VERSION` selects an extension release line such as `2.0`, choosing its highest stable patch, or an exact native version. It downloads `https://github.com/koltyakov/browser-bridge/releases/download/v<nativeVersion>/<asset>`, checks the size from GitHub asset metadata and SHA-256 from that release's `checksums.txt`, then runs an isolated executable self-test.
 
-Always run `make package-native-all` after tests to rebuild all five platforms for the resolved version. `scripts/prepare-npm.mjs` runs during prepack. It requires synchronized npm metadata and all five expected binary files in `dist/cli`, rejects empty files and files at or above 10,000,000 bytes, then hashes the files and atomically writes `packages/npm/native-manifest.json`. It reads sizes directly from the binaries; there is no separate build report or per-binary version check. Do not commit this generated manifest.
+Always run `make package-native-all` after tests to rebuild all five platforms before native publishing. Native publishing calls `scripts/prepare-npm.mjs`, which requires all five expected binary files in `dist/cli`, rejects empty files and files at or above 10,000,000 bytes, then hashes the files and atomically writes `packages/npm/native-manifest.json` for release verification. It does not require a matching npm version. It reads sizes directly from the binaries; there is no separate build report or per-binary version check. Do not commit this generated manifest or bundle it in npm.
 
-The tarball contains only `packages/npm/bin`, `packages/npm/src`, the generated manifest, and package metadata/license/docs. Go binaries live on GitHub Releases. Shared TypeScript helpers in `protocol/` support browser builds and generation; they are not a published runtime or client library. `npm ci` in a source checkout skips the wrapper bootstrap, so CI does not download a published release during dependency installation.
+The tarball contains only `packages/npm/bin`, `packages/npm/src`, and package metadata/license/docs. Packing requires no native binaries. Go binaries live on GitHub Releases. Shared TypeScript helpers in `protocol/` support browser builds and generation; they are not a published runtime or client library. `npm ci` in a source checkout skips the wrapper bootstrap, so CI does not download a published release during dependency installation.
 
-The release workflow uses Node builtins and `gh` to publish native assets. It creates a public release if needed, requires the tag to exist, and downloads existing binary assets to compare their size and digest before uploading missing assets. Uploads never use `--clobber`. A mismatched existing asset fails the release; publish a new version rather than replacing bytes already pinned by npm. A pre-existing draft release must be made public before this step.
+The release workflow uses Node builtins and `gh` to publish native assets. It creates a public release if needed, requires the tag to exist, and downloads existing binary assets to compare their size and digest before uploading missing assets. Uploads never use `--clobber`. A mismatched existing asset fails the release; publish a new version rather than replacing bytes already verified by installations. A pre-existing draft release must be made public before this step.
 
 For a manual fallback, run checks and build the extension first, then:
 
@@ -86,13 +86,13 @@ make pack
 make publish-npm ARGS=--provenance
 ```
 
-Authenticate `gh` with permission to create releases in `koltyakov/browser-bridge`. The release tag must already exist remotely. Keep the native build unchanged between asset upload and npm packing. `make package-npm` is a local build-and-pack shortcut; it does not publish native assets. `make publish-npm` selects the resolved version's tarball; override it with `TARBALL=path` if needed.
+Authenticate `gh` with permission to create releases in `koltyakov/browser-bridge`. The release tag must already exist remotely. `make package-npm` packs only the launcher and does not build or publish native assets. `make publish-npm` selects the resolved version's tarball; override it with `TARBALL=path` if needed.
 
 The tag workflow publishes npm through trusted publishing with OIDC. Its token needs `contents: write` for GitHub releases and `id-token: write` for npm. It retains the npm tarball and extension ZIP as workflow artifacts.
 
 Trusted publishing requires npm CLI `11.5.1+`. The release workflow upgrades npm explicitly before running `npm publish`; if publish fails with `E404` or authentication issues, verify the workflow still prints an npm version at or above that threshold.
 
-Native signed updates use a separate feed and embedded trust keys. Publishing GitHub assets and npm hashes does not configure or sign that feed. See [native updates](../internal/bridge/README.md#native-updates).
+Native signed updates use a separate feed and embedded trust keys. Publishing GitHub assets and release checksums does not configure or sign that feed. See [native updates](../internal/bridge/README.md#native-updates).
 
 ## Chrome Web Store Submission
 

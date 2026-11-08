@@ -66,14 +66,14 @@ test('npm manifest pins exact assets and platform keys, replacing atomically', a
   );
 });
 
-test('npm preparation uses the tag authority and requires a matching package version', async (t) => {
+test('native manifest uses the tag authority independently of the npm package version', async (t) => {
   const { directory } = await fixture(t);
   await fs.writeFile(path.join(directory, 'manifest.json'), JSON.stringify({ version: '1.2.2' }));
   assert.equal((await prepareNpm(directory, releaseEnv)).version, '1.2.3');
   const manifestPath = path.join(directory, 'packages/npm/native-manifest.json');
   const original = await fs.readFile(manifestPath, 'utf8');
   await fs.writeFile(path.join(directory, 'package.json'), JSON.stringify({ version: '1.2.2' }));
-  await assert.rejects(prepareNpm(directory, releaseEnv), /match 1\.2\.3; run make sync-version/);
+  assert.equal((await prepareNpm(directory, releaseEnv)).version, '1.2.3');
   assert.equal(await fs.readFile(manifestPath, 'utf8'), original);
 });
 
@@ -91,7 +91,7 @@ test('npm preparation reads updated binary sizes and hashes directly', async (t)
   });
 });
 
-test('prepack rejects stale metadata without synchronizing it during npm packing', async (t) => {
+test('native manifest generation does not synchronize or require npm metadata', async (t) => {
   const { directory } = await fixture(t);
   await fs.mkdir(path.join(directory, 'scripts'));
   for (const name of ['prepare-npm.mjs', 'version.mjs']) {
@@ -120,15 +120,13 @@ test('prepack rejects stale metadata without synchronizing it during npm packing
   const manifestPath = path.join(directory, 'packages/npm/native-manifest.json');
   const original = await fs.readFile(manifestPath, 'utf8');
   const result = prepare();
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /run make sync-version/);
+  assert.equal(result.status, 0, result.stderr);
   assert.equal(await fs.readFile(path.join(directory, 'package.json'), 'utf8'), stale);
   assert.equal(await fs.readFile(manifestPath, 'utf8'), original);
 });
 
 for (const mutation of [
-  'wrong-manifest-version',
-  'wrong-package-version',
+  'invalid-manifest-version',
   'missing-file',
   'wrong-filename',
   'directory',
@@ -142,14 +140,10 @@ for (const mutation of [
     const original = await fs.readFile(manifestPath, 'utf8');
     const file = path.join(directory, 'dist/cli', platforms[0][1]);
     switch (mutation) {
-      case 'wrong-manifest-version':
-      case 'wrong-package-version':
+      case 'invalid-manifest-version':
         await fs.writeFile(
-          path.join(
-            directory,
-            mutation === 'wrong-manifest-version' ? 'manifest.json' : 'package.json'
-          ),
-          JSON.stringify({ version: '1.2.2' })
+          path.join(directory, 'manifest.json'),
+          JSON.stringify({ version: 'invalid' })
         );
         break;
       case 'missing-file':
@@ -169,12 +163,7 @@ for (const mutation of [
         await fs.truncate(file, 10_000_000);
         break;
     }
-    await assert.rejects(
-      prepareNpm(directory, {}),
-      mutation === 'wrong-manifest-version' || mutation === 'wrong-package-version'
-        ? /run make sync-version/
-        : /./
-    );
+    await assert.rejects(prepareNpm(directory, {}), /./);
     assert.equal(await fs.readFile(manifestPath, 'utf8'), original);
     assert.deepEqual(await fs.readdir(path.dirname(manifestPath)), ['native-manifest.json']);
   });
