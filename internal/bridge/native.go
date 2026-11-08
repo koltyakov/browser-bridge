@@ -25,13 +25,40 @@ func startDaemon(c config) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(executable, "--bridge-daemon")
+	cmd, err := daemonCommand(c, executable)
+	if err != nil {
+		return err
+	}
 	cmd.Stdout, cmd.Stderr = log, log
-	detach(cmd)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 	return cmd.Process.Release()
+}
+
+func daemonCommand(c config, executable string) (*exec.Cmd, error) {
+	cmd := exec.Command(executable, "--bridge-daemon")
+	// Windows keeps a process's working directory locked. Never retain npm's
+	// staging directory after postinstall, or package managers cannot move it.
+	// Relative homes retain the caller's cwd and existing transport identity.
+	if filepath.IsAbs(c.home) {
+		cmd.Dir = c.home
+		cmd.Env = os.Environ()
+		for i, entry := range cmd.Env {
+			key, path, _ := strings.Cut(entry, "=")
+			if !strings.EqualFold(key, "BBX_AUTH_TOKEN_FILE") || path == "" || filepath.IsAbs(path) {
+				continue
+			}
+			// Preserve token paths relative to the caller when changing cwd.
+			absolute, err := filepath.Abs(path)
+			if err != nil {
+				return nil, err
+			}
+			cmd.Env[i] = key + "=" + absolute
+		}
+	}
+	detach(cmd)
+	return cmd, nil
 }
 
 func bootstrap(c config) error {
