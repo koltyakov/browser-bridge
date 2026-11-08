@@ -170,7 +170,7 @@ for (const mutation of [
 }
 
 test(
-  'native publishing reuses identical assets and refuses replacement or draft releases',
+  'release publishing reuses identical native and extension assets and refuses replacement or drafts',
   { skip: process.platform === 'win32' },
   async (t) => {
     const { directory } = await fixture(t);
@@ -212,6 +212,8 @@ switch (args[1]) {
   case 'upload': {
     const name = path.basename(args[3]);
     if (!release || args.includes('--clobber') || release.assets.some((asset) => asset.name === name)) process.exit(1);
+    fs.mkdirSync('remote', { recursive: true });
+    fs.copyFileSync(args[3], path.join('remote', name));
     release.assets.push({ name });
     fs.writeFileSync(statePath, JSON.stringify(release));
     break;
@@ -219,7 +221,7 @@ switch (args[1]) {
   case 'download': {
     const name = option('--pattern');
     if (release.corrupt === name) fs.writeFileSync(path.join(option('--dir'), name), 'different bytes');
-    else fs.copyFileSync(path.join('dist/cli', name), path.join(option('--dir'), name));
+    else fs.copyFileSync(path.join('remote', name), path.join(option('--dir'), name));
     break;
   }
   default: process.exit(1);
@@ -235,8 +237,8 @@ switch (args[1]) {
     delete env.RELEASE_TAG;
     // The tag remains authoritative even when the checkout's extension version is older.
     await fs.writeFile(path.join(directory, 'manifest.json'), JSON.stringify({ version: '1.2.2' }));
-    const publish = () =>
-      spawnSync(process.execPath, ['scripts/publish-native.mjs'], {
+    const publish = (args: string[] = []) =>
+      spawnSync(process.execPath, ['scripts/publish-native.mjs', ...args], {
         cwd: directory,
         encoding: 'utf8',
         env,
@@ -245,6 +247,7 @@ switch (args[1]) {
       (await fs.readFile(path.join(directory, 'calls.jsonl'), 'utf8'))
         .trim()
         .split('\n')
+        .filter(Boolean)
         .map((line) => JSON.parse(line));
     const first = publish();
     assert.equal(first.status, 0, first.stderr);
@@ -262,6 +265,36 @@ switch (args[1]) {
     assert.equal(rerun.status, 0, rerun.stderr);
     assert.equal((await calls()).filter((args) => args[1] === 'upload').length, 0);
     assert.equal((await calls()).filter((args) => args[1] === 'download').length, 6);
+    await fs.writeFile(path.join(directory, 'calls.jsonl'), '');
+    const missingExtension = publish(['--include-extension']);
+    assert.notEqual(missingExtension.status, 0);
+    assert.match(missingExtension.stderr, /ENOENT/);
+    assert.deepEqual(await calls(), []);
+    const extensionPath = path.join(directory, 'dist/browser-bridge-extension-v1.2.3.zip');
+    await fs.writeFile(extensionPath, '');
+    const emptyExtension = publish(['--include-extension']);
+    assert.notEqual(emptyExtension.status, 0);
+    assert.match(emptyExtension.stderr, /Extension ZIP is empty/);
+    assert.deepEqual(await calls(), []);
+    const extensionBytes = Buffer.from('packaged extension fixture');
+    await fs.writeFile(extensionPath, extensionBytes);
+    const withExtension = publish(['--include-extension']);
+    assert.equal(withExtension.status, 0, withExtension.stderr);
+    assert.equal((await calls()).filter((args) => args[1] === 'upload').length, 1);
+    assert.equal((await calls()).filter((args) => args[1] === 'download').length, 7);
+    assert.deepEqual(
+      await fs.readFile(path.join(directory, 'remote/bbx-browser-extension.zip')),
+      extensionBytes
+    );
+    assert.equal(
+      await fs.readFile(path.join(directory, 'remote/checksums.txt'), 'utf8'),
+      checksums
+    );
+    await fs.writeFile(path.join(directory, 'calls.jsonl'), '');
+    const rerunWithExtension = publish(['--include-extension']);
+    assert.equal(rerunWithExtension.status, 0, rerunWithExtension.stderr);
+    assert.equal((await calls()).filter((args) => args[1] === 'upload').length, 0);
+    assert.equal((await calls()).filter((args) => args[1] === 'download').length, 7);
     for (const state of [
       {
         tagName: 'v1.2.3',
@@ -275,11 +308,17 @@ switch (args[1]) {
         assets: [{ name: 'checksums.txt' }],
         corrupt: 'checksums.txt',
       },
+      {
+        tagName: 'v1.2.3',
+        isDraft: false,
+        assets: [{ name: 'bbx-browser-extension.zip' }],
+        corrupt: 'bbx-browser-extension.zip',
+      },
       { tagName: 'v1.2.3', isDraft: true, assets: [] },
     ]) {
       await fs.writeFile(path.join(directory, 'release.json'), JSON.stringify(state));
       await fs.writeFile(path.join(directory, 'calls.jsonl'), '');
-      const result = publish();
+      const result = publish(['--include-extension']);
       assert.notEqual(result.status, 0);
       assert.match(result.stderr, state.isDraft ? /non-draft/ : /Immutable release asset mismatch/);
       assert.equal((await calls()).filter((args) => args[1] === 'upload').length, 0);

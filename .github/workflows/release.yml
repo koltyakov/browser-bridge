@@ -80,8 +80,8 @@ jobs:
       - name: Build all native release assets
         run: make package-native-all
 
-      - name: Publish immutable native assets to GitHub
-        run: make publish-native
+      - name: Publish immutable native and extension assets to GitHub
+        run: make publish-release
         env:
           GH_TOKEN: ${{ github.token }}
 

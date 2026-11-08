@@ -5,7 +5,7 @@ start with [quickstart](./quickstart.md).
 
 This repo publishes three kinds of release artifacts:
 
-1. The Chrome extension ZIP for the Chrome Web Store
+1. The Chrome extension ZIP on GitHub Releases and for manual Chrome Web Store submission
 2. Five Go executables on the public GitHub `v<version>` release
 3. The npm bootstrap/launcher package, which selects native releases at installation
 
@@ -26,7 +26,7 @@ The combined release workflow labels all artifacts with that resolved version. T
 2. Run `npm install` if dependencies changed.
 3. Run `make release-check`.
 4. In npm package settings, add a GitHub Actions trusted publisher for this repository and workflow file `release.yml`.
-5. Push the release tag `v<version>`. GitHub Actions takes the release version from this tag, runs checks, builds all native targets after tests, publishes and verifies their GitHub release assets, then publishes npm and uploads the extension ZIP artifact.
+5. Push the release tag `v<version>`. GitHub Actions takes the release version from this tag, runs checks, builds all native targets after tests, publishes and verifies the native assets and `bbx-browser-extension.zip` on GitHub Releases, then publishes npm. It also retains the extension ZIP as an Actions artifact.
 6. After the first successful trusted publish, set npm package publishing access to require 2FA and disallow tokens, then revoke any old automation token.
 7. Upload the extension ZIP from `dist/browser-bridge-extension-v<version>.zip`.
 8. Complete the Chrome Web Store listing, privacy fields, and reviewer instructions.
@@ -47,7 +47,7 @@ That compiles the extension's TypeScript sources, stages browser JavaScript and 
 dist/browser-bridge-extension-v<version>.zip
 ```
 
-## Publish native assets and npm
+## Publish release assets and npm
 
 The native publishing manifest contract is:
 
@@ -74,13 +74,13 @@ Always run `make package-native-all` after tests to rebuild all five platforms b
 
 The tarball contains only `packages/npm/bin`, `packages/npm/src`, and package metadata/license/docs. Packing requires no native binaries. Go binaries live on GitHub Releases. Shared TypeScript helpers in `protocol/` support browser builds and generation; they are not a published runtime or client library. `npm ci` in a source checkout skips the wrapper bootstrap, so CI does not download a published release during dependency installation.
 
-The release workflow uses Node builtins and `gh` to publish native assets. It creates a public release if needed, requires the tag to exist, and downloads existing binary assets to compare their size and digest before uploading missing assets. Uploads never use `--clobber`. A mismatched existing asset fails the release; publish a new version rather than replacing bytes already verified by installations. A pre-existing draft release must be made public before this step.
+The release workflow uses Node builtins and `gh` to publish native assets and the extension ZIP. `make publish-release` requires the current version's packaged ZIP and publishes it as `bbx-browser-extension.zip`. It creates a public release if needed, requires the tag to exist, and downloads existing assets to compare their size and digest before uploading missing assets. Uploads never use `--clobber`. A mismatched existing asset fails the release; publish a new version rather than replacing bytes already verified by installations. A pre-existing draft release must be made public before this step. `checksums.txt` continues to cover only the native binaries, and `make publish-native` remains available for native-only publishing.
 
 For a manual fallback, run checks and build the extension first, then:
 
 ```bash
 make package-native-all
-make publish-native
+make publish-release
 make pack-dry-run
 make pack
 make publish-npm ARGS=--provenance

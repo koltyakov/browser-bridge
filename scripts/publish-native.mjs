@@ -33,7 +33,21 @@ const checksums = {
   sha256: createHash('sha256').update(checksumBytes).digest('hex'),
 };
 await fs.writeFile(path.join(root, 'dist/cli', checksums.asset), checksumBytes);
-const artifacts = [...Object.values(manifest.artifacts), checksums];
+const artifacts = [...Object.values(manifest.artifacts), checksums].map((artifact) => ({
+  ...artifact,
+  file: path.join(root, 'dist/cli', artifact.asset),
+}));
+if (process.argv.includes('--include-extension')) {
+  const file = path.join(root, 'dist', `browser-bridge-extension-v${resolved.version}.zip`);
+  const bytes = await fs.readFile(file);
+  if (bytes.length === 0) throw new Error(`Extension ZIP is empty: ${file}`);
+  artifacts.push({
+    asset: 'bbx-browser-extension.zip',
+    bytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    file,
+  });
+}
 const tag = resolved.tag ?? `v${resolved.version}`;
 const viewArgs = ['release', 'view', tag, '--repo', repository, '--json', 'isDraft,tagName,assets'];
 const view = spawnSync('gh', viewArgs, { cwd: root, encoding: 'utf8' });
@@ -112,18 +126,13 @@ try {
   }
   for (const artifact of artifacts) {
     if (existing.has(artifact.asset)) continue;
-    gh([
-      'release',
-      'upload',
-      tag,
-      path.join(root, 'dist/cli', artifact.asset),
-      '--repo',
-      repository,
-    ]);
+    const uploadPath = path.join(temporary, artifact.asset);
+    await fs.copyFile(artifact.file, uploadPath);
+    gh(['release', 'upload', tag, uploadPath, '--repo', repository]);
     await verifyRemote(artifact);
   }
   console.log(
-    `Verified all native assets and checksums on https://github.com/${repository}/releases/tag/${tag}`
+    `Verified all release assets on https://github.com/${repository}/releases/tag/${tag}`
   );
 } finally {
   await fs.rm(temporary, { recursive: true, force: true });
