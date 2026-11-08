@@ -63,14 +63,25 @@ func installMCPKey(client, path string, scope installScope) string {
 	return agent.mcp.key
 }
 
-func installMCPEntry(client string) object {
+func installMCPEntry(client string) (object, error) {
 	entry := object{}
 	if agent := installAgentByKey(client); agent != nil {
 		for key, val := range agent.mcp.entry {
 			entry[key] = append([]byte(nil), val...)
 		}
 	}
-	return entry
+	executable, err := installExecutablePath()
+	if err != nil {
+		return nil, err
+	}
+	var command []string
+	if json.Unmarshal(entry["command"], &command) == nil && len(command) > 0 {
+		command[0] = executable
+		entry["command"] = value(command)
+	} else {
+		entry["command"] = value(executable)
+	}
+	return entry, nil
 }
 
 func installUpdateJSONConfig(raw, client, path string, scope installScope, remove bool) (string, error) {
@@ -106,7 +117,10 @@ func installUpdateJSONConfig(raw, client, path string, scope installScope, remov
 		return installJSONEdit(raw, keys, nil)
 	}
 	existing := installJSONLookup(root, keys...)
-	entry := installMCPEntry(client)
+	entry, err := installMCPEntry(client)
+	if err != nil {
+		return "", err
+	}
 	if existing == nil {
 		replacement := string(value(entry))
 		return installJSONEdit(raw, keys, &replacement)
@@ -246,6 +260,14 @@ func installUpdateCodex(raw string, remove bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	command := ""
+	if !remove {
+		executable, err := installExecutablePath()
+		if err != nil {
+			return "", err
+		}
+		command = string(value(executable))
+	}
 	edits := []installTextEdit{}
 	inOwned, inMain, found := false, false, false
 	seen := map[string]bool{}
@@ -281,7 +303,7 @@ func installUpdateCodex(raw string, remove bool) (string, error) {
 			for start < statement.valueEnd && (raw[start] == ' ' || raw[start] == '\t') {
 				start++
 			}
-			replacement := `"bbx"`
+			replacement := command
 			if key == "args" {
 				replacement = `["mcp", "serve"]`
 			}
@@ -296,7 +318,7 @@ func installUpdateCodex(raw string, remove bool) (string, error) {
 		addition = "\n[mcp_servers.\"browser-bridge\"]\n"
 	}
 	if !seen["command"] {
-		addition += "command = \"bbx\"\n"
+		addition += "command = " + command + "\n"
 	}
 	if !seen["args"] {
 		addition += "args = [\"mcp\", \"serve\"]\n"
@@ -343,12 +365,46 @@ func installMCPStale(raw, client, path string, scope installScope) bool {
 	return len(installMCPMissingPaths(raw, client, path, scope)) > 0
 }
 
-// installMCPRepairable reports a stale entry that Browser Bridge itself wrote.
-// v1 on Windows launched node with the package's packages/mcp-server/src/bin.js,
-// which v2 no longer ships. Other missing paths may be the user's own wrapper,
-// so those are reported by doctor rather than rewritten.
+// Only migrate recognizable Browser Bridge launchers. Keep custom wrappers and
+// remote transports under the user's control, even if their paths are missing.
 func installMCPRepairable(raw, client, path string, scope installScope) bool {
-	return slices.ContainsFunc(installMCPMissingPaths(raw, client, path, scope), installLegacyLauncher)
+	if slices.ContainsFunc(installMCPMissingPaths(raw, client, path, scope), installLegacyLauncher) {
+		return true
+	}
+	launch := installMCPLaunchStrings(raw, client, path, scope)
+	if len(launch) == 0 {
+		return false
+	}
+	executable, err := installExecutablePath()
+	if err != nil || launch[0] == executable {
+		return false
+	}
+	mcpArgs := len(launch) >= 3 && launch[len(launch)-2] == "mcp" && launch[len(launch)-1] == "serve"
+	if len(launch) == 3 && mcpArgs && installLegacyLauncher(launch[0]) {
+		return true
+	}
+	command := strings.ToLower(filepath.Base(launch[0]))
+	for _, suffix := range []string{".exe", ".cmd", ".ps1"} {
+		command = strings.TrimSuffix(command, suffix)
+	}
+	if command == "bbx-mcp" && len(launch) == 1 {
+		return true
+	}
+	if (command == "npm" || command == "npx") && mcpArgs {
+		for _, arg := range launch[1:] {
+			pkg := strings.TrimPrefix(arg, "--package=")
+			if pkg == "@browserbridge/bbx" || strings.HasPrefix(pkg, "@browserbridge/bbx@") {
+				return true
+			}
+		}
+	}
+	if command == "node" && len(launch) >= 2 {
+		script := strings.ReplaceAll(launch[1], `\`, "/")
+		return strings.HasSuffix(script, "/packages/mcp-server/src/bin.js") ||
+			(len(launch) == 2 && strings.HasSuffix(script, "/packages/npm/bin/bbx-mcp.js")) ||
+			(len(launch) == 4 && mcpArgs && strings.HasSuffix(script, "/packages/npm/bin/bbx.js"))
+	}
+	return false
 }
 
 func installLegacyLauncher(path string) bool {
@@ -384,8 +440,11 @@ func installMCPMissingPaths(raw, client, path string, scope installScope) []stri
 // conservative for hand-edited configurations.
 func installMCPLaunchStrings(raw, client, path string, scope installScope) []string {
 	agent := installAgentByKey(client)
-	if agent == nil || agent.mcp.format == installConfigYAML {
+	if agent == nil {
 		return nil
+	}
+	if agent.mcp.format == installConfigYAML {
+		return installGooseLaunchStrings(raw)
 	}
 	if agent.mcp.format == installConfigTOML {
 		return installCodexLaunchStrings(raw)
@@ -449,9 +508,9 @@ func installNonNil(values []string) []string {
 	return values
 }
 
-// installRepairStaleMCP rewrites global Browser Bridge MCP entries that still
-// launch a removed v1 entrypoint, keeping their env, disabled flags, and
-// timeouts. Upgrades run it so existing clients keep working without a manual
+// installRepairStaleMCP rewrites recognized wrapper-based or outdated native
+// Browser Bridge MCP entries, keeping their env, disabled flags, and timeouts.
+// Upgrades run it so existing clients keep working without a manual
 // `bbx install-mcp`. Files owned by another account are left alone: a
 // rename-based write from an elevated install would take over the user's
 // config. Failures are returned for reporting and never stop installation.

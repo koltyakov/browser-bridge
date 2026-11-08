@@ -44,6 +44,19 @@ func installTestWrite(t *testing.T, path, raw string) {
 	}
 }
 
+func installTestBinary(t *testing.T) string {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executable, err = filepath.EvalSymlinks(executable)
+	if err != nil || !filepath.IsAbs(executable) {
+		t.Fatalf("invalid native executable %s: %v", executable, err)
+	}
+	return executable
+}
+
 func TestInstallManifestPaths(t *testing.T) {
 	home := t.TempDir()
 	env := func(string) string { return "" }
@@ -95,7 +108,7 @@ func TestInstallNativePreservesManifestAndUsesNativeRoles(t *testing.T) {
 	}
 	custom := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	manifestPath := filepath.Join(installManifestDir(runtime.GOOS, scope.home, "chrome", os.Getenv), hostName+".json")
-	initial := object{"allowed_origins": value([]string{"chrome-extension://" + custom + "/"}), "custom": value("keep")}
+	initial := object{"path": value(filepath.Join(scope.home, "npm", "npx")), "allowed_origins": value([]string{"chrome-extension://" + custom + "/"}), "custom": value("keep")}
 	installTestWrite(t, manifestPath, string(value(initial)))
 	result, err := installNativeRegistration(context.Background(), c, "chrome", "", false)
 	if err != nil {
@@ -115,11 +128,14 @@ func TestInstallNativePreservesManifestAndUsesNativeRoles(t *testing.T) {
 	if manifest.text("custom") != "keep" {
 		t.Fatal("lost custom manifest property")
 	}
+	if manifest.text("path") != result.text("launcherPath") {
+		t.Fatal("native manifest did not replace the old package-manager path")
+	}
 	launcher, err := os.ReadFile(result.text("launcherPath"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	executable, _ := os.Executable()
+	executable := installTestBinary(t)
 	if !bytes.Contains(launcher, []byte(installShellQuote(executable))) || !bytes.Contains(launcher, []byte("--native-host")) || !bytes.Contains(launcher, []byte(installShellQuote(c.home))) {
 		t.Fatalf("launcher %s", launcher)
 	}
@@ -212,6 +228,7 @@ func TestInstallAtomicWritePreservesSymlinkAndMode(t *testing.T) {
 
 func TestInstallMCPAllClientsAndCopilotProfiles(t *testing.T) {
 	_, scope := installTestScope(t)
+	t.Setenv("PATH", t.TempDir())
 	profile := filepath.Join(installVSCodeHome(scope), "User", "profiles", "work")
 	if err := os.MkdirAll(profile, 0755); err != nil {
 		t.Fatal(err)
@@ -243,6 +260,10 @@ func TestInstallMCPAllClientsAndCopilotProfiles(t *testing.T) {
 				}
 				if !installMCPConfigured(string(raw), client, path, scope) {
 					t.Fatalf("not configured %s: %s", path, raw)
+				}
+				launch := installMCPLaunchStrings(string(raw), client, path, scope)
+				if len(launch) != 3 || launch[0] != installTestBinary(t) || launch[1] != "mcp" || launch[2] != "serve" {
+					t.Fatalf("%s must launch the native binary without PATH: %v", client, launch)
 				}
 				if client == "copilot" {
 					key := installMCPKey(client, path, scope)
@@ -301,7 +322,7 @@ func TestInstallJSONCPreservesCommentsAndUserSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	command := installJSONLookup(root, "mcpServers", "browser-bridge", "command")
-	if got := updated[command.start:command.end]; got != `"bbx"` {
+	if got := updated[command.start:command.end]; got != string(value(installTestBinary(t))) {
 		t.Fatal(got)
 	}
 	again, err := installUpdateJSONConfig(updated, "claude", path, scope, false)
@@ -394,7 +415,7 @@ command = "custom"
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, keep := range []string{`model = "test"`, `command = "bbx" # keep command comment`, `args = ["mcp", "serve"] # keep args comment`, `startup_timeout_sec = 20`, `SECRET = "user-value"`, `command = "custom"`, `not a table`} {
+	for _, keep := range []string{`model = "test"`, `command = ` + string(value(installTestBinary(t))) + ` # keep command comment`, `args = ["mcp", "serve"] # keep args comment`, `startup_timeout_sec = 20`, `SECRET = "user-value"`, `command = "custom"`, `not a table`} {
 		if !strings.Contains(updated, keep) {
 			t.Fatalf("lost %s in %s", keep, updated)
 		}

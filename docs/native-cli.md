@@ -30,6 +30,8 @@ If OpenSSL or the cached executable is missing, the shell delegates to the verif
 
 The downloaded Go executable runs without Node and contains the runtime metadata and agent skills it needs. Node is still required for npm installation and launcher fallback.
 
+`bbx install-mcp` writes the absolute, symlink-resolved Go binary path with `mcp serve` into every supported MCP config format. It does not write npm, npx, Node, or a bare `bbx` command that might resolve to a package-manager shim. Native messaging uses a small shell or Windows command launcher only to supply the environment and `--native-host`; that launcher executes the binary directly. Installation also migrates recognized older Browser Bridge wrapper entries and updates recognized native MCP paths to the current binary, preserving user settings. Custom wrappers and remote transports are not automatically replaced.
+
 ## Install without Node.js
 
 Run the GitHub-hosted installer for your platform. On macOS or Linux:

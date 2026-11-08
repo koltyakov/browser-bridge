@@ -107,6 +107,38 @@ func installGooseMCPConfigured(raw string) bool {
 	return extensions != nil && installYAMLLookup(extensions, "browser-bridge") != nil
 }
 
+func installGooseLaunchStrings(raw string) []string {
+	doc, err := installGooseDocument(raw)
+	if err != nil {
+		return nil
+	}
+	extensions := installYAMLLookup(doc.Content[0], "extensions")
+	if extensions == nil {
+		return nil
+	}
+	entry := installYAMLLookup(extensions, "browser-bridge")
+	if entry == nil {
+		return nil
+	}
+	command := installYAMLLookup(entry, "cmd")
+	if command == nil || command.Kind != yaml.ScalarNode || command.Tag != "!!str" {
+		return nil
+	}
+	launch := []string{command.Value}
+	if args := installYAMLLookup(entry, "args"); args != nil {
+		if args.Kind != yaml.SequenceNode {
+			return nil
+		}
+		for _, arg := range args.Content {
+			if arg.Kind != yaml.ScalarNode || arg.Tag != "!!str" {
+				return nil
+			}
+			launch = append(launch, arg.Value)
+		}
+	}
+	return launch
+}
+
 func installUpdateGooseConfig(raw string, remove bool) (string, error) {
 	doc, err := installGooseDocument(raw)
 	if err != nil {
@@ -160,7 +192,11 @@ func installUpdateGooseConfig(raw string, remove bool) (string, error) {
 		if kind := installYAMLLookup(entry, "type"); kind != nil && (kind.Kind != yaml.ScalarNode || kind.Value != "stdio") {
 			return "", errors.New("existing Goose browser-bridge is not stdio; migrate that transport explicitly")
 		}
-		for _, field := range [][2]string{{"type", "stdio"}, {"name", "browser-bridge"}, {"cmd", "bbx"}} {
+		executable, err := installExecutablePath()
+		if err != nil {
+			return "", err
+		}
+		for _, field := range [][2]string{{"type", "stdio"}, {"name", "browser-bridge"}, {"cmd", executable}} {
 			installYAMLSet(entry, field[0], &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: field[1]})
 		}
 		args := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Style: yaml.FlowStyle}

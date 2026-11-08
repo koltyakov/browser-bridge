@@ -134,7 +134,7 @@ func TestAdditionalAgentConfigPreservation(t *testing.T) {
 				t.Fatal(err)
 			}
 			command := installJSONLookup(root, key, "browser-bridge", "command")
-			if command == nil || string(updated[command.start:command.end]) != `"bbx"` {
+			if command == nil || string(updated[command.start:command.end]) != string(value(installTestBinary(t))) {
 				t.Fatal(string(updated))
 			}
 			if target == "amp" && installJSONLookup(root, "amp") != nil {
@@ -172,7 +172,7 @@ func TestClineNestedTransportAndRemoteConflicts(t *testing.T) {
 		t.Fatal(string(updated))
 	}
 	command := installJSONLookup(root, "mcpServers", "browser-bridge", "transport", "command")
-	if command == nil || string(updated[command.start:command.end]) != `"bbx"` {
+	if command == nil || string(updated[command.start:command.end]) != string(value(installTestBinary(t))) {
 		t.Fatal(string(updated))
 	}
 	for _, target := range []string{"gemini", "cline", "zed", "amp", "droid"} {
@@ -491,7 +491,7 @@ func TestRepairStaleMCPMigratesV1Launchers(t *testing.T) {
 	cursor := installMCPPath("cursor", scope)
 	installTestWrite(t, cursor, `{"mcpServers":{"browser-bridge":{"command":`+quoted(custom)+`}}}`)
 	healthy := installMCPPath("copilot", scope)
-	installTestWrite(t, healthy, `{"servers":{"browser-bridge":{"type":"stdio","command":"bbx","args":["mcp","serve"]}}}`)
+	installTestWrite(t, healthy, `{"servers":{"browser-bridge":{"type":"stdio","command":`+quoted(installTestBinary(t))+`,"args":["mcp","serve"]}}}`)
 	before, _ := os.ReadFile(healthy)
 
 	if !installMCPStale(mustRead(t, codex), "codex", codex, scope) {
@@ -506,7 +506,8 @@ func TestRepairStaleMCPMigratesV1Launchers(t *testing.T) {
 	}
 	for target, path := range map[string]string{"claude": claude, "opencode": opencode, "codex": codex} {
 		raw := mustRead(t, path)
-		if installMCPStale(raw, target, path, scope) || !strings.Contains(raw, "bbx") || strings.Contains(raw, "bin.js") {
+		launch := installMCPLaunchStrings(raw, target, path, scope)
+		if installMCPStale(raw, target, path, scope) || len(launch) != 3 || launch[0] != installTestBinary(t) || strings.Contains(raw, "bin.js") {
 			t.Errorf("%s not repaired: %s", target, raw)
 		}
 	}

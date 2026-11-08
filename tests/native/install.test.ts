@@ -101,6 +101,7 @@ test(
     };
     const run = (...args: string[]) =>
       exec(executable, args, { cwd: project, env, timeout: 30_000 });
+    const nativeBinary = await fs.realpath(executable);
     assert.equal(spawnSync('node', ['--version'], { env }).error?.message.includes('ENOENT'), true);
     const pkg = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')) as {
       version: string;
@@ -121,6 +122,15 @@ test(
     );
     await run('install-mcp', 'all');
     await run('install-skill', 'all', '--global');
+    if (process.platform !== 'win32') {
+      const alias = path.join(directory, 'bbx-symlink');
+      await fs.symlink(executable, alias);
+      await exec(alias, ['install-mcp', 'claude'], { cwd: project, env, timeout: 30_000 });
+      const claude = JSON.parse(await fs.readFile(path.join(home, '.claude.json'), 'utf8')) as {
+        mcpServers: Record<string, { command: string; args: string[] }>;
+      };
+      assert.equal(claude.mcpServers['browser-bridge'].command, nativeBinary);
+    }
     const zedSettings =
       process.platform === 'win32'
         ? path.join(home, 'AppData', 'Roaming', 'Zed', 'settings.json')
@@ -141,22 +151,24 @@ test(
         string,
         Record<string, { command: unknown; args: unknown }>
       >;
-      assert.equal(config[key]['browser-bridge'].command, 'bbx');
+      assert.equal(config[key]['browser-bridge'].command, nativeBinary);
       assert.deepEqual(config[key]['browser-bridge'].args, ['mcp', 'serve']);
     }
     const kilo = JSON.parse(
       await fs.readFile(path.join(home, '.config', 'kilo', 'kilo.jsonc'), 'utf8')
     ) as { mcp: Record<string, { type: string; command: string[] }> };
     assert.equal(kilo.mcp['browser-bridge'].type, 'local');
-    assert.deepEqual(kilo.mcp['browser-bridge'].command, ['bbx', 'mcp', 'serve']);
+    assert.deepEqual(kilo.mcp['browser-bridge'].command, [nativeBinary, 'mcp', 'serve']);
     const gooseConfig =
       process.platform === 'win32'
         ? path.join(home, 'AppData', 'Roaming', 'Block', 'goose', 'config', 'config.yaml')
         : path.join(home, '.config', 'goose', 'config.yaml');
-    assert.match(await fs.readFile(gooseConfig, 'utf8'), /cmd: bbx/u);
-    assert.match(
-      await fs.readFile(path.join(home, '.grok', 'config.toml'), 'utf8'),
-      /command = "bbx"/u
+    const goose = await fs.readFile(gooseConfig, 'utf8');
+    assert(goose.includes(nativeBinary));
+    assert(
+      (await fs.readFile(path.join(home, '.grok', 'config.toml'), 'utf8')).includes(
+        `command = ${JSON.stringify(nativeBinary)}`
+      )
     );
     await run('install-mcp', 'all', '--local');
     await run(

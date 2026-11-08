@@ -189,6 +189,16 @@ func installAtomicWrite(path string, data []byte, mode os.FileMode) error {
 
 func installShellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 
+// Resolve the running Go executable, never a PATH command that could select an
+// npm shim. Both MCP clients and browser-launched native hosts use this path.
+func installExecutablePath() (string, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(executable)
+}
+
 func installLauncher(c config, executable string) (string, []byte) {
 	return installLauncherForPlatform(c, executable, runtime.GOOS)
 }
@@ -233,7 +243,7 @@ func installNativeRegistrationWithSystem(ctx context.Context, c config, browser,
 	if !installContains(installBrowsers, browser) {
 		return nil, fmt.Errorf("unsupported browser %q", browser)
 	}
-	executable, err := os.Executable()
+	executable, err := installExecutablePath()
 	if err != nil {
 		return nil, err
 	}

@@ -159,6 +159,7 @@ make daemon                    # start daemon locally
 - Remove unused pre-Go runtime helpers rather than migrating or retaining them. Check extension and generator consumers before deleting shared code; test-only transport utilities belong in `tests/_helpers/`, not `protocol/src/`.
 - Treat extension content scripts as classic scripts. Keep their IIFEs and injection order; do not add runtime ESM imports or exports. Injected functions must remain self-contained after compilation because Chrome serializes them. Keep manifest, HTML, and runtime injection paths ending in `.js`; source imports may use `.js` specifiers resolved to `.ts` by TypeScript.
 - Keep native-host startup robust for GUI launch contexts. Do not assume shell-specific `PATH` resolution.
+- Generated MCP configs must use the absolute, symlink-resolved Go executable with `mcp serve`, never bare `bbx`, npm/npx, Node, or package-manager shims. Native messaging manifests may use the environment/role launcher, but it must execute that same native binary directly. Keep this rule consistent across JSON, TOML, YAML, npm-based installation, and standalone installation.
 - Treat the top-level `README.md` as npm-facing documentation. When adding or editing links or image references there, prefer absolute GitHub URLs instead of relative paths so the npm package page renders them correctly.
 
 ## Typing Standards

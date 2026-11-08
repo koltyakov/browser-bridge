@@ -52,11 +52,11 @@ Sources: [Claude Code permissions](https://docs.anthropic.com/en/docs/claude-cod
 
 Codex stores user config at `~/.codex/config.toml` and project config at `.codex/config.toml` for trusted projects. Codex documents MCP server approval settings on each `mcp_servers.<id>` entry.
 
-For MCP mode, approve Browser Bridge tools at the MCP server level:
+For MCP mode, approve Browser Bridge tools at the MCP server level. Keep the absolute native binary path written by `bbx install-mcp codex`; `/absolute/path/to/bbx` below is a placeholder, not an npm shim:
 
 ```toml
 [mcp_servers.browser-bridge]
-command = "bbx"
+command = "/absolute/path/to/bbx"
 args = ["mcp", "serve"]
 default_tools_approval_mode = "approve"
 ```
@@ -65,7 +65,7 @@ If your existing config uses a quoted table name, keep that style:
 
 ```toml
 [mcp_servers."browser-bridge"]
-command = "bbx"
+command = "/absolute/path/to/bbx"
 args = ["mcp", "serve"]
 default_tools_approval_mode = "approve"
 ```

@@ -253,7 +253,11 @@ func TestInstallSelfCLI(t *testing.T) {
 		t.Fatalf("default registration: %v, %v", registrations, err)
 	}
 	launcher, _ := os.ReadFile(registrations[0].text("launcherPath"))
-	if !bytes.Contains(launcher, []byte(installShellQuote(installed))) || bytes.Contains(launcher, []byte("BBX_NPM_VERSION")) || bytes.Contains(launcher, []byte(source)) {
+	installedBinary, err := filepath.EvalSymlinks(installed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(launcher, []byte(installShellQuote(installedBinary))) || bytes.Contains(launcher, []byte("BBX_NPM_VERSION")) || bytes.Contains(launcher, []byte(source)) {
 		t.Fatalf("launcher did not select installed executable: %s", launcher)
 	}
 	origins := []string{"chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/", "chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/"}

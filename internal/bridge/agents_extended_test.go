@@ -161,10 +161,13 @@ func TestGooseYAMLPreservationAndRejection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, keep := range []string{"# user config", "GOOSE_MODEL: keep", "type: builtin", "enabled: false", "KEEP: secret", "env_keys: [PRIVATE]", "available_tools: [browser_status]", "cmd: bbx # command comment", "args: [mcp, serve]"} {
+	for _, keep := range []string{"# user config", "GOOSE_MODEL: keep", "type: builtin", "enabled: false", "KEEP: secret", "env_keys: [PRIVATE]", "available_tools: [browser_status]", "# command comment", "args: [mcp, serve]"} {
 		if !strings.Contains(updated, keep) {
 			t.Fatalf("lost %s: %s", keep, updated)
 		}
+	}
+	if launch := installGooseLaunchStrings(updated); len(launch) != 3 || launch[0] != installTestBinary(t) {
+		t.Fatalf("Goose must launch the native binary: %v", launch)
 	}
 	again, err := installUpdateGooseConfig(updated, false)
 	if err != nil || again != updated || !installGooseMCPConfigured(updated) {
@@ -205,7 +208,7 @@ func TestGrokTOMLTransportSafety(t *testing.T) {
 		t.Fatal(err)
 	}
 	updated, _ := os.ReadFile(path)
-	for _, keep := range []string{"# user config", "# preserve", "enabled = false", "KEEP = 'secret'", "startup_timeout_sec = 123", `command = "bbx"`} {
+	for _, keep := range []string{"# user config", "# preserve", "enabled = false", "KEEP = 'secret'", "startup_timeout_sec = 123", `command = ` + string(value(installTestBinary(t)))} {
 		if !strings.Contains(string(updated), keep) {
 			t.Fatal("lost", keep, string(updated))
 		}

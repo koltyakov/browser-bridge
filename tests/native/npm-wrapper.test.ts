@@ -209,6 +209,17 @@ test(
     };
     const cli = (...args: string[]) => runEntry('bbx', args);
     assert.equal((await cli('--version')).stdout.trim(), nativeVersion);
+    await cli('install-mcp', 'claude');
+    const mcpConfig = JSON.parse(await fs.readFile(path.join(home, '.claude.json'), 'utf8')) as {
+      mcpServers: Record<string, { command: string; args: string[] }>;
+    };
+    const mcpEntry = mcpConfig.mcpServers['browser-bridge'];
+    assert.equal(mcpEntry.command, await fs.realpath(cached));
+    assert.deepEqual(mcpEntry.args, ['mcp', 'serve']);
+    assert.equal(
+      (await exec(mcpEntry.command, ['--version'], { env: { ...env, PATH: '' } })).stdout.trim(),
+      nativeVersion
+    );
     assert.equal(JSON.parse((await cli('update', 'status')).stdout).distribution, 'npm');
     assert.equal(
       JSON.parse((await exec(process.execPath, [bin('bbx'), 'update', 'status'], { env })).stdout)
@@ -263,7 +274,7 @@ test(
         path.join(home, 'runtime/native-host-launcher.sh'),
         'utf8'
       );
-      assert(launcher.includes(cached));
+      assert(launcher.includes(await fs.realpath(cached)));
       assert(launcher.includes('BBX_NPM_VERSION'));
       assert(!launcher.includes(process.execPath));
       const globalEntry = path.join(prefix, 'bin/bbx');

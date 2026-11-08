@@ -115,6 +115,8 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 
 The npm package is a bootstrap and launcher with zero runtime npm dependencies. Its version does not select the binary version. It downloads the latest stable release for macOS arm64/x64, Linux arm64/x64, or Windows x64 from GitHub Releases. Set `BBX_VERSION` to your extension's release line, such as `2.0`, to install its newest stable patch, or to an exact native version. The Go executable runs the CLI, daemon, native host, and MCP server. Local dependency installs do not register a browser; if install scripts were skipped, the first command downloads the executable, then run `bbx install` to register it. See the [native CLI guide](https://github.com/koltyakov/browser-bridge/blob/main/docs/native-cli.md).
 
+Generated MCP configurations use the Go binary's absolute path, not npm, npx, Node, or a `bbx` shim. Native messaging launchers also execute the binary directly.
+
 If the extension does not connect, run `bbx install`. Register a specific browser with `bbx install --browser chrome|edge|brave|chromium|arc`.
 
 On Ubuntu, Chromium is commonly installed as a strict snap, and Flatpak Chromium is similarly sandboxed. If native messaging stays disconnected there, use a non-sandboxed Chromium-based browser such as Google Chrome, Brave, or Edge.

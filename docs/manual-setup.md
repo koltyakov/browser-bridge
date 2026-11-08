@@ -176,14 +176,14 @@ must be able to launch:
 bbx mcp serve
 ```
 
-Most JSON-based MCP clients use a config block like this:
+Managed setup records the native Go binary's absolute path. For a custom client, replace `/absolute/path/to/bbx` below with that binary's actual path, not an npm/npx command, Node entrypoint, or package-manager shim. Most JSON-based MCP clients use a config block like this:
 
 ```json
 {
   "mcpServers": {
     "browser-bridge": {
       "type": "stdio",
-      "command": "bbx",
+      "command": "/absolute/path/to/bbx",
       "args": ["mcp", "serve"],
       "env": {}
     }

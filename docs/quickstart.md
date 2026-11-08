@@ -20,6 +20,8 @@ npm install -g @browserbridge/bbx
 
 The npm package is a bootstrap and launcher with zero runtime npm dependencies. It downloads the latest stable Go executable for your platform from GitHub Releases, verifies its release SHA-256 checksum, then registers the native messaging host for a global install. The npm version does not constrain the binary version. Set `BBX_VERSION` during installation to your extension's release line, such as `2.0`, to select its newest stable patch, or to an exact native version. Supported platforms are macOS arm64/x64, Linux arm64/x64, and Windows x64.
 
+MCP setup records the absolute path to the Go binary. Neither MCP startup nor native messaging invokes npm, npx, Node, or package-manager shims.
+
 Alternatively, [download a standalone binary](https://github.com/koltyakov/browser-bridge/releases/latest) and follow the [manual installation steps](./native-cli.md#install-without-nodejs). This path does not require Node.js or npm.
 
 A local dependency install downloads the executable without registering a browser. If npm install scripts were skipped, the first `bbx` command downloads it; run `bbx install` to register the native host. Source checkouts skip this bootstrap during development. See the [native CLI guide](./native-cli.md).
