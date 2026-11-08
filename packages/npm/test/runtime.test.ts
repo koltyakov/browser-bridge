@@ -109,8 +109,15 @@ test('npm bootstrap selects a release independently of npm, verifies cache, and 
 test('npm bootstrap never substitutes another platform and can refresh beyond the npm version', async (t) => {
   const f = await fixture(t);
   await assert.rejects(
-    loadRelease({ ...f.options, platform: 'win32', arch: 'arm64' }),
+    loadRelease({ ...f.options, platform: 'win32', arch: 'ia32' }),
     /does not publish/
+  );
+  const missingTarget = Object.keys(nativeTargets).find((target) => target !== f.target);
+  assert(missingTarget);
+  const [platform, arch] = missingTarget.split('-');
+  await assert.rejects(
+    loadRelease({ ...f.options, platform, arch }),
+    /Missing or duplicate native artifact/
   );
   f.manifest.version = '1.14.3';
   await f.writeManifest();
@@ -266,6 +273,26 @@ test('npm bootstrap validates all supported artifact mappings', async (t) => {
     assert(release.url.endsWith(`/v1.14.2/${asset}`));
     assert.equal(path.basename(release.binary), platform === 'win32' ? 'bbx.exe' : 'bbx');
   }
+});
+
+test('Windows ARM64 bootstrap downloads and verifies the native ARM64 asset', async (t) => {
+  const f = await fixture(t);
+  const target = 'win32-arm64';
+  const asset = 'bbx-windows-arm64.exe';
+  assert.equal(nativeTargets[target], asset);
+  f.manifest.artifacts[target] = { ...f.manifest.artifacts[f.target], asset };
+  const release = await resolveNative({
+    ...f.options,
+    platform: 'win32',
+    arch: 'arm64',
+    refresh: true,
+  });
+  assert.equal(release.target, target);
+  assert.equal(path.basename(release.binary), 'bbx.exe');
+  assert.deepEqual(f.urls, [
+    `https://github.com/koltyakov/browser-bridge/releases/download/v1.14.2/${asset}`,
+  ]);
+  assert.deepEqual(f.counts(), { downloads: 1, probes: 1 });
 });
 
 test('Linux npm cache ignores relative XDG overrides', async (t) => {

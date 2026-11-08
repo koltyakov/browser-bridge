@@ -21,6 +21,7 @@ if ($ExtensionId -cnotmatch '^[a-z]{32}$') { throw 'Invalid extension ID' }
 $nativeArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 # BEGIN GENERATED PLATFORMS
 switch ($nativeArch) {
+  'ARM64' { $asset = 'bbx-windows-arm64.exe'; break }
   'AMD64' { $asset = 'bbx-windows-x64.exe'; break }
   default { throw 'Unsupported Windows architecture' }
 }

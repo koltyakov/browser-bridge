@@ -53,9 +53,11 @@ Setup filesystem work is serialized separately from daemon routing and admitted 
 | `make sync-version` | Synchronize npm metadata from the manifest or release tag |
 | `make package-extension` | Release extension ZIP without source maps |
 | `make package-native TARGET=linux-amd64` | Size-checked native release for one platform |
-| `make package-native-all` | All five native release targets in `dist/cli` |
+| `make package-native-all` | All six native release targets in `dist/cli` |
 | `make package-npm` | Build all native targets and pack the thin npm wrapper |
 | `make release-check` | Full validation and release packaging without publishing |
+
+Windows ARM64 runs the Go tests without `-race`, which Go does not support on that target. Other supported platforms retain race detection.
 
 Targets run serially even with `make -j`: tests and packaging share output directories. Release checks build all native assets after tests and before npm packing.
 

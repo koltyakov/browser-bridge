@@ -458,12 +458,12 @@ func TestUpdateImmutableReleaseAndTamperedRollback(t *testing.T) {
 }
 
 func TestUpdatePlatformCompatibilityAndNoDowngrade(t *testing.T) {
-	for _, pair := range [][2]string{{"darwin", "amd64"}, {"darwin", "arm64"}, {"linux", "amd64"}, {"linux", "arm64"}, {"windows", "amd64"}} {
+	for _, pair := range [][2]string{{"darwin", "amd64"}, {"darwin", "arm64"}, {"linux", "amd64"}, {"linux", "arm64"}, {"windows", "arm64"}, {"windows", "amd64"}} {
 		if _, err := updatePlatformTarget(pair[0], pair[1]); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := updatePlatformTarget("windows", "arm64"); err == nil {
+	if _, err := updatePlatformTarget("windows", "386"); err == nil {
 		t.Fatal("unsupported platform accepted")
 	}
 	f := updateTestNew(t)

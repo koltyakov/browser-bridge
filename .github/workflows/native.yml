@@ -38,6 +38,8 @@ jobs:
             asset: bbx-linux-arm64
           - os: ubuntu-24.04
             asset: bbx-linux-x64
+          - os: windows-11-arm
+            asset: bbx-windows-arm64.exe
           - os: windows-2025
             asset: bbx-windows-x64.exe
           # END GENERATED PLATFORMS

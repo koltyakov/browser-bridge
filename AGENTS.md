@@ -126,7 +126,7 @@ make check                     # all source checks, tests, and coverage
 make build-extension           # compile unpacked extension with source maps
 make install                   # build both components, install to ~/.local/bin, and restart runtime
 make package-extension         # build extension ZIP for CWS
-make package-native-all        # build all five native release targets
+make package-native-all        # build all six native release targets
 make package-npm               # pack the thin npm launcher without native builds
 make release-check             # full pre-release validation and packaging
 
@@ -218,7 +218,7 @@ When adding or modifying agent/editor support (e.g., adding a new IDE or agent c
 - `manifest.json.version` is the local version source; release pipelines use the `vX.Y.Z` Git tag instead. `scripts/version.mjs` resolves this authority and `make sync-version` updates npm version mirrors. Never independently bump `package.json` or `package-lock.json`. Release builds synchronize metadata and regenerate the native catalog before validation.
 - Published runtime files are limited to `packages/npm/bin` and `packages/npm/src`, plus package metadata/license/docs. npm has zero runtime dependencies; browser/build dependencies stay development-only. Do not bind native release selection to the npm package version.
 - npm global postinstall selects and downloads a stable Go release independently of the npm version and initializes native registration. Local dependency installs must not register browsers; source checkout installs skip bootstrap. Skipped scripts use lazy fetch followed by explicit `bbx install`.
-- Build all native targets for the current version after tests before publishing native releases. `scripts/prepare-npm.mjs` validates sizes and hashes the five expected binaries directly under `dist/cli`; never commit generated manifest hashes. npm packing does not require native builds or a bundled native manifest.
+- Build all native targets for the current version after tests before publishing native releases. `scripts/prepare-npm.mjs` validates sizes and hashes the six expected binaries directly under `dist/cli`; never commit generated manifest hashes. npm packing does not require native builds or a bundled native manifest.
 - Native GitHub release assets must be public and verified before npm publish. Never overwrite a published binary with different bytes. npm selects the latest stable release by default, or a stable release line/exact native version through `BBX_VERSION`, and verifies the release checksum, size, and executable self-test. This is independent of the native signed-update feed.
 - `npm link` from this repo exposes `bbx`, `bbx-mcp`, `bbx-daemon`, and `bbx-install` machine-wide for consumer repos.
 - When working from this repository for debugging, use `make run ARGS='...'` for the workspace Go CLI.

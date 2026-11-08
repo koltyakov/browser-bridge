@@ -66,11 +66,12 @@ It contains exactly these platform keys and GitHub asset names:
 | `darwin-x64` | `bbx-darwin-x64` |
 | `linux-arm64` | `bbx-linux-arm64` |
 | `linux-x64` | `bbx-linux-x64` |
+| `win32-arm64` | `bbx-windows-arm64.exe` |
 | `win32-x64` | `bbx-windows-x64.exe` |
 
 The wrapper queries GitHub Releases independently of its npm version. By default it installs the latest stable release. `BBX_VERSION` selects an extension release line such as `2.0`, choosing its highest stable patch, or an exact native version. It downloads `https://github.com/koltyakov/browser-bridge/releases/download/v<nativeVersion>/<asset>`, checks the size from GitHub asset metadata and SHA-256 from that release's `checksums.txt`, then runs an isolated executable self-test.
 
-Always run `make package-native-all` after tests to rebuild all five platforms before native publishing. Native publishing calls `scripts/prepare-npm.mjs`, which requires all five expected binary files in `dist/cli`, rejects empty files and files at or above 10,000,000 bytes, then hashes the files and atomically writes `packages/npm/native-manifest.json` for release verification. It does not require a matching npm version. It reads sizes directly from the binaries; there is no separate build report or per-binary version check. Do not commit this generated manifest or bundle it in npm.
+Always run `make package-native-all` after tests to rebuild all six platforms before native publishing. Native publishing calls `scripts/prepare-npm.mjs`, which requires all six expected binary files in `dist/cli`, rejects empty files and files at or above 10,000,000 bytes, then hashes the files and atomically writes `packages/npm/native-manifest.json` for release verification. It does not require a matching npm version. It reads sizes directly from the binaries; there is no separate build report or per-binary version check. Do not commit this generated manifest or bundle it in npm.
 
 The tarball contains only `packages/npm/bin`, `packages/npm/src`, and package metadata/license/docs. Packing requires no native binaries. Go binaries live on GitHub Releases. Shared TypeScript helpers in `protocol/` support browser builds and generation; they are not a published runtime or client library. `npm ci` in a source checkout skips the wrapper bootstrap, so CI does not download a published release during dependency installation.
 

@@ -64,6 +64,7 @@ Download a standalone executable from [GitHub Releases](https://github.com/kolty
 | macOS, Intel | `bbx-darwin-x64` |
 | Linux, arm64 | `bbx-linux-arm64` |
 | Linux, x64 | `bbx-linux-x64` |
+| Windows, arm64 | `bbx-windows-arm64.exe` |
 | Windows, x64 | `bbx-windows-x64.exe` |
 
 On macOS or Linux, replace `/path/to/downloaded-binary` below with the downloaded file's path:
@@ -115,8 +116,8 @@ make package-native-all
 make pack
 ```
 
-Build all targets after tests so every release binary uses the current source and version. Packaging writes executables to `dist/cli` and prints their sizes. Each binary must be smaller than 10,000,000 bytes. The npm prepack step checks the five expected files directly and generates the manifest from their exact bytes. The manifest is generated output and must not be committed.
+Build all targets after tests so every release binary uses the current source and version. Packaging writes executables to `dist/cli` and prints their sizes. Each binary must be smaller than 10,000,000 bytes. The npm prepack step checks the six expected files directly and generates the manifest from their exact bytes. The manifest is generated output and must not be committed.
 
 Native builds compress their embedded catalog and skill assets and omit Go's bundled HTTP/2 implementation to leave room for installed skill files within the fresh-install budget. Native update downloads use HTTPS over HTTP/1.1 with normal certificate and signature verification. This does not change browser networking or the bridge's socket, TCP, native-messaging, or MCP transports.
 
-The release workflow uploads and verifies all five native assets on the public `v<version>` GitHub release before publishing npm. It also packages the Chrome extension. See [publishing](./publishing.md) and the [native runtime README](../internal/bridge/README.md).
+The release workflow uploads and verifies all six native assets on the public `v<version>` GitHub release before publishing npm. It also packages the Chrome extension. See [publishing](./publishing.md) and the [native runtime README](../internal/bridge/README.md).

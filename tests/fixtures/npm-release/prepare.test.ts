@@ -18,6 +18,7 @@ const platforms = [
   ['darwin-x64', 'bbx-darwin-x64'],
   ['linux-arm64', 'bbx-linux-arm64'],
   ['linux-x64', 'bbx-linux-x64'],
+  ['win32-arm64', 'bbx-windows-arm64.exe'],
   ['win32-x64', 'bbx-windows-x64.exe'],
 ];
 
@@ -252,7 +253,10 @@ switch (args[1]) {
     const first = publish();
     assert.equal(first.status, 0, first.stderr);
     assert.equal((await calls()).filter((args) => args[1] === 'create').length, 1);
-    assert.equal((await calls()).filter((args) => args[1] === 'upload').length, 6);
+    assert.equal(
+      (await calls()).filter((args) => args[1] === 'upload').length,
+      platforms.length + 1
+    );
     const checksums = await fs.readFile(path.join(directory, 'dist/cli/checksums.txt'), 'utf8');
     for (const [, asset] of platforms) {
       const bytes = await fs.readFile(path.join(directory, 'dist/cli', asset));
@@ -264,7 +268,10 @@ switch (args[1]) {
     const rerun = publish();
     assert.equal(rerun.status, 0, rerun.stderr);
     assert.equal((await calls()).filter((args) => args[1] === 'upload').length, 0);
-    assert.equal((await calls()).filter((args) => args[1] === 'download').length, 6);
+    assert.equal(
+      (await calls()).filter((args) => args[1] === 'download').length,
+      platforms.length + 1
+    );
     await fs.writeFile(path.join(directory, 'calls.jsonl'), '');
     const missingExtension = publish(['--include-extension']);
     assert.notEqual(missingExtension.status, 0);
@@ -281,7 +288,10 @@ switch (args[1]) {
     const withExtension = publish(['--include-extension']);
     assert.equal(withExtension.status, 0, withExtension.stderr);
     assert.equal((await calls()).filter((args) => args[1] === 'upload').length, 1);
-    assert.equal((await calls()).filter((args) => args[1] === 'download').length, 7);
+    assert.equal(
+      (await calls()).filter((args) => args[1] === 'download').length,
+      platforms.length + 2
+    );
     assert.deepEqual(
       await fs.readFile(path.join(directory, 'remote/bbx-browser-extension.zip')),
       extensionBytes
@@ -294,7 +304,10 @@ switch (args[1]) {
     const rerunWithExtension = publish(['--include-extension']);
     assert.equal(rerunWithExtension.status, 0, rerunWithExtension.stderr);
     assert.equal((await calls()).filter((args) => args[1] === 'upload').length, 0);
-    assert.equal((await calls()).filter((args) => args[1] === 'download').length, 7);
+    assert.equal(
+      (await calls()).filter((args) => args[1] === 'download').length,
+      platforms.length + 2
+    );
     for (const state of [
       {
         tagName: 'v1.2.3',

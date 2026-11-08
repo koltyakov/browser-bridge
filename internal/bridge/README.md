@@ -53,7 +53,7 @@ Measured with Go 1.27.3 and the packaging flags above:
 
 ## npm release packaging
 
-After tests, `make package-native-all` builds the five supported targets for the current version. Native publishing uses `scripts/prepare-npm.mjs` to validate the five expected files and read their sizes directly, then atomically generates `packages/npm/native-manifest.json` for release verification. It records asset names, sizes, and SHA-256 digests for `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, and `win32-x64`. Do not commit generated hashes or include this manifest in npm. The npm launcher can be packed without native builds.
+After tests, `make package-native-all` builds the six supported targets for the current version. Native publishing uses `scripts/prepare-npm.mjs` to validate the six expected files and read their sizes directly, then atomically generates `packages/npm/native-manifest.json` for release verification. It records asset names, sizes, and SHA-256 digests for `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`, and `win32-x64`. Do not commit generated hashes or include this manifest in npm. The npm launcher can be packed without native builds.
 
 The release workflow publishes and verifies these assets on the public GitHub `v<version>` release before npm publication. Existing assets must match exactly; publishing never overwrites them. The npm tarball contains only the launcher, bootstrap, generated manifest, and package metadata/license/docs. It does not export a JavaScript client library.
 

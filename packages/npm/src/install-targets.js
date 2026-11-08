@@ -36,6 +36,14 @@ export const nativePlatforms = Object.freeze([
     unixPatterns: ['Linux:x86_64', 'Linux:amd64'],
   },
   {
+    key: 'win32-arm64',
+    goos: 'windows',
+    goarch: 'arm64',
+    asset: 'bbx-windows-arm64.exe',
+    runner: 'windows-11-arm',
+    windowsArch: 'ARM64',
+  },
+  {
     key: 'win32-x64',
     goos: 'windows',
     goarch: 'amd64',
@@ -50,6 +58,7 @@ export const nativeTargets = Object.freeze({
   'darwin-x64': 'bbx-darwin-x64',
   'linux-arm64': 'bbx-linux-arm64',
   'linux-x64': 'bbx-linux-x64',
+  'win32-arm64': 'bbx-windows-arm64.exe',
   'win32-x64': 'bbx-windows-x64.exe',
 });
 export const nativeMaxBytes = 10000000;

@@ -65,6 +65,30 @@ test('installation target validation rejects collisions and unsafe generated ide
   }
 });
 
+test('Windows ARM64 is included in native, PowerShell and CI targets', async () => {
+  assert.deepEqual(
+    nativePlatforms.find((entry) => entry.key === 'win32-arm64'),
+    {
+      key: 'win32-arm64',
+      goos: 'windows',
+      goarch: 'arm64',
+      asset: 'bbx-windows-arm64.exe',
+      runner: 'windows-11-arm',
+      windowsArch: 'ARM64',
+    }
+  );
+  const installer = await fs.readFile(
+    new URL('../../../scripts/install.ps1', import.meta.url),
+    'utf8'
+  );
+  assert.match(installer, /'ARM64' \{ \$asset = 'bbx-windows-arm64\.exe'; break \}/u);
+  const workflow = await fs.readFile(
+    new URL('../../../.github/workflows/native.yml', import.meta.url),
+    'utf8'
+  );
+  assert.match(workflow, /os: windows-11-arm\s+asset: bbx-windows-arm64\.exe/u);
+});
+
 test('Windows-style Git checkouts preserve LF generated installation files', async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'bbx-targets-checkout-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));

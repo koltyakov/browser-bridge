@@ -11,6 +11,8 @@
 NODE ?= node
 NPM ?= npm
 GO ?= go
+# Go's race detector does not support Windows ARM64.
+GO_TEST_RACE = $(if $(filter windows-arm64,$(shell $(GO) env GOOS)-$(shell $(GO) env GOARCH)),,-race)
 GO_COVER_PROFILE = dist/coverage/go-unit.out
 GOLANGCI_LINT_VERSION ?= v2.14.0
 INSTALL_DIR ?=
@@ -83,7 +85,7 @@ check-go-format: ## Check Go formatting without changing files
 format-check: check-go-format ## Check all source formatting
 	$(EXEC) oxfmt --check .
 
-test: test-go test-js ## Run Go race tests and the Node suite with coverage
+test: test-go test-js ## Run Go tests (race detector where supported) and Node tests with coverage
 
 test-js: build-extension build-native ## Run Node tests with coverage; override TEST_FILES or TEST_ARGS
 	$(C8) "$(NODE)" --import tsx --test $(TEST_ARGS) $(TEST_FILES)
@@ -100,9 +102,9 @@ test-inspection-live: build-extension build-native ## Read-only CLI/MCP matrix; 
 test-workflows-live: build-extension build-native ## Public demo forms and multi-tab mutations; set BBX_LIVE_PROFILE_LABEL or BBX_LIVE_EXTENSION_ID
 	"$(NODE)" --import tsx --test --test-concurrency=1 tests/live/workflows.test.ts
 
-test-go: ## Run Go race tests and collect unit-test coverage
+test-go: ## Run Go tests with coverage and the race detector where supported
 	"$(NODE)" -e "require('node:fs').mkdirSync('dist/coverage', {recursive: true})"
-	$(GO) test -race -coverprofile=$(GO_COVER_PROFILE) ./...
+	$(GO) test $(GO_TEST_RACE) -coverprofile=$(GO_COVER_PROFILE) ./...
 
 coverage-go: ## Report Go unit-test statement coverage from the last test-go run
 	$(GO) tool cover -func=$(GO_COVER_PROFILE)
@@ -110,7 +112,7 @@ coverage-go: ## Report Go unit-test statement coverage from the last test-go run
 coverage-go-check: ## Enforce separate Go runtime and protocol unit-coverage baselines
 	"$(NODE)" scripts/check-go-coverage.mjs $(GO_COVER_PROFILE)
 
-test-native: test-go build-native ## Run Go race tests and native cross-language integration tests
+test-native: test-go build-native ## Run Go tests and native cross-language integration tests
 	"$(NODE)" --import tsx --test $(TEST_ARGS) tests/native/*.test.ts tests/integration/*.test.ts
 
 vet-go: ## Run Go static analysis
@@ -149,7 +151,7 @@ check-extension-zip: ## Validate the existing extension ZIP
 package-native: generate-protocol ## Build a size-checked native release binary; optional TARGET=linux-amd64
 	"$(NODE)" scripts/build-native.mjs $(TARGET)
 
-package-native-all: generate-protocol ## Build all five size-checked native release targets
+package-native-all: generate-protocol ## Build all six size-checked native release targets
 	"$(NODE)" scripts/build-native.mjs --all
 
 pack: ## Pack the npm launcher independently of native builds

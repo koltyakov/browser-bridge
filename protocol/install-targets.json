@@ -36,6 +36,14 @@
       "unixPatterns": ["Linux:x86_64", "Linux:amd64"]
     },
     {
+      "key": "win32-arm64",
+      "goos": "windows",
+      "goarch": "arm64",
+      "asset": "bbx-windows-arm64.exe",
+      "runner": "windows-11-arm",
+      "windowsArch": "ARM64"
+    },
+    {
       "key": "win32-x64",
       "goos": "windows",
       "goarch": "amd64",
