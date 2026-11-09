@@ -53,3 +53,18 @@ test('routing recovery tells agents to select a profile instead of enabling or r
     true
   );
 });
+
+test('tab-scope recovery does not claim the enabled window is disabled', () => {
+  const response = createFailure('outside-tab', 'ACCESS_DENIED', 'Tab is outside the grant', {
+    reason: 'tab_outside_access_scope',
+    tabId: 43,
+    grantedTabId: 41,
+    dispatched: false,
+  });
+  const recovery = response.error.recovery;
+  assert.equal(recovery?.retry, false);
+  assert.equal(recovery?.alternativeMethod, 'health.ping');
+  assert.match(recovery?.hint ?? '', /Access is enabled/);
+  assert.match(recovery?.hint ?? '', /granted tabId/);
+  assert.doesNotMatch(recovery?.hint ?? '', /Access is off|click Enable|access.wait_for_change/);
+});

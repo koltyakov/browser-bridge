@@ -89,7 +89,7 @@ export const ERROR_RECOVERY: Readonly<
   },
   [ERROR_CODES.ACCESS_DENIED]: {
     retry: false,
-    hint: 'Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled.',
+    hint: 'The target is not permitted by the current access grant. Check health.ping and error details for the granted tab/window and user settings. If access is disabled, ask the user to click Enable. Otherwise use an allowed tab or ask the user to change scope. Do not automatically retry or request access again.',
   },
   [ERROR_CODES.RESULT_TRUNCATED]: {
     retry: false,

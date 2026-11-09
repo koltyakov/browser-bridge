@@ -7401,20 +7401,20 @@
     },
     "summary": {
       "ok": false,
-      "summary": "ACCESS_DENIED: Failure Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled.",
+      "summary": "ACCESS_DENIED: Failure The target is not permitted by the current access grant. Check health.ping and error details for the granted tab/window and user settings. If access is disabled, ask the user to click Enable. Otherwise use an allowed tab or ask the user to change scope. Do not automatically retry or request access again.",
       "evidence": null,
       "recovery": {
         "retry": false,
-        "hint": "Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled."
+        "hint": "The target is not permitted by the current access grant. Check health.ping and error details for the granted tab/window and user settings. If access is disabled, ask the user to click Enable. Otherwise use an allowed tab or ask the user to change scope. Do not automatically retry or request access again."
       }
     },
     "annotated": {
       "ok": false,
-      "summary": "ACCESS_DENIED: Failure Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled.",
+      "summary": "ACCESS_DENIED: Failure The target is not permitted by the current access grant. Check health.ping and error details for the granted tab/window and user settings. If access is disabled, ask the user to click Enable. Otherwise use an allowed tab or ask the user to change scope. Do not automatically retry or request access again.",
       "evidence": null,
       "recovery": {
         "retry": false,
-        "hint": "Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled."
+        "hint": "The target is not permitted by the current access grant. Check health.ping and error details for the granted tab/window and user settings. If access is disabled, ask the user to click Enable. Otherwise use an allowed tab or ask the user to change scope. Do not automatically retry or request access again."
       },
       "transportBytes": 69,
       "transportTokens": 18,
@@ -7422,22 +7422,22 @@
     },
     "sanitized": {
       "ok": false,
-      "summary": "ACCESS_DENIED: Failure Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled.",
+      "summary": "ACCESS_DENIED: Failure The target is not permitted by the current access grant. Check health.ping and error details for the granted tab/window and user settings. If access is disabled, ask the user to click Enable. Otherwise use an allowed tab or ask the user to change scope. Do not automatically retry or request access again.",
       "evidence": null,
       "recovery": {
         "retry": false,
-        "hint": "Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled."
+        "hint": "The target is not permitted by the current access grant. Check health.ping and error details for the granted tab/window and user settings. If access is disabled, ask the user to click Enable. Otherwise use an allowed tab or ask the user to change scope. Do not automatically retry or request access again."
       }
     },
     "batch": {
       "method": "page.get_state",
       "tabId": 9,
       "ok": false,
-      "summary": "ACCESS_DENIED: Failure Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled.",
+      "summary": "ACCESS_DENIED: Failure The target is not permitted by the current access grant. Check health.ping and error details for the granted tab/window and user settings. If access is disabled, ask the user to click Enable. Otherwise use an allowed tab or ask the user to change scope. Do not automatically retry or request access again.",
       "evidence": null,
       "recovery": {
         "retry": false,
-        "hint": "Access is off for this window. Ask the user to click Enable in the Browser Bridge popup or side panel. Do not request access again until that window is enabled."
+        "hint": "The target is not permitted by the current access grant. Check health.ping and error details for the granted tab/window and user settings. If access is disabled, ask the user to click Enable. Otherwise use an allowed tab or ask the user to change scope. Do not automatically retry or request access again."
       },
       "durationMs": 12,
       "approxTokens": 18,

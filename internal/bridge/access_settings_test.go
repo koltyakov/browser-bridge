@@ -52,3 +52,12 @@ func TestAccessSettingsNormalizationRejectsPartialOrUnboundedState(t *testing.T)
 		}
 	}
 }
+
+func TestAccessDeniedRecoveryDoesNotAssumeWindowAccessIsDisabled(t *testing.T) {
+	for _, recovery := range []object{daemonErrorRecovery("ACCESS_DENIED"), cliErrorRecovery("ACCESS_DENIED")} {
+		hint := recovery.text("hint")
+		if recovery.boolean("retry") || strings.Contains(hint, "Access is off for this window") || !strings.Contains(hint, "If access is disabled") || !strings.Contains(hint, "granted tab/window") {
+			t.Fatalf("misleading access recovery: %s", value(recovery))
+		}
+	}
+}

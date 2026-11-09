@@ -311,6 +311,13 @@ function getRoutingRecovery(
       hint: 'The extension blocked this operation before dispatch because a user setting is off. Ask the user to change that setting. Read health.ping or wait with access.wait_for_change using details.settingsRevision and the same extensionId. Retry deliberately only after the relevant setting is enabled and access is still granted. Do not request window access again or bypass the setting through another method.',
     };
   }
+  if (code === ERROR_CODES.ACCESS_DENIED && reason === 'tab_outside_access_scope') {
+    return {
+      retry: false,
+      alternativeMethod: 'health.ping',
+      hint: 'Access is enabled, but this tab is outside the current grant. Use the granted tabId or a tab created through tabs.create, or ask the user to change the access scope. Do not request window access again, automatically retry, or switch to another profile.',
+    };
+  }
   return null;
 }
 

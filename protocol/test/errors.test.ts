@@ -99,6 +99,9 @@ test('getErrorRecovery returns the frozen entry for known codes and null otherwi
   assert.equal(recovery, ERROR_RECOVERY[ERROR_CODES.ACCESS_DENIED]);
   assert.equal(recovery?.retry, false);
   assert.match(recovery?.hint ?? '', /Enable/);
+  assert.match(recovery?.hint ?? '', /If access is disabled/);
+  assert.match(recovery?.hint ?? '', /granted tab\/window/);
+  assert.doesNotMatch(recovery?.hint ?? '', /Access is off for this window/);
 
   assert.equal(getErrorRecovery('NOT_A_REAL_CODE'), null);
   assert.equal(getErrorRecovery(''), null);

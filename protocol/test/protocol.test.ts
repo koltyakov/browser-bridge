@@ -429,7 +429,8 @@ test('access denied recovery guidance tells the agent to wait for the user', () 
 
   assert.ok(recovery);
   assert.equal(recovery.retry, false);
-  assert.match(recovery.hint, /Do not request access again/i);
+  assert.match(recovery.hint, /Do not automatically retry or request access again/i);
+  assert.match(recovery.hint, /ask the user/i);
 });
 
 /** Ensure runtime guidance remains compact and opinionated. */

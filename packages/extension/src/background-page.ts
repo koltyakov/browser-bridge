@@ -288,7 +288,12 @@ only an unbound or idle-expired session follows the active tab. */
     ): Promise<ResolvedTabTarget> => {
       assertAccess();
       if (!isGrantedTab(state, resolved.tabId, resolved.windowId)) {
-        throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Access is not enabled for this tab.');
+        throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Access is not enabled for this tab.', {
+          reason: 'tab_outside_access_scope',
+          tabId: resolved.tabId,
+          grantedTabId: grant.tabId ?? null,
+          dispatched: false,
+        });
       }
       const routing = { tabId: resolved.tabId, via, activeTabId };
       if (!peek) {

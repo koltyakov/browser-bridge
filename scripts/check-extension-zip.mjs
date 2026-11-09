@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { resolveVersion } from './version.mjs';
+import { readZipEntry } from './extension-zip.mjs';
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -60,32 +61,6 @@ if ('version_name' in packedManifest && packedManifest.version_name !== version)
 process.stdout.write(`Validated ${path.basename(zipPath)}\n`);
 for (const entry of entries) {
   process.stdout.write(`${entry}\n`);
-}
-
-/**
- * @param {string} archivePath
- * @param {string} entry
- * @returns {Promise<string>}
- */
-async function readZipEntry(archivePath, entry) {
-  if (process.platform === 'win32') {
-    const escapedArchivePath = archivePath.replace(/'/g, "''");
-    const escapedEntry = entry.replace(/'/g, "''");
-    const command = [
-      'Add-Type -AssemblyName System.IO.Compression.FileSystem',
-      `$zip = [System.IO.Compression.ZipFile]::OpenRead('${escapedArchivePath}')`,
-      `try { $reader = [System.IO.StreamReader]::new($zip.GetEntry('${escapedEntry}').Open()); try { $reader.ReadToEnd() } finally { $reader.Dispose() } } finally { $zip.Dispose() }`,
-    ].join('; ');
-    const { stdout } = await execFileAsync('powershell.exe', [
-      '-NoLogo',
-      '-NoProfile',
-      '-Command',
-      command,
-    ]);
-    return stdout;
-  }
-  const { stdout } = await execFileAsync('unzip', ['-p', archivePath, entry]);
-  return stdout;
 }
 
 /**

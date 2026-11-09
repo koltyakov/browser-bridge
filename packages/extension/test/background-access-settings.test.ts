@@ -128,6 +128,16 @@ test('tab-only access blocks other user tabs and enforces create and close setti
     createRequest({ id: 'denied', method: 'page.get_state', tabId: 43, params: {} })
   );
   assert.equal(denied.ok, false);
+  if (denied.ok) assert.fail('Expected the other user tab to be denied');
+  assert.deepEqual(denied.error.details, {
+    reason: 'tab_outside_access_scope',
+    tabId: 43,
+    grantedTabId: 41,
+    dispatched: false,
+  });
+  assert.equal(denied.error.recovery?.alternativeMethod, 'health.ping');
+  assert.match(denied.error.recovery?.hint ?? '', /Access is enabled/);
+  assert.doesNotMatch(denied.error.recovery?.hint ?? '', /Access is off|click Enable/);
   const initial = await loaded.dispatch(
     createRequest({ id: 'initial', method: 'page.get_state', params: {} })
   );

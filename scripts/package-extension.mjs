@@ -3,14 +3,12 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { build } from 'esbuild';
 import { resolveVersion } from './version.mjs';
+import { createZipArchive } from './extension-zip.mjs';
 
-const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const distDir = path.join(repoRoot, 'dist');
@@ -178,32 +176,4 @@ async function copyIntoStage(relativePath, outputPath = relativePath) {
 
   await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
   await fs.promises.cp(sourcePath, targetPath, { recursive: true });
-}
-
-/**
- * @param {string} sourceDir
- * @param {string} targetZipPath
- * @returns {Promise<void>}
- */
-async function createZipArchive(sourceDir, targetZipPath) {
-  await fs.promises.rm(targetZipPath, { force: true });
-
-  if (process.platform === 'win32') {
-    const escapedTargetZipPath = targetZipPath.replace(/'/g, "''");
-    await execFileAsync(
-      'powershell.exe',
-      [
-        '-NoLogo',
-        '-NoProfile',
-        '-Command',
-        `Compress-Archive -Path * -DestinationPath '${escapedTargetZipPath}' -Force`,
-      ],
-      { cwd: sourceDir }
-    );
-    return;
-  }
-
-  await execFileAsync('zip', ['-q', '-r', targetZipPath, '.'], {
-    cwd: sourceDir,
-  });
 }
