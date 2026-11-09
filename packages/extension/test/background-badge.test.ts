@@ -52,14 +52,16 @@ test('working AI-created tabs have a gray toolbar badge while working user tabs 
     { tabId: 42, color: '#787878' },
   ]);
   assert.deepEqual(texts, [
-    { tabId: 41, text: 'BBX' },
-    { tabId: 42, text: 'BBX' },
+    { tabId: 41, text: 'AI' },
+    { tabId: 42, text: 'AI' },
   ]);
   await syncGlobalBadgeToActiveTab(state, chromeObj, deps);
   assert.deepEqual(backgrounds.at(-1), { color: '#787878' });
+  assert.deepEqual(texts.at(-1), { text: 'AI' });
   activeTabId = 41;
   await syncGlobalBadgeToActiveTab(state, chromeObj, deps);
   assert.deepEqual(backgrounds.at(-1), { color: '#1a73e8' });
+  assert.deepEqual(texts.at(-1), { text: 'AI' });
   restricted = true;
   await updateActionIndicatorForTab(42, state, chromeObj, deps);
   assert.deepEqual(backgrounds.at(-1), { tabId: 42, color: '#e07020' });
