@@ -1,4 +1,22 @@
-# Live visual verification
+# Live browser verification
+
+## Disposable headed-Chrome fault tests
+
+`make test-chaos-live` is a separate, opt-in Linux suite. Use Chrome for Testing or non-sandboxed-package Chromium that supports `--load-extension`, as a non-root user, on a disposable machine or display. It never attaches to a running browser. Snap/Flatpak builds are unsuitable for the native host. macOS and Windows are deliberately unsupported here because native-host registration cannot yet be isolated by this harness on those platforms.
+
+```sh
+BBX_CHAOS_CHROME=/absolute/path/to/chrome xvfb-run -a make test-chaos-live
+```
+
+The suite copies the built extension into a new temporary directory with a private extension ID. It redirects HOME, XDG directories, Chrome's native-host registry, the browser profile, and the bridge home into that directory. It starts real headed Chrome and uses the real native messaging host and Go daemon. Chrome's private debugging pipe is used only by the test controller for fault injection and independent fixture observations. No public sites, existing access grants, real profiles, or installed native registrations are used. Do not run it concurrently with builds that rewrite `dist/ext`.
+
+Each of two rounds kills the isolated daemon with SIGKILL, stops and verifies replacement of the MV3 worker, disconnects a caller between two native input steps, and disconnects a caller while an activity/network recording has a pending long-poll read. Recovery must include a page read and a verified click within 20 seconds. The suite never restarts the daemon itself after killing it, so the native-host reconnect must recover it. Interrupted input must not execute its delayed second step. A disconnected recording must release its page recorder, network capture, and registry slot without navigating the fixture. Only the disposable fixture is activated for native pointer input.
+
+After every scenario, a separate 10-second cleanup deadline checks pending requests, mutation queues, agent/extension connections, debugger attachments and holds, capture ownership, page recorders, artifact files, native processes, browser tabs, and daemon file descriptors. Descriptor counts allow three transient descriptors above the initial baseline for the same daemon PID. This is a focused leak regression check, not a memory soak or proof of constant memory. Teardown closes clients and the owned browser process group, kills only native executables whose `/proc` environment matches the private bridge home, checks process exit, and removes the temporary directory. Logs and success/failure measurements remain in `dist/chaos-live/<run>/`.
+
+Optional settings: `BBX_CHAOS_ROUNDS=1..5` and `BBX_CHAOS_RECOVERY_MS=5000..60000`. Missing prerequisites fail rather than silently skipping. These destructive tests are excluded from `make test`; Chrome-pipe framing and deadline helper tests run in the ordinary native test suite.
+
+## Existing-browser visual tests
 
 Run `make test-visual-live` with Browser Bridge's current development native runtime installed and access already enabled in Chrome. This target does not install/restart the running runtime, request access, activate a tab, or change unrelated tabs. If multiple profiles are enabled, set `BBX_LIVE_EXTENSION_ID` to the intended connection ID from `bbx status`.
 

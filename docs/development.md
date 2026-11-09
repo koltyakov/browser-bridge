@@ -92,9 +92,12 @@ make fixture-browser ARGS='--port 4317'
 make run ARGS='call health.ping'
 make bench-runtime
 make bench-npm-launch
+BBX_CHAOS_CHROME=/absolute/path/to/chrome xvfb-run -a make test-chaos-live
 ```
 
 `test-js` and `test-runtime` build the extension and Go executable before testing. `test-js` replaces the coverage results, so use `test-runtime` for focused runs when retaining full-suite coverage. Set `BBX_TEST_CHROME` to your browser executable to include the real-Chrome tests.
+
+`make test-chaos-live` runs opt-in fault/recovery tests in disposable headed Chrome on Linux, with isolated native registration and bridge storage. It covers daemon termination, MV3 worker restart, and caller disconnect during input or recording, with recovery deadlines and resource-leak assertions. See [the live-test guide](../tests/live/README.md#disposable-headed-chrome-fault-tests) for prerequisites, limits, and retained evidence. It is separate from `make test` and never uses your normal browser.
 
 `make bench-npm-launch` packs and installs an isolated npm fixture using a preseeded native cache, without downloading a release or changing your browser registration. It compares direct Go execution, the original Node wrapper, and the installed npm command with `--version`. It interleaves 21 samples per command after three warm-ups and reports minimum, median, and maximum startup time. Windows measures the Node fallback for the npm entry; it has no shell fast path.
 

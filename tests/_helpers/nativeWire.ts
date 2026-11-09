@@ -61,8 +61,18 @@ export class NativeWireClient {
     this.socket = socket;
   }
 
-  static async connect(port: number, authToken: string, clientId: string = randomUUID()) {
-    const socket = net.connect(port, '127.0.0.1');
+  static async connect(
+    endpoint: number | string,
+    authToken: string,
+    clientId: string = randomUUID(),
+    timeoutMs = 5000
+  ) {
+    const socket =
+      typeof endpoint === 'number' ? net.connect(endpoint, '127.0.0.1') : net.connect(endpoint);
+    const timer = setTimeout(
+      () => socket.destroy(new Error('Agent registration timed out')),
+      timeoutMs
+    );
     const client = new NativeWireClient(socket);
     const lines = createInterface({ input: socket });
     lines.on('error', (error) => client.fail(error));
@@ -70,7 +80,12 @@ export class NativeWireClient {
     socket.on('close', () => client.fail(new Error('Agent socket closed')));
     try {
       await once(socket, 'connect');
-      const registered = once(lines, 'line');
+      const registered = Promise.race([
+        once(lines, 'line'),
+        once(socket, 'close').then(() => {
+          throw new Error('Agent socket closed during registration');
+        }),
+      ]);
       await writeJsonLine(socket, { type: 'register', role: 'agent', authToken, clientId });
       const [line] = await registered;
       assert.equal((JSON.parse(String(line)) as { type: string }).type, 'registered');
@@ -87,6 +102,8 @@ export class NativeWireClient {
     } catch (error) {
       socket.destroy();
       throw error;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -99,7 +116,8 @@ export class NativeWireClient {
     input: Pick<BridgeRequest, 'method'> &
       Partial<Pick<BridgeRequest, 'id' | 'params' | 'tab_id'>> & {
         meta?: Partial<BridgeRequest['meta']>;
-      }
+      },
+    timeoutMs = 5000
   ): Promise<BridgeResponse> {
     assert.ok(!this.socket.destroyed, 'Agent socket is closed');
     const request: BridgeRequest = {
@@ -112,7 +130,7 @@ export class NativeWireClient {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(
         () => finish(new Error(`Request timed out: ${request.method}`)),
-        5000
+        timeoutMs
       );
       const finish = (error: Error | null, response?: BridgeResponse) => {
         clearTimeout(timer);

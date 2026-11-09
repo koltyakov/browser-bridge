@@ -36,7 +36,7 @@ endif
 	check-release-version check check-extension-zip package-extension package-native \
 	package-native-all package-npm pack pack-dry-run release-check prepublish-check \
 	publish-native publish-release publish-npm fixture-browser fixture-interaction bench-interaction \
-	run status daemon install-manifest install sync-version bench-runtime bench-npm-launch test-visual-live test-inspection-live test-workflows-live
+	run status daemon install-manifest install sync-version bench-runtime bench-npm-launch test-visual-live test-inspection-live test-workflows-live test-chaos-live
 
 help: ## Show available tasks; the default when running make
 	@"$(NODE)" -e "const fs = require('node:fs'); for (const m of fs.readFileSync('Makefile', 'utf8').matchAll(/^([a-z][a-z-]+):.*?## (.+)$$/gm)) console.log(m[1].padEnd(24) + m[2]);"
@@ -101,6 +101,9 @@ test-inspection-live: build-extension build-native ## Read-only CLI/MCP matrix; 
 
 test-workflows-live: build-extension build-native ## Public demo forms and multi-tab mutations; set BBX_LIVE_PROFILE_LABEL or BBX_LIVE_EXTENSION_ID
 	"$(NODE)" --import tsx --test --test-concurrency=1 tests/live/workflows.test.ts
+
+test-chaos-live: build-extension build-native ## Disposable Linux headed-Chrome recovery/leak tests; set BBX_CHAOS_CHROME
+	"$(NODE)" --import tsx --test --test-concurrency=1 tests/live/chaos.test.ts
 
 test-go: ## Run Go tests with coverage and the race detector where supported
 	"$(NODE)" -e "require('node:fs').mkdirSync('dist/coverage', {recursive: true})"
