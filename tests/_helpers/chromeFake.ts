@@ -170,6 +170,7 @@ export function createChromeFake(overrides: ChromeFakeOverrides = {}): ChromeFak
         return { id: tabId, ...updateProperties };
       },
       async remove() {},
+      onCreated: createChromeEvent(),
       onUpdated: createChromeEvent(),
       onActivated: createChromeEvent(),
       onMoved: createChromeEvent(),

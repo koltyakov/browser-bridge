@@ -149,6 +149,8 @@ Browser Bridge access is window-scoped. The user turns it on once for the curren
 
 The side panel can grant access to just one tab and control tab creation, user-tab closing, direct cross-domain navigation, and closing AI-created tabs when access ends. These settings take effect on new Bridge commands without reconnecting. Work already dispatched may finish. They are Bridge-command policies, not a browser-wide firewall for page scripts, link clicks, or redirects.
 
+New tabs opened from an authorized tab inherit its tab-only access within the same window. This also applies to links opened from those new tabs. Unrelated tabs remain outside the grant, and linked user tabs are not AI-owned or automatically closed when access ends. Group membership alone never grants access.
+
 `health.ping` returns `accessSettings.settings` and an opaque `accessSettings.settingsRevision`. Active sessions also receive updated settings on their next ordinary response. A denied policy operation returns `ACCESS_DENIED` with `details.reason=policy_setting_disabled`, `details.setting`, `details.settingsRevision`, the current settings, and `dispatched:false`. This is not a request to re-enable window access. Do not retry repeatedly or bypass the setting through another method.
 
 Ask the user to enable the needed setting. After their confirmation, read health again, or issue one bounded read-only wait on the same destination and extensionId:

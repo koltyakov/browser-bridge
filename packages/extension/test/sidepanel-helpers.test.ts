@@ -731,7 +731,7 @@ test('getSidepanelCurrentTabView returns unavailable, restricted, and attention 
       restricted: true,
     }),
     {
-      buttonLabel: 'Disable Window Access',
+      buttonLabel: 'Disable window access',
       buttonDisabled: false,
       buttonEnabled: true,
       attention: false,

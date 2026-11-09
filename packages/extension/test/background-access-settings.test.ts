@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createChromeFake } from '../../../tests/_helpers/chromeFake.ts';
+import { createChromeFake, type FakeChromeEvent } from '../../../tests/_helpers/chromeFake.ts';
 import { loadBackground } from '../../../tests/_helpers/loadBackground.ts';
 import { createRequest } from '../../../protocol/src/index.js';
 import { DEFAULT_ACCESS_SETTINGS, normalizeAccessSettings } from '../src/access-settings.js';
 import {
   createAccessSettingsController,
   ACCESS_SETTINGS_STORAGE_KEY,
+  INHERITED_TABS_STORAGE_KEY,
 } from '../src/background-access-settings.js';
 import { createExtensionState } from '../src/background-state.js';
 import { isGrantedTab, normalizeStoredEnabledWindow } from '../src/background-access.js';
@@ -171,6 +172,43 @@ test('tab-only access blocks other user tabs and enforces create and close setti
     true
   );
   assert.equal(isGrantedTab(state, 42, 7), true);
+  const linked = {
+    id: 45,
+    windowId: 7,
+    openerTabId: 42,
+    url: 'https://example.com/linked',
+  } as chrome.tabs.Tab;
+  tabs.set(45, linked);
+  (chromeObj.tabs.onCreated as FakeChromeEvent).dispatch(linked);
+  for (let i = 0; i < 30 && !state.inheritedTabs['45']; i++)
+    await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(isGrantedTab(state, 45, 7), true, 'links from AI-created tabs inherit access too');
+  assert.equal(
+    (
+      await loaded.dispatch(
+        createRequest({ id: 'linked-state', method: 'page.get_state', tabId: 45, params: {} })
+      )
+    ).ok,
+    true
+  );
+  assert.equal(
+    (
+      await loaded.dispatch(
+        createRequest({ id: 'close-linked-user', method: 'tabs.close', params: { tabId: 45 } })
+      )
+    ).ok,
+    false
+  );
+  linked.windowId = 8;
+  (chromeObj.tabs.onAttached as FakeChromeEvent).dispatch(45, { newWindowId: 8, newPosition: 0 });
+  for (let i = 0; i < 30 && state.inheritedTabs['45']; i++)
+    await new Promise((resolve) => setImmediate(resolve));
+  linked.windowId = 7;
+  assert.equal(
+    isGrantedTab(state, 45, 7),
+    false,
+    'moving a linked tab out and back does not restore access'
+  );
   assert.equal(
     (
       await loaded.dispatch(
@@ -188,4 +226,77 @@ test('tab-only access blocks other user tabs and enforces create and close setti
     true
   );
   assert.deepEqual(removed, [42]);
+});
+
+test('linked user tabs inherit the current grant across descendants and worker restarts without AI ownership', async () => {
+  const tabs = new Map<number, chrome.tabs.Tab>([
+    [41, { id: 41, windowId: 7 } as chrome.tabs.Tab],
+    [42, { id: 42, windowId: 7, openerTabId: 41 } as chrome.tabs.Tab],
+    [43, { id: 43, windowId: 7, openerTabId: 42 } as chrome.tabs.Tab],
+    [44, { id: 44, windowId: 7 } as chrome.tabs.Tab],
+    [45, { id: 45, windowId: 7, openerTabId: 44 } as chrome.tabs.Tab],
+    [46, { id: 46, windowId: 8, openerTabId: 41 } as chrome.tabs.Tab],
+  ]);
+  const removed: number[] = [];
+  const chromeObj = createChromeFake({
+    tabs: {
+      async get(id: number) {
+        const tab = tabs.get(id);
+        if (!tab) throw new Error('Tab closed');
+        return tab;
+      },
+      async remove(id: number) {
+        removed.push(id);
+      },
+    },
+  }) as unknown as typeof chrome;
+  const state = createExtensionState();
+  const grant = { windowId: 7, title: '', enabledAt: 100, tabId: 41 };
+  state.enabledWindow = grant;
+  const controller = createAccessSettingsController(state, chromeObj);
+  await controller.restore();
+  // Serialize rapid child creation so grandchildren can see their parent's grant.
+  await Promise.all([...tabs.values()].map((tab) => controller.inherit(tab)));
+  assert.deepEqual(Object.keys(state.inheritedTabs), ['42', '43']);
+  assert.deepEqual(state.aiCreatedTabs, {});
+  assert.equal(isGrantedTab(state, 43, 7), true);
+  assert.equal(isGrantedTab(state, 43, 8), false);
+  await controller.closeWhenDone(7);
+  assert.deepEqual(removed, [], 'auto-close must not close linked user tabs');
+  const restarted = createExtensionState();
+  restarted.enabledWindow = grant;
+  await createAccessSettingsController(restarted, chromeObj).restore();
+  assert.equal(isGrantedTab(restarted, 43, 7), true);
+  state.enabledWindow = { ...grant, enabledAt: 101 };
+  assert.equal(isGrantedTab(state, 42, 7), false);
+  state.enabledWindow = null;
+  assert.equal(isGrantedTab(state, 43, 7), false);
+  await controller.forget(42);
+  assert.equal(state.inheritedTabs['42'], undefined);
+  const stored = await chromeObj.storage.session.get(INHERITED_TABS_STORAGE_KEY);
+  assert.deepEqual(stored[INHERITED_TABS_STORAGE_KEY], state.inheritedTabs);
+});
+
+test('linked-tab inheritance rejects revoked grants, closed tabs, and moved openers during lookup', async () => {
+  const state = createExtensionState();
+  const grant = { windowId: 7, title: '', enabledAt: 100, tabId: 41 };
+  const child = { id: 42, windowId: 7, openerTabId: 41 } as chrome.tabs.Tab;
+  let change: 'revoke' | 'replace' | 'close' | 'move' = 'revoke';
+  const chromeObj = createChromeFake({
+    tabs: {
+      async get(id: number) {
+        if (change === 'revoke') state.enabledWindow = null;
+        if (change === 'replace') state.enabledWindow = { ...grant, enabledAt: 101 };
+        if (change === 'close' && id === 42) throw new Error('Tab closed');
+        return { id, windowId: change === 'move' && id === 41 ? 8 : 7 } as chrome.tabs.Tab;
+      },
+    },
+  }) as unknown as typeof chrome;
+  const controller = createAccessSettingsController(state, chromeObj);
+  for (const scenario of ['revoke', 'replace', 'close', 'move'] as const) {
+    change = scenario;
+    state.enabledWindow = grant;
+    await controller.inherit(child);
+    assert.deepEqual(state.inheritedTabs, {}, scenario);
+  }
 });

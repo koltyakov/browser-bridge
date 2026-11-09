@@ -45,7 +45,7 @@ export function getPopupViewState(currentTab: PopupCurrentTab | null): PopupView
         'This page cannot be interacted with. Switch to a normal web page to use Browser Bridge.',
       disclosureHidden: false,
       attention: false,
-      buttonLabel: 'Disable Window Access',
+      buttonLabel: 'Disable window access',
       buttonDisabled: !currentTab.url,
     };
   }
@@ -56,7 +56,7 @@ export function getPopupViewState(currentTab: PopupCurrentTab | null): PopupView
       detail: 'Your connected agent can inspect and interact with pages in this browser window.',
       disclosureHidden: true,
       attention: false,
-      buttonLabel: 'Disable Window Access',
+      buttonLabel: 'Disable window access',
       buttonDisabled: !currentTab.url,
     };
   }

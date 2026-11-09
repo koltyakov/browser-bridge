@@ -617,7 +617,7 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     assert.equal(disclosure.hidden, true, 'the idle card should not repeat the access explanation');
 
     portPair.left.dispatchMessage(createSidepanelStateSync(true));
-    assert.equal(button.textContent, 'Disable Window Access');
+    assert.equal(button.textContent, 'Disable window access');
     assert.equal(button.dataset.enabled, 'true');
     assert.equal(button.disabled, false);
 
@@ -816,7 +816,7 @@ test('access options show defaults, update settings and enable only this tab', a
     assert.ok(sync.state.currentTab);
     sync.state.currentTab.accessScope = 'tab';
     pair.left.dispatchMessage(sync);
-    assert.equal(document.getElementById('bridge-toggle')?.textContent, 'Disable Tab Access');
+    assert.equal(document.getElementById('bridge-toggle')?.textContent, 'Disable tab access');
     assert.equal(document.getElementById('agent-status')?.textContent, 'Tab access enabled');
     assert.equal(
       (document.getElementById('enable-tab-access') as HTMLButtonElement).disabled,
@@ -2147,7 +2147,7 @@ test('sidepanel UI handles setup matrix actions, context menus, diagnostics, and
 
     portPairs[0].left.dispatchMessage(createSidepanelStateSync(true, createRichSetupStatus()));
     assert.equal(button.dataset.pending, 'false');
-    assert.equal(button.textContent, 'Disable Window Access');
+    assert.equal(button.textContent, 'Disable window access');
 
     button.click();
     portPairs[0].left.dispatchMessage({

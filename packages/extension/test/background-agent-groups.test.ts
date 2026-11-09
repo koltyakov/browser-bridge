@@ -23,6 +23,8 @@ type Tab = {
   groupId: number;
   pinned: boolean;
   active: boolean;
+  openerTabId?: number;
+  url: string;
 };
 
 function harness(ids: number[] = [1, 2, 3, 4, 5]) {
@@ -33,6 +35,7 @@ function harness(ids: number[] = [1, 2, 3, 4, 5]) {
     groupId: -1,
     pinned: false,
     active: false,
+    url: `https://example.test/${id}`,
   }));
   const groups = new Map<number, chrome.tabGroups.TabGroup>();
   const storage = createStorageArea();
@@ -45,6 +48,9 @@ function harness(ids: number[] = [1, 2, 3, 4, 5]) {
   const chromeObj = {
     storage: { session: storage },
     tabs: {
+      async sendMessage() {
+        return { patches: [] };
+      },
       async query(query: chrome.tabs.QueryInfo = {}) {
         beforeQuery(query);
         return tabs
@@ -630,7 +636,7 @@ test('enabling tab-only access groups the tab before any agent request', async (
     },
   });
   Reflect.set(chromeObj, 'tabGroups', h.chromeObj.tabGroups);
-  await loadBackground({ chrome: chromeObj });
+  const loaded = await loadBackground({ chrome: chromeObj });
   const onMessage = createChromeEvent();
   const messages: Array<Record<string, unknown>> = [];
   (chromeObj.runtime.onConnect as FakeChromeEvent).dispatch({
@@ -663,6 +669,43 @@ test('enabling tab-only access groups the tab before any agent request', async (
     'blue',
     'tab activation immediately refreshes group colors'
   );
+  const groupId = h.tabs[0].groupId;
+  const child = { ...h.tabs[0], id: 83, index: 1, openerTabId: 81, active: false };
+  h.tabs[1].index = 2;
+  h.tabs.push(child);
+  (chromeObj.tabs.onCreated as FakeChromeEvent).dispatch(child);
+  (chromeObj.tabs.onUpdated as FakeChromeEvent).dispatch(83, { groupId }, child);
+  const state = loaded.module.getStateForTest() as ExtensionState;
+  for (let i = 0; i < 30; i++) await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(state.inheritedTabs['83'], {
+    windowId: 7,
+    enabledAt: state.enabledWindow!.enabledAt,
+  });
+  assert.equal(state.aiCreatedTabs['83'], undefined, 'linked user tabs are not AI-owned');
+  assert.equal(child.groupId, groupId);
+  assert.deepEqual(
+    (h.storage.snapshot()[AGENT_GROUP_STORAGE_KEY] as Array<{ tabIds: number[] }>)[0].tabIds,
+    [81, 83],
+    'automatic group expansion retains BBX ownership'
+  );
+  const childState = await (
+    loaded.module.getTabState as (tabId: number) => Promise<{ enabled: boolean }>
+  )(83);
+  assert.equal(childState.enabled, true, 'the side panel reports inherited access');
+  const list = await loaded.dispatch(
+    createRequest({ id: 'inherited-list', method: 'tabs.list', params: {} })
+  );
+  assert.equal(list.ok, true);
+  assert.deepEqual(
+    (list.result as { tabs: Array<{ tabId: number }> }).tabs.map((tab) => tab.tabId).sort(),
+    [81, 83]
+  );
+  const disable = loaded.module.disableWindowAccess as (
+    windowId: number,
+    enabledAt: number
+  ) => Promise<void>;
+  await disable(7, state.enabledWindow!.enabledAt);
+  assert.equal(h.groups.size, 0, 'revocation cleans up the expanded group');
 });
 
 test('background routes real agent requests into adjacent AI groups, ignores pings, and cleans up access', async () => {

@@ -2,9 +2,11 @@ import { getAccessSettingsSnapshot, normalizeAccessSettings } from './access-set
 import type { ExtensionState } from './background-state.js';
 import { isUnavailableDocumentError, normalizeRuntimeErrorMessage } from './background-helpers.js';
 import { BridgeError, ERROR_CODES } from '../../../protocol/src/index.js';
+import { isGrantedTab, sameWindowGrant, type EnabledWindowState } from './background-access.js';
 
 export const ACCESS_SETTINGS_STORAGE_KEY = 'accessSettings';
 export const AI_TABS_STORAGE_KEY = 'aiCreatedTabs';
+export const INHERITED_TABS_STORAGE_KEY = 'inheritedTabs';
 export const ACCESS_SETTINGS_REVISION_KEY = 'accessSettingsRevision';
 
 /** Only tabs created through tabs.create are AI-owned, never merely inspected tabs. */
@@ -30,26 +32,31 @@ export function createAccessSettingsController(
     async restore(): Promise<void> {
       const [local, session] = await Promise.all([
         chrome.storage.local.get([ACCESS_SETTINGS_STORAGE_KEY, ACCESS_SETTINGS_REVISION_KEY]),
-        chrome.storage.session.get(AI_TABS_STORAGE_KEY),
+        chrome.storage.session.get([AI_TABS_STORAGE_KEY, INHERITED_TABS_STORAGE_KEY]),
       ]);
       state.accessSettings = normalizeAccessSettings(local[ACCESS_SETTINGS_STORAGE_KEY]);
       const revision: unknown = local[ACCESS_SETTINGS_REVISION_KEY];
       if (typeof revision === 'string' && revision.length > 0 && revision.length <= 128)
         state.accessSettingsRevision = revision;
       committed = getAccessSettingsSnapshot(state);
-      const stored: unknown = session[AI_TABS_STORAGE_KEY];
-      if (!stored || typeof stored !== 'object') return;
-      for (const [id, value] of Object.entries(stored)) {
-        if (
-          !Number.isSafeInteger(Number(id)) ||
-          Number(id) <= 0 ||
-          !value ||
-          typeof value !== 'object'
-        )
-          continue;
-        const tab = value as Record<string, unknown>;
-        if (typeof tab.windowId === 'number' && typeof tab.enabledAt === 'number') {
-          state.aiCreatedTabs[id] = { windowId: tab.windowId, enabledAt: tab.enabledAt };
+      for (const [key, target] of [
+        [AI_TABS_STORAGE_KEY, state.aiCreatedTabs],
+        [INHERITED_TABS_STORAGE_KEY, state.inheritedTabs],
+      ] as const) {
+        const stored: unknown = session[key];
+        if (!stored || typeof stored !== 'object') continue;
+        for (const [id, value] of Object.entries(stored)) {
+          if (
+            !Number.isSafeInteger(Number(id)) ||
+            Number(id) <= 0 ||
+            !value ||
+            typeof value !== 'object'
+          )
+            continue;
+          const tab = value as Record<string, unknown>;
+          if (typeof tab.windowId === 'number' && typeof tab.enabledAt === 'number') {
+            target[id] = { windowId: tab.windowId, enabledAt: tab.enabledAt };
+          }
         }
       }
     },
@@ -135,10 +142,50 @@ export function createAccessSettingsController(
         await chrome.storage.session.set({ [AI_TABS_STORAGE_KEY]: { ...state.aiCreatedTabs } });
       });
     },
+    /** Linked user tabs inherit authorization, not AI ownership or auto-close permission. */
+    inherit(
+      tab: chrome.tabs.Tab,
+      grant: EnabledWindowState | null = state.enabledWindow ? { ...state.enabledWindow } : null
+    ): Promise<void> {
+      return enqueue(async () => {
+        if (
+          !grant ||
+          grant.tabId === undefined ||
+          tab.id === undefined ||
+          tab.openerTabId === undefined ||
+          tab.windowId !== grant.windowId ||
+          !sameWindowGrant(grant, state.enabledWindow) ||
+          !isGrantedTab(state, tab.openerTabId, tab.windowId)
+        )
+          return;
+        const [current, opener] = await Promise.all([
+          chrome.tabs.get(tab.id).catch(() => null),
+          chrome.tabs.get(tab.openerTabId).catch(() => null),
+        ]);
+        if (
+          current?.windowId !== grant.windowId ||
+          opener?.windowId !== grant.windowId ||
+          !sameWindowGrant(grant, state.enabledWindow) ||
+          !isGrantedTab(state, tab.openerTabId, grant.windowId)
+        )
+          return;
+        state.inheritedTabs[String(tab.id)] = {
+          windowId: grant.windowId,
+          enabledAt: grant.enabledAt,
+        };
+        await chrome.storage.session.set({
+          [INHERITED_TABS_STORAGE_KEY]: { ...state.inheritedTabs },
+        });
+      });
+    },
     forget(tabId: number): Promise<void> {
       return enqueue(async () => {
         delete state.aiCreatedTabs[String(tabId)];
-        await chrome.storage.session.set({ [AI_TABS_STORAGE_KEY]: { ...state.aiCreatedTabs } });
+        delete state.inheritedTabs[String(tabId)];
+        await chrome.storage.session.set({
+          [AI_TABS_STORAGE_KEY]: { ...state.aiCreatedTabs },
+          [INHERITED_TABS_STORAGE_KEY]: { ...state.inheritedTabs },
+        });
       });
     },
     async closeWhenDone(windowId: number): Promise<void> {

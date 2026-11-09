@@ -612,7 +612,7 @@ export function getSidepanelCurrentTabView(
   if (currentTab.restricted && currentTab.enabled) {
     return {
       buttonLabel:
-        currentTab.accessScope === 'tab' ? 'Disable Tab Access' : 'Disable Window Access',
+        currentTab.accessScope === 'tab' ? 'Disable tab access' : 'Disable window access',
       buttonDisabled: false,
       buttonEnabled: true,
       attention: false,
@@ -624,8 +624,8 @@ export function getSidepanelCurrentTabView(
   return {
     buttonLabel: currentTab.enabled
       ? currentTab.accessScope === 'tab'
-        ? 'Disable Tab Access'
-        : 'Disable Window Access'
+        ? 'Disable tab access'
+        : 'Disable window access'
       : 'Enable window access',
     buttonDisabled: !currentTab.url,
     buttonEnabled: currentTab.enabled,

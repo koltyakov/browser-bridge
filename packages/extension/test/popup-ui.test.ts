@@ -112,7 +112,7 @@ test('popup UI flips the action label and styling state between enable and disab
     assert.equal(button.disabled, false);
 
     portPair.left.dispatchMessage(createPopupStateSync(true));
-    assert.equal(button.textContent, 'Disable Window Access');
+    assert.equal(button.textContent, 'Disable window access');
     assert.equal(button.dataset.enabled, 'true');
     assert.equal(button.disabled, false);
 

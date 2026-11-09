@@ -114,6 +114,7 @@ export type ExtensionState = {
   accessSettings: import('./access-settings.js').AccessSettings;
   accessSettingsRevision: string;
   aiCreatedTabs: Record<string, { windowId: number; enabledAt: number }>;
+  inheritedTabs: Record<string, { windowId: number; enabledAt: number }>;
   otherEnabledWindows?: import('../../../protocol/src/window-access.js').BrowserWindowAccess[];
   requestedAccessWindowId: number | null;
   requestedAccessContext?: AccessRequestContext | null;
@@ -184,6 +185,7 @@ export function createExtensionState(): ExtensionState {
     accessSettings: { ...DEFAULT_ACCESS_SETTINGS },
     accessSettingsRevision: crypto.randomUUID(),
     aiCreatedTabs: {},
+    inheritedTabs: {},
     otherEnabledWindows: [],
     requestedAccessWindowId: null,
     requestedAccessContext: null,

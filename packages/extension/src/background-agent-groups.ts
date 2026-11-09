@@ -150,7 +150,7 @@ Recheck ownership because the user may edit groups while a sync is pending. */
       if (clearedWindows.has(record.windowId)) await release(record);
     }
     for (const windowId of clearedWindows) windowsToClear.delete(windowId);
-    const activity = await deps.getActivity();
+    let activity = await deps.getActivity();
     const allTabs = (await chromeObj.tabs.query({})).sort(
       (left, right) => left.windowId - right.windowId || left.index - right.index
     );
@@ -164,6 +164,43 @@ Recheck ownership because the user may edit groups while a sync is pending. */
         owned.delete(record.groupId);
         await persist();
         continue;
+      }
+      // Chrome puts linked tabs in their opener's group automatically. Keep
+      // ownership only when every added member is an authorized descendant.
+      const added = members.filter((tab) => !record.tabIds.includes(tab.id ?? -1));
+      if (
+        added.length &&
+        isUnchanged(
+          record,
+          group,
+          members.filter((tab) => record.tabIds.includes(tab.id ?? -1))
+        )
+      ) {
+        const latest = await deps.getActivity();
+        activity = latest;
+        const known = new Set(record.tabIds);
+        let progress = true;
+        while (progress) {
+          progress = false;
+          for (const tab of added) {
+            if (
+              tab.id !== undefined &&
+              !known.has(tab.id) &&
+              tab.windowId === record.windowId &&
+              latest.windowId === record.windowId &&
+              latest.tabIds.has(tab.id) &&
+              tab.openerTabId !== undefined &&
+              known.has(tab.openerTabId)
+            ) {
+              known.add(tab.id);
+              progress = true;
+            }
+          }
+        }
+        if (added.every((tab) => tab.id !== undefined && known.has(tab.id))) {
+          record.tabIds = [...known];
+          await persist();
+        }
       }
       if (!isUnchanged(record, group, members)) {
         // A renamed, recolored, shared, moved, or expanded-by-user group is

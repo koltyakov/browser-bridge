@@ -190,13 +190,21 @@ const agentTabs = createAgentTabLeaseStore({
   storage: chrome.storage?.session ?? null,
 });
 const reportedSettingsRevisions = new Map<string, string>();
+let pendingTabAccess: Promise<void> = Promise.resolve();
 const agentGroups = createAgentTabGroupController(chrome, {
   async getActivity() {
+    await pendingTabAccess;
     const windowId = state.enabledWindow?.windowId ?? null;
     const tabs = await agentTabs.listRecentTabs();
+    const inherited = Object.keys(state.inheritedTabs)
+      .map(Number)
+      .filter((tabId) => windowId !== null && isGrantedTab(state, tabId, windowId));
     return {
       windowId,
-      tabIds: new Set(tabs.filter((tab) => tab.windowId === windowId).map((tab) => tab.tabId)),
+      tabIds: new Set([
+        ...tabs.filter((tab) => tab.windowId === windowId).map((tab) => tab.tabId),
+        ...inherited,
+      ]),
     };
   },
 });
@@ -479,7 +487,7 @@ const clearWindowBridgeState = async (
     grant?.tabId !== undefined
       ? new Set([
           grant.tabId,
-          ...Object.entries(state.aiCreatedTabs)
+          ...Object.entries({ ...state.aiCreatedTabs, ...state.inheritedTabs })
             .filter(
               ([, owner]) => owner.windowId === windowId && owner.enabledAt === grant.enabledAt
             )
@@ -998,9 +1006,13 @@ const tabBoundRequestDependencies: Parameters<typeof executeTabBoundRequest>[1] 
   frames: { listFrames, getFrameForRef, sendFrameMessage },
 };
 
+let accessStateReady = false;
 const accessStateInitialization = accessSettingsInitialization
   .then(restoreEnabledWindow)
-  .catch(reportAsyncError);
+  .catch(reportAsyncError)
+  .then(() => {
+    accessStateReady = true;
+  });
 void initializeState().catch(reportAsyncError);
 connectNative();
 if (DEVELOPMENT_AUTO_RELOAD) {
@@ -1035,6 +1047,30 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
   }
 });
 
+chrome.tabs.onCreated.addListener((tab) => {
+  const captureGrant = () => (state.enabledWindow ? { ...state.enabledWindow } : null);
+  const grant = accessStateReady
+    ? Promise.resolve(captureGrant())
+    : accessStateInitialization.then(captureGrant);
+  pendingTabAccess = pendingTabAccess
+    .then(() => grant)
+    .then((captured) => accessSettings.inherit(tab, captured))
+    .catch(reportAsyncError);
+  void pendingTabAccess
+    .then(async () => {
+      if (tab.id === undefined || !isGrantedTab(state, tab.id, tab.windowId)) return;
+      await agentGroups.sync();
+      await Promise.allSettled([
+        ensureContentScript(tab.id),
+        primeTabConsoleCapture(tab.id, chrome),
+      ]);
+      await updateActionIndicatorForTab(tab.id);
+      await syncGlobalBadgeToActiveTab();
+      await emitUiState();
+    })
+    .catch(reportAsyncError);
+});
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (typeof changeInfo.groupId === 'number' || typeof changeInfo.pinned === 'boolean') {
     void agentGroups.sync().catch(reportAsyncError);
@@ -1063,7 +1099,11 @@ chrome.tabs.onMoved?.addListener(() => {
 
 chrome.tabs.onAttached?.addListener((tabId, attachInfo) => {
   const owner = state.aiCreatedTabs[String(tabId)];
-  if (owner && owner.windowId !== attachInfo.newWindowId)
+  const inherited = state.inheritedTabs[String(tabId)];
+  if (
+    (owner && owner.windowId !== attachInfo.newWindowId) ||
+    (inherited && inherited.windowId !== attachInfo.newWindowId)
+  )
     void accessSettings.forget(tabId).catch(reportAsyncError);
   navigationWaits.handleTabMoved(tabId, attachInfo.newWindowId);
   void agentTabs
@@ -1074,7 +1114,8 @@ chrome.tabs.onAttached?.addListener((tabId, attachInfo) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-  if (state.aiCreatedTabs[String(tabId)]) void accessSettings.forget(tabId).catch(reportAsyncError);
+  if (state.aiCreatedTabs[String(tabId)] || state.inheritedTabs[String(tabId)])
+    void accessSettings.forget(tabId).catch(reportAsyncError);
   mutationGate.invalidate(tabId);
   void webmcp.clearTab(tabId).catch(reportAsyncError);
   domBaselines.clearTab(tabId);

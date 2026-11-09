@@ -41,6 +41,7 @@ export function isGrantedTab(
   state: {
     enabledWindow: { windowId: number; enabledAt?: number; tabId?: number } | null;
     aiCreatedTabs?: Record<string, { windowId: number; enabledAt: number }>;
+    inheritedTabs?: Record<string, { windowId: number; enabledAt: number }>;
   },
   tabId: number,
   windowId: number
@@ -48,8 +49,9 @@ export function isGrantedTab(
   const grant = state.enabledWindow;
   if (!grant || grant.windowId !== windowId) return false;
   if (grant.tabId === undefined || grant.tabId === tabId) return true;
-  const owner = state.aiCreatedTabs?.[String(tabId)];
-  return owner?.windowId === windowId && owner.enabledAt === grant.enabledAt;
+  return [state.aiCreatedTabs?.[String(tabId)], state.inheritedTabs?.[String(tabId)]].some(
+    (owner) => owner?.windowId === windowId && owner.enabledAt === grant.enabledAt
+  );
 }
 
 export type EnabledWindowContainer = { enabledWindow: EnabledWindowState | null };

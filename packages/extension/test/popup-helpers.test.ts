@@ -73,7 +73,7 @@ test('getPopupViewState highlights restricted enabled pages', () => {
         'This page cannot be interacted with. Switch to a normal web page to use Browser Bridge.',
       disclosureHidden: false,
       attention: false,
-      buttonLabel: 'Disable Window Access',
+      buttonLabel: 'Disable window access',
       buttonDisabled: false,
     }
   );
