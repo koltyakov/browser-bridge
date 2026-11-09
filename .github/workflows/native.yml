@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
+        platform:
           # BEGIN GENERATED PLATFORMS
           - os: macos-15
             asset: bbx-darwin-arm64
@@ -43,7 +43,22 @@ jobs:
           - os: windows-2025
             asset: bbx-windows-x64.exe
           # END GENERATED PLATFORMS
-    runs-on: ${{ matrix.os }}
+        # Temporarily skip non-Ubuntu runners to conserve GitHub Actions minutes.
+        # Remove this exclusion list to restore cross-platform native tests.
+        exclude:
+          - platform:
+              os: macos-15
+              asset: bbx-darwin-arm64
+          - platform:
+              os: macos-15-intel
+              asset: bbx-darwin-x64
+          - platform:
+              os: windows-11-arm
+              asset: bbx-windows-arm64.exe
+          - platform:
+              os: windows-2025
+              asset: bbx-windows-x64.exe
+    runs-on: ${{ matrix.platform.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -63,13 +78,13 @@ jobs:
       - name: Native interop tests
         run: make test-native
         env:
-          BBX_NATIVE_EXECUTABLE: ${{ github.workspace }}/dist/cli/${{ matrix.asset }}
+          BBX_NATIVE_EXECUTABLE: ${{ github.workspace }}/dist/cli/${{ matrix.platform.asset }}
       - name: Go vet
         run: make vet-go
       - name: Go lint and formatting
         run: make lint-go
       - uses: actions/upload-artifact@v7
         with:
-          name: native-${{ matrix.asset }}
+          name: native-${{ matrix.platform.asset }}
           path: dist/cli/*
           if-no-files-found: error

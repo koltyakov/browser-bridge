@@ -25,7 +25,8 @@ export async function createZipArchive(sourceDir, targetZipPath) {
       'Add-Type -AssemblyName System.IO.Compression.FileSystem',
       `$source = ${powerShellLiteral(path.resolve(sourceDir))}`,
       `$zip = [System.IO.Compression.ZipFile]::Open(${powerShellLiteral(path.resolve(targetZipPath))}, [System.IO.Compression.ZipArchiveMode]::Create)`,
-      'try { Get-ChildItem -LiteralPath $source -Recurse -File -Force | ForEach-Object { $entry = $_.FullName.Substring($source.Length).TrimStart([char]92).Replace([char]92, [char]47); [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $entry, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null } } finally { $zip.Dispose() }',
+      // Relative names do not depend on PowerShell preserving DOS short-path aliases.
+      'try { Get-ChildItem -LiteralPath $source -Recurse -File -Force -Name | ForEach-Object { $entry = $_.Replace([char]92, [char]47); $file = Join-Path -Path $source -ChildPath $_; [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file, $entry, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null } } finally { $zip.Dispose() }',
     ].join('; ');
     await execFileAsync('powershell.exe', ['-NoLogo', '-NoProfile', '-Command', command]);
     return;

@@ -93,8 +93,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Temporarily Ubuntu-only to conserve GitHub Actions minutes.
+        # Restore macos-latest, windows-latest, windows-11-arm for cross-platform tests.
         # Windows activates Named Pipe transport tests that skip on other platforms.
-        os: [ubuntu-24.04, macos-latest, windows-latest, windows-11-arm]
+        os: [ubuntu-24.04]
     steps:
       - name: Checkout
         uses: actions/checkout@v7

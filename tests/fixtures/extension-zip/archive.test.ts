@@ -12,7 +12,7 @@ const exec = promisify(execFile);
 async function fixture(t: TestContext) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "bbx-zip-'quoted-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
-  const source = path.join(directory, 'source');
+  const source = path.join(directory, 'source with long directory name');
   const archive = path.join(directory, "extension's archive.zip");
   await fs.mkdir(path.join(source, 'src'), { recursive: true });
   await fs.writeFile(path.join(source, 'manifest.json'), '{"version":"2.1.0"}');
@@ -47,6 +47,32 @@ test('extension ZIP round-trips nested portable entries and replaces stale archi
   await createZipArchive(source, archive);
   await assert.rejects(readZipEntry(archive, 'manifest.json'));
 });
+
+test(
+  'Windows ZIP writer preserves entry names when the source uses a DOS short-path alias',
+  { skip: process.platform !== 'win32' },
+  async (t) => {
+    const { source, archive } = await fixture(t);
+    const escaped = source.replace(/'/g, "''");
+    const { stdout } = await exec('powershell.exe', [
+      '-NoProfile',
+      '-Command',
+      `$ErrorActionPreference = 'Stop'; (New-Object -ComObject Scripting.FileSystemObject).GetFolder('${escaped}').ShortPath`,
+    ]);
+    const shortSource = stdout.trim();
+    assert(shortSource.length > 0);
+    if (shortSource === source) {
+      t.skip('DOS short-path aliases are not enabled on this volume');
+      return;
+    }
+    await createZipArchive(shortSource, archive);
+    assert.equal((await readZipEntry(archive, 'manifest.json')).trimEnd(), '{"version":"2.1.0"}');
+    assert.equal(
+      (await readZipEntry(archive, 'src/build-info.js')).trimEnd(),
+      'export const DEVELOPMENT_AUTO_RELOAD = false;'
+    );
+  }
+);
 
 test(
   'Windows ZIP reader accepts legacy backslash entries and rejects missing or ambiguous entries',
