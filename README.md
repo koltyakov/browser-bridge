@@ -8,6 +8,8 @@ A local bridge between your coding agent and a real Chrome tab. Browser Bridge g
 
 See [Quickstart](https://github.com/koltyakov/browser-bridge/blob/main/docs/quickstart.md) to get started in another repo, or browse the rest of the guides in [docs/index.md](https://github.com/koltyakov/browser-bridge/blob/main/docs/index.md).
 
+Upgrading an existing installation? Follow the [v1 to v2 migration guide](https://github.com/koltyakov/browser-bridge/blob/main/docs/migration-v1-to-v2.md) to update the extension, replace the Node.js runtime, and refresh agent setup.
+
 ## Supported Agents
 
 Managed installs support Codex (OpenAI), Claude Code, OpenCode, GitHub Copilot, Cursor, Devin Desktop (formerly Windsurf), Antigravity, Gemini CLI, Cline, Zed, Amp, Factory Droid, Pi, Kilo Code, Qwen Code, Goose, OpenHands, Muse Code, Grok Build, and generic `.agents` layouts for MCP and CLI skills. Devin Desktop keeps the `windsurf` setup target for compatibility. Cline, Goose, OpenHands, and Muse MCP setup is user-scope only; their CLI skills also support projects. Zed support targets its native agent; external agents keep their own configuration.
@@ -172,6 +174,7 @@ The npm package is a bootstrap and launcher with zero runtime npm dependencies. 
 ## Documentation
 
 - [Quickstart](https://github.com/koltyakov/browser-bridge/blob/main/docs/quickstart.md)
+- [Migrate from v1 to v2](https://github.com/koltyakov/browser-bridge/blob/main/docs/migration-v1-to-v2.md)
 - [Usage scenarios](https://github.com/koltyakov/browser-bridge/blob/main/docs/usage-scenarios.md)
 - [Manual setup](https://github.com/koltyakov/browser-bridge/blob/main/docs/manual-setup.md)
 - [Agent permissions](https://github.com/koltyakov/browser-bridge/blob/main/docs/agent-permissions.md)

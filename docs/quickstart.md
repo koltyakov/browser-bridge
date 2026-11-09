@@ -2,6 +2,8 @@
 
 Browser Bridge lets your coding agent inspect and patch the real Chrome or Chromium-based browser tab you already have open - DOM, styles, console, network, and more - without screenshots or raw HTML dumps.
 
+Already using v1? Follow the [v1 to v2 migration guide](./migration-v1-to-v2.md) before updating your runtime and agent configuration.
+
 > **Requires:** Google Chrome and Browser Bridge on your computer. Install through npm with Node.js 20 or later, or use a standalone binary without Node.js. Remote-only agents need an explicitly configured remote connection.
 >
 > **Privacy:** The extension and native host communicate on the browser machine, and local clients are the default. Explicitly configured authenticated remote destinations can carry results over your own tunnel or network route. Your chosen agent or IDE may also forward tool results under its own policy. See [`PRIVACY.md`](../PRIVACY.md).
@@ -32,7 +34,7 @@ Update an npm-managed installation with:
 npm install -g @browserbridge/bbx@latest
 ```
 
-Each npm version pins its own native release assets. Upgrade with `npm install -g @browserbridge/bbx@<version>` or `npm install -g @browserbridge/bbx@latest`. `bbx update status` identifies npm-managed installations. The separate native signed updater does not override npm's version selection.
+The npm package selects a native release independently of its own version. Set `BBX_VERSION` during installation to match your extension's release line or select an exact native version. `bbx update status` identifies npm-managed installations. The separate native signed updater does not override npm's version selection.
 
 If the extension does not connect itself during setup, run:
 

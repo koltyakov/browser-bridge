@@ -59,6 +59,8 @@ error text, or internal method/tab groups.
 
 ## The MCP server fails to start after upgrading to v2
 
+For the full upgrade sequence, see [Migrate from v1 to v2](./migration-v1-to-v2.md).
+
 - `bbx install`, which npm runs after a global upgrade, rewrites global MCP entries that still launch a removed v1 entrypoint such as `packages/mcp-server/src/bin.js` (written by v1 on Windows). It keeps the entry's environment and client-specific settings.
 - `bbx doctor` warns about any other entry that launches a missing file. Rewrite it with `bbx install-mcp <client>`, then restart the client.
 - Project-local configs are not scanned during upgrade; run `bbx install-mcp <client> --local` in that repository.

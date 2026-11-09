@@ -7,6 +7,7 @@ This index keeps those paths separate.
 ## Start here
 
 - [Quickstart](./quickstart.md): fastest path from install to first working tab
+- [Migrate from v1 to v2](./migration-v1-to-v2.md): replace the Node runtime, refresh agent setup, and update scripts
 - [MCP vs CLI](./mcp-vs-cli.md): which integration path to choose
 - [Agent permissions](./agent-permissions.md): allow BBX once instead of approving every tool or command
 - [Manual setup](./manual-setup.md): exact config locations, project-local installs, and custom-agent setup

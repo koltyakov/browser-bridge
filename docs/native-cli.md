@@ -2,6 +2,8 @@
 
 Browser Bridge runs its CLI, native messaging host, daemon, MCP server, browser registration, and agent setup in one Go executable. The npm package downloads and launches that executable with zero runtime npm dependencies.
 
+For an existing Node.js installation, follow the [v1 to v2 migration guide](./migration-v1-to-v2.md), including agent configuration repair and CLI output changes.
+
 ## Install through npm
 
 Install the [Chrome extension](https://chromewebstore.google.com/detail/browser-bridge/jjjkmmcdkpcgamlopogicbnnhdgebhie), then use Node.js 20 or later:
