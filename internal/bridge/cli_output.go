@@ -459,6 +459,9 @@ func cliRawFailure(response object) object {
 // than the current one, and, for implicitly routed calls, the tab that ran.
 func cliNotableMeta(meta object, routed bool) object {
 	kept := object{}
+	if snapshot := normalizeAccessSettingsSnapshot(meta.object("access_settings")); snapshot != nil {
+		kept["access_settings"] = value(snapshot)
+	}
 	for _, key := range []string{"protocol_warning", "continuation_hint"} {
 		if cliPresent(meta[key]) {
 			kept[key] = meta[key]

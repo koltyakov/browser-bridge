@@ -22,7 +22,7 @@ This selects the highest published stable `2.0.x` patch. An exact native version
 
 A global npm install initializes browser registration. A local dependency install downloads the binary without registering a browser. If install scripts were skipped, the launcher fetches the binary on first use; run `bbx install` to register it. Source checkouts skip the npm bootstrap so development does not download a published runtime.
 
-If the extension does not connect, run `bbx install`, or `bbx install --browser chrome` for Google Chrome on Linux. Choose your agent under **Connect agent** in the extension, then enable window access. See the [quickstart](./quickstart.md).
+If the extension does not connect, run `bbx install`, or `bbx install --browser chrome` for Google Chrome on Linux. Choose your agent under **Connect agent** in the extension, then Enable window access. See the [quickstart](./quickstart.md).
 
 On macOS and Linux, postinstall replaces npm-owned command symlinks with shell launchers. Each invocation verifies the cached executable against the selected release's SHA-256 using `/usr/bin/openssl`, then replaces the shell process with Go. The launchers preserve npm installation ownership and all four command aliases. They keep the executable outside `node_modules` and leave the original JavaScript entrypoints intact.
 

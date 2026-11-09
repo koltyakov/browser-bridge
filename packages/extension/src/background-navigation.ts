@@ -19,6 +19,7 @@ export type ResolvedTabTarget = {
 
 export type HandleNavigationRequestDependencies = {
   captureAccess?: () => () => void;
+  assertNavigationAllowed?: (target: ResolvedTabTarget, url: string) => void;
   resolveRequestTarget: (
     request: BridgeRequest,
     options?: { requireScriptable?: boolean }
@@ -52,6 +53,7 @@ export async function handleNavigationRequest(
     if (!action.url) {
       throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'Missing required url for navigation');
     }
+    dependencies.assertNavigationAllowed?.(target, action.url);
     await dependencies.updateTab(target.tabId, { url: action.url });
   } else if (request.method === 'navigation.reload') {
     await dependencies.reloadTab(target.tabId);

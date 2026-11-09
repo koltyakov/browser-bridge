@@ -7,12 +7,17 @@ import {
   paginateTabList,
 } from '../../../protocol/src/index.js';
 import { safeOrigin, summarizeTabResult } from './background-helpers.js';
+import { isGrantedTab } from './background-access.js';
+import { getAccessPolicyDenial } from './access-settings.js';
 
 export type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
 export type BridgeResponse = import('../../../protocol/src/types.js').BridgeResponse;
 
 export type BackgroundTabState = {
-  enabledWindow: { windowId: number } | null;
+  enabledWindow: { windowId: number; enabledAt?: number; tabId?: number } | null;
+  aiCreatedTabs?: Record<string, { windowId: number; enabledAt: number }>;
+  accessSettings?: import('./access-settings.js').AccessSettings;
+  accessSettingsRevision?: string;
   workingTabId?: number | null;
 };
 
@@ -49,6 +54,7 @@ export async function handleListTabs(
     windowId: state.enabledWindow.windowId,
   });
   const summarized = tabs
+    .filter((tab) => tab.id !== undefined && isGrantedTab(state, tab.id, tab.windowId))
     .map((tab) => {
       if (typeof tab.id !== 'number' || !Number.isFinite(tab.id) || typeof tab.url !== 'string') {
         return null;
@@ -87,6 +93,15 @@ export async function handleCreateTab(
       {
         method: request.method,
       }
+    );
+  }
+  if (state.accessSettings?.allowCreatingTabs === false) {
+    return createFailure(
+      request.id,
+      ERROR_CODES.ACCESS_DENIED,
+      'Creating new tabs is disabled in access settings.',
+      getAccessPolicyDenial(state, 'allowCreatingTabs'),
+      { method: request.method }
     );
   }
   const params = normalizeTabCreateParams(request.params);

@@ -199,13 +199,15 @@ export function sendActivityUpdate(port?: chrome.runtime.Port | null): void {
 export function sendAccessUpdate(
   enabled: boolean,
   nativePort: chrome.runtime.Port | null,
-  enabledWindow?: import('../../../protocol/src/window-access.js').EnabledWindowInfo | null
+  enabledWindow?: import('../../../protocol/src/window-access.js').EnabledWindowInfo | null,
+  accessSettings?: import('../../../protocol/src/types.js').AccessSettingsSnapshot
 ): void {
   if (!nativePort) return;
   try {
     nativePort.postMessage({
       type: 'host.access_update',
       accessEnabled: enabled,
+      ...(accessSettings ? { accessSettings } : {}),
       ...(enabledWindow !== undefined ? { enabledWindow: enabled ? enabledWindow : null } : {}),
     });
   } catch {
@@ -578,7 +580,10 @@ when it has recovered without requiring another connect/disconnect event. */
         sendIdentity(candidatePort, chromeObj);
         sendActivityUpdate(candidatePort);
         if (state.enabledWindow) {
-          sendAccessUpdate(true, candidatePort, state.enabledWindow);
+          sendAccessUpdate(true, candidatePort, state.enabledWindow, {
+            settings: state.accessSettings,
+            settingsRevision: state.accessSettingsRevision,
+          });
         }
         if (wasReconnect && reconnectAttempts > 0) {
           settleReconnect('success');

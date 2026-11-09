@@ -155,6 +155,8 @@ const BRIDGE_METHOD_DESCRIPTIONS: Readonly<Record<import('./types.js').BridgeMet
       'Execute one WebMCP tool after extension-owned user approval of exact arguments. Never automatically retry or replay through DOM fallback.',
     'access.request':
       'Request Browser Bridge access for the focused window. Do not repeat while access is already pending.',
+    'access.wait_for_change':
+      'Read-only wait for a user access-setting revision change. Pass revision from health.ping accessSettings or a policy denial and timeoutMs=0..25000, default 25000. Returns changed plus current settings and settingsRevision. Never grants access or replays an action. Use the same extensionId.',
     'protocol.describe':
       'Describe bridge method parameters and metadata by method or registry group.',
     'tabs.list':
@@ -294,6 +296,19 @@ export const BRIDGE_METHOD_REGISTRY: Readonly<
 > = Object.freeze({
   // system - trivial
   'access.request': createRegistryEntry('access.request', 'system', false, ['intent'], 'trivial'),
+  'access.wait_for_change': createRegistryEntry(
+    'access.wait_for_change',
+    'system',
+    false,
+    ['revision', 'timeoutMs'],
+    'trivial',
+    METHOD_POLICIES.none,
+    {
+      paramsType: 'AccessWaitForChangeParams',
+      required: ['revision'],
+      example: { revision: 'revision-from-health-or-error', timeoutMs: 25000 },
+    }
+  ),
   'protocol.describe': createRegistryEntry(
     'protocol.describe',
     'system',
@@ -1300,6 +1315,7 @@ const BATCH_SAFE_METHODS = new Set([
   'webmcp.list_tools',
   'webmcp.get_tool',
   'health.ping',
+  'access.wait_for_change',
   'daemon.metrics',
   'tabs.list',
   'skill.get_runtime_context',

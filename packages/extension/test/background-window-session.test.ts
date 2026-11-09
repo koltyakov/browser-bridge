@@ -68,6 +68,46 @@ function createUpdateHarness() {
   return { chromeObj, windows, updates, injected, deps, startWorker, ...startWorker() };
 }
 
+test('tab-only grants instrument and enable only the selected tab and survive worker restore', async () => {
+  const { chromeObj, controller, state, deps, injected, startWorker } = createUpdateHarness();
+  const primed: number[] = [];
+  const scripts: number[] = [];
+  chromeObj.tabs.get = async (id) =>
+    ({ id, windowId: 7, url: 'https://example.com/', title: 'Example' }) as chrome.tabs.Tab;
+  chromeObj.tabs.query = async () =>
+    [41, 43].map((id) => ({ id, windowId: 7, url: 'https://example.com/' }) as chrome.tabs.Tab);
+  deps.ensureContentScript = async (id) => {
+    scripts.push(id);
+  };
+  deps.primeTabConsoleCapture = async (id) => {
+    primed.push(id);
+  };
+  await controller.setWindowEnabled(7, 'Example', true, {
+    tabId: 41,
+    url: 'https://example.com/',
+    scope: 'tab',
+  });
+  assert.equal(state.enabledWindow?.tabId, 41);
+  assert.equal((await controller.getTabState(41))?.enabled, true);
+  assert.equal((await controller.getTabState(43))?.enabled, false);
+  assert.deepEqual(injected, []);
+  assert.deepEqual(primed, [41]);
+  assert.deepEqual(scripts, [41]);
+  const restarted = startWorker();
+  await restarted.controller.restoreEnabledWindow();
+  assert.deepEqual(restarted.state.enabledWindow, state.enabledWindow);
+  await restarted.controller.primeEnabledWindowInstrumentation();
+  assert.deepEqual(primed, [41, 41]);
+  let cleaned = 0;
+  deps.clearWindowBridgeState = async (_windowId, grant) => {
+    cleaned++;
+    assert.equal(grant?.tabId, 41);
+  };
+  await restarted.controller.handleTabRemoved(41, { windowId: 7, isWindowClosing: false });
+  assert.equal(restarted.state.enabledWindow, null);
+  assert.equal(cleaned, 1);
+});
+
 test('cleanup failures finish revocation and never grant access to a replacement window', async () => {
   for (const mode of ['disable', 'switch', 'startup', 'closed'] as const) {
     const { chromeObj, controller, state, deps, updates, windows, injected } =

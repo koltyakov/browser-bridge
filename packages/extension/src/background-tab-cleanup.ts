@@ -51,7 +51,7 @@ export function createTabCleanupController(
   deps: TabCleanupControllerDeps
 ): {
   clearTabBridgeState: (tabId: number, shouldContinue?: () => Promise<boolean>) => Promise<void>;
-  clearWindowBridgeState: (windowId: number) => Promise<void>;
+  clearWindowBridgeState: (windowId: number, tabIds?: ReadonlySet<number>) => Promise<void>;
   clearRemovedTabState: (tabId: number) => Promise<void>;
   rollbackAllPatchesForTab: (tabId: number) => Promise<void>;
 } {
@@ -186,7 +186,9 @@ export function createTabCleanupController(
       try {
         await deps.commitDebuggerCleanup(tabId);
       } catch (error) {
-        instrumentationErrors.push(error);
+        instrumentationErrors.push(
+          new Error(`Could not detach the debugger for tab ${tabId}`, { cause: error })
+        );
       }
       instrumentationErrors.push(...(await clearResources(tabId)));
       const disableConsole =
@@ -199,11 +201,17 @@ export function createTabCleanupController(
         (async (id, chromeObj) => {
           await deps.readNetworkBuffer?.(id, true, chromeObj);
         });
-      for (const disable of [disableConsole, disableNetwork]) {
+      for (const [name, disable] of [
+        ['console capture', disableConsole],
+        ['network capture', disableNetwork],
+      ] as const) {
         try {
           await disable(tabId, chrome);
         } catch (error) {
-          if (!deps.isRecoverableInstrumentationError(error)) instrumentationErrors.push(error);
+          if (!deps.isRecoverableInstrumentationError(error))
+            instrumentationErrors.push(
+              new Error(`Could not stop ${name} for tab ${tabId}`, { cause: error })
+            );
         }
       }
       if (!(await shouldContinue())) {
@@ -216,7 +224,9 @@ export function createTabCleanupController(
           try {
             await deps.clearFetchInterception(tabId);
           } catch (error) {
-            instrumentationErrors.push(error);
+            instrumentationErrors.push(
+              new Error(`Could not clear network interception for tab ${tabId}`, { cause: error })
+            );
           }
         } else {
           deps.discardFetchInterception(tabId);
@@ -228,7 +238,9 @@ export function createTabCleanupController(
         try {
           await deps.discardCdpNetworkCapture(tabId);
         } catch (error) {
-          instrumentationErrors.push(error);
+          instrumentationErrors.push(
+            new Error(`Could not discard network capture for tab ${tabId}`, { cause: error })
+          );
         }
       }
       if (!(await shouldContinue())) return;
@@ -236,7 +248,9 @@ export function createTabCleanupController(
         await rollbackAllPatchesForTab(tabId, shouldContinue);
       } catch (error) {
         if (!deps.isRecoverableInstrumentationError(error)) {
-          instrumentationErrors.push(error);
+          instrumentationErrors.push(
+            new Error(`Could not roll back page changes for tab ${tabId}`, { cause: error })
+          );
         }
       }
       if (instrumentationErrors.length > 0)
@@ -247,13 +261,17 @@ export function createTabCleanupController(
   }
 
   /** Clear tab-local bridge state for all tabs in one window. */
-  async function clearWindowBridgeState(windowId: number): Promise<void> {
+  async function clearWindowBridgeState(
+    windowId: number,
+    tabIds?: ReadonlySet<number>
+  ): Promise<void> {
     deps.cancelNavigationWaitsForWindow(windowId);
     const tabs = await chrome.tabs.query({ windowId });
     const results = await Promise.allSettled(
       tabs.map((tab) => {
         if (!isNumber(tab.id)) return Promise.resolve();
         const tabId = tab.id;
+        if (tabIds && !tabIds.has(tabId)) return Promise.resolve();
         return tab.url && !deps.isRestrictedAutomationUrl(tab.url)
           ? clearTabBridgeState(tabId)
           : clearRestrictedTabDebuggerState(tabId);

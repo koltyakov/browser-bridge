@@ -141,7 +141,7 @@ test('handleListTabs returns requested pages with explicit omission metadata', a
     {
       async queryTabs() {
         return Array.from({ length: 30 }, (_, index) =>
-          createChromeTab({ id: index + 1, url: 'https://example.com' })
+          createChromeTab({ id: index + 1, windowId: 7, url: 'https://example.com' })
         );
       },
     },

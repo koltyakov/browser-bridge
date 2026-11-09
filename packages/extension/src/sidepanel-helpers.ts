@@ -37,6 +37,7 @@ export type SidepanelCurrentTab = {
   title: string;
   url: string;
   enabled: boolean;
+  accessScope?: 'tab';
   accessRequested: boolean;
   restricted: boolean;
   accessRequestContext?: import('./background-state.js').AccessRequestContext | null;
@@ -610,7 +611,8 @@ export function getSidepanelCurrentTabView(
 
   if (currentTab.restricted && currentTab.enabled) {
     return {
-      buttonLabel: 'Disable Window Access',
+      buttonLabel:
+        currentTab.accessScope === 'tab' ? 'Disable Tab Access' : 'Disable Window Access',
       buttonDisabled: false,
       buttonEnabled: true,
       attention: false,
@@ -620,7 +622,11 @@ export function getSidepanelCurrentTabView(
   }
 
   return {
-    buttonLabel: currentTab.enabled ? 'Disable Window Access' : 'Enable Window Access',
+    buttonLabel: currentTab.enabled
+      ? currentTab.accessScope === 'tab'
+        ? 'Disable Tab Access'
+        : 'Disable Window Access'
+      : 'Enable window access',
     buttonDisabled: !currentTab.url,
     buttonEnabled: currentTab.enabled,
     attention: currentTab.accessRequested && !currentTab.enabled,
@@ -650,8 +656,11 @@ export function getSidepanelAgentStatusView(
 
   if (currentTab.enabled) {
     return {
-      title: 'Window access enabled',
-      detail: 'Agents can access every tab in this window.',
+      title: currentTab.accessScope === 'tab' ? 'Tab access enabled' : 'Window access enabled',
+      detail:
+        currentTab.accessScope === 'tab'
+          ? 'Agents can access this tab and tabs they create.'
+          : 'Agents can access every tab in this window.',
       disclosureHidden: true,
     };
   }

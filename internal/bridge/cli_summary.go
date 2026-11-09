@@ -856,5 +856,9 @@ func cliTruncateURL(raw string) string {
 }
 
 func cliSummaryNow(response object, method string) object {
-	return cliAnnotate(cliSummarize(response, method, time.Now().UnixMilli()), response)
+	result := cliAnnotate(cliSummarize(response, method, time.Now().UnixMilli()), response)
+	if snapshot := normalizeAccessSettingsSnapshot(response.object("meta").object("access_settings")); snapshot != nil {
+		result["accessSettings"] = value(snapshot)
+	}
+	return result
 }

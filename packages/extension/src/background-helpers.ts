@@ -612,6 +612,37 @@ export function getErrorMessage(error: unknown): string {
   return 'Unexpected extension error.';
 }
 
+/** Preserve actionable causes without dumping unbounded AggregateError trees. */
+export function getErrorMessageWithCauses(error: unknown): string {
+  const seen = new Set<Error>();
+  let remaining = 16;
+  function describe(value: unknown, depth: number): string {
+    if (remaining-- <= 0 || depth > 6) return '';
+    const message = getErrorMessage(value).slice(0, 300);
+    if (!(value instanceof Error)) return message;
+    if (seen.has(value)) return '';
+    seen.add(value);
+    if (value instanceof AggregateError) {
+      const causes = value.errors
+        .slice(0, 4)
+        .map((cause: unknown) => describe(cause, depth + 1))
+        .filter(Boolean);
+      if (!causes.length) return message;
+      return `${depth === 0 ? `${message} ` : ''}${causes.join('; ')}`;
+    }
+    const cause = value.cause === undefined ? '' : describe(value.cause, depth + 1);
+    return cause ? `${message}: ${cause}` : message;
+  }
+  return describe(error, 0).slice(0, 1_000);
+}
+
+/** Chrome cannot retain page hooks or patches in a document that is gone or an error page. */
+export function isUnavailableDocumentError(message: string): boolean {
+  return /Frame with ID \d+ (?:was removed|is showing error page)|No frame with id\b|The (?:frame was removed|tab was closed)\b/iu.test(
+    message
+  );
+}
+
 export function normalizeRuntimeErrorMessage(message: string): string {
   const normalizedMessage = message.replace(/^Error:\s*/i, '');
   return /^No tab with id[: ]/i.test(normalizedMessage)

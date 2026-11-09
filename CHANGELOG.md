@@ -4,10 +4,78 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2.1.0] - 2026-11-08
+
+### Added
+
+- The side panel can grant access to only the current tab and tabs agents
+  create, instead of every tab in the window. Closing the granted tab revokes
+  access.
+- Persistent access settings control tab creation, closing user tabs,
+  automatic cleanup of AI-created tabs, and direct off-domain navigation.
+- Native Windows ARM64 releases, supported by the PowerShell installer and
+  npm launcher.
+- GitHub releases include the packaged Chrome extension ZIP alongside native
+  executables.
+- `make test-chaos-live` uses isolated headed Chrome on Linux to test
+  daemon and service-worker recovery, caller disconnects, and resource cleanup.
 
 ### Changed
 
+- By default, agents can create tabs but cannot close user tabs or directly
+  navigate an existing page to a different hostname. AI-created tabs close when
+  access ends unless automatic cleanup is disabled. The navigation setting does
+  not block page links or redirects.
+
+### Fixed
+
+- Access cleanup tolerates tabs and documents that have disappeared, continues
+  closing other AI-created tabs after a failure, and reports which cleanup
+  operation failed. The side panel distinguishes disabled access from incomplete
+  cleanup.
+- Daemons started during npm installation no longer retain npm's staging
+  directory as their working directory.
+
+## [2.0.0] - 2026-11-08
+
+### Added
+
+- Standalone macOS, Linux, and Windows installers verify release checksums,
+  install the executable, register the browser, and restart the daemon without
+  Node.js. The side panel provides commands for the extension's release line.
+- Per-tab mutation scheduling queues page changes while keeping reads concurrent.
+  Queued work rechecks its document and access grant before execution; responses
+  include stage timing, and daemon metrics expose queue occupancy.
+- `input.perform.outcomes` verifies DOM, URL, and fresh fetch/XHR conditions in
+  the same call. Unmet outcomes return non-retryable `OUTCOME_NOT_MET`.
+- Opt-in visual baselines compare scoped screenshots with exact pixel checks.
+  Unchanged frames return no images, and local changes return bounded crops.
+  Baselines expire after five minutes or when their page or access is invalidated.
+- Exact-method CLI and MCP discovery returns input schemas and examples without
+  expanding compact method-group listings.
+- Managed agent setup adds Gemini, Cline, Zed, Amp, Droid, Pi, Kilo, Qwen Code,
+  Goose, OpenHands, Muse Code, and Grok Build.
+- The side panel adds an active-tab switcher and view-local activity clearing.
+  Activity identifies calling CLI and MCP clients and groups repeated health pings.
+- Opt-in live browser suites cover read-only inspection and input workflows.
+
+### Changed
+
+- The CLI, daemon, native messaging host, MCP server, installation, and updates
+  now run in one Go executable. npm is a zero-runtime-dependency launcher, not a
+  JavaScript client library; standalone installs do not require Node.js.
+- npm installation selects the latest stable native GitHub release independently
+  of the npm package version. `BBX_VERSION` selects a release line or exact
+  version; downloads verify release checksums, asset sizes, and an executable
+  self-test. Cached selection metadata supports offline reuse.
+- On macOS and Linux, npm-owned commands use shell launchers that verify the
+  cached binary before executing Go without starting Node. Missing OpenSSL or
+  binaries fall back to the Node launcher; checksum mismatches stop execution.
+- Setup documentation recommends standalone installers first. npm remains an
+  alternative, and npm packaging no longer requires native builds.
+- DOM existence checks, text lookups, and waits stop scanning once their result
+  is known. Tailwind hint sampling and CLI/MCP result accounting do less work,
+  and native builds use smaller portable Go implementations.
 - CDP accessibility-tree nodes omit empty strings and false flags on the wire,
   cutting transport and raw CLI output by about half to three quarters.
 - MCP results drop repeated or empty evidence: the CLI summary's size fields,
@@ -49,6 +117,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Text and role finders, page text, and DOM outlines include child-frame matches
+  even when the outer document also matches, sharing result budgets and
+  reporting incomplete frame reads. Attached and visible waits rediscover
+  frames within the original timeout.
+- Element screenshots resolve the owning iframe and translate its geometry
+  into top-document coordinates, including separate-renderer frames. Unsupported
+  capture geometry fails explicitly, and stale refs are not retried.
+- `input.perform` keeps progress, failures, timing, outcomes, and the requested
+  bounded result of the last completed step when a sequence fails or output is
+  truncated. Interrupted verification retains partial progress, and sequences
+  that may have dispatched no longer suggest automatic retries.
+- Scoped waits match descendant text, transparent inputs remain actionable,
+  and abandoned input observations are disposed. Resetting viewport emulation
+  restores natural viewport sizing.
+- DOM baseline evidence includes safe semantic state. Patch previews report
+  limits, and MCP returns bounded original patch lists.
+- Integral JSON values written with decimals or exponents preserve explicit
+  tab routing without losing exact native `int64` literals. Invalid selector
+  syntax returns `INVALID_REQUEST`.
+- Fetch block and fulfill rules preserve alternate URL wildcard matches.
+- MCP configs and native messaging launchers use the absolute, symlink-resolved
+  Go executable. Installation migrates recognized older wrapper and native
+  entries while preserving user settings, custom wrappers, and remote transports.
+- Windows installation preserves existing native-host registrations and custom
+  allowlists, rolls back manifest changes if registration fails, and protects
+  shared registrations during uninstall. Daemon startup recognizes Windows TCP
+  connection refusals and supports legacy credentialless named pipes.
+- Native update preparation timeouts no longer terminate forwarded sessions.
 - CDP accessibility trees list nodes in page order. CDP returns full trees
   level by level, so outlines put deep headings before shallower nav links,
   and `maxNodes` kept a shallow slice of the whole page.
@@ -58,7 +154,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   for clients that render only the text of an error result.
 - `browser_batch` names every call that is unsafe for parallel execution in
   one rejection instead of only the first.
-
 - DOM-source accessibility trees with `format: "tree"` are summarized as
   accessibility trees instead of DOM query results.
 - `browser_batch` with only some failed calls is no longer an MCP error
@@ -75,6 +170,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Upgrading to v2 rewrites global MCP entries that still launch the removed v1
   Node entrypoint, so existing agent clients keep starting Browser Bridge.
   `bbx doctor` warns about other MCP entries that launch a missing file.
+
+## [1.15.0] - 2026-11-04
+
+### Changed
+
+- The Node.js transition release speaks protocol 2.0 while accepting v1 peers,
+  preparing existing npm installations for the Go-based v2 runtime.
+- Compatible global npm updates default to enabled when no policy was set.
+  Explicit opt-outs remain respected. Automatic selection of a v2 npm package
+  requires the v2 extension; the 1.15 extension stays on the Node.js runtime.
+- CLI updates resolve the newly installed package's entrypoint before reading
+  piped input or dispatching commands. MCP update checks run before its
+  initialization handshake. Existing MCP sessions keep their loaded runtime,
+  and migration does not replay browser actions.
+- Enabled-window grants are backed up across extension updates and cleared at
+  browser startup or when access is disabled.
+- The popup and side panel adopt the v2 responsive layouts, version tooltips,
+  active-tab dropdowns with favicons and recency, grouped health checks, and
+  connection loading and retry controls. Setup remains npm-only.
+
+### Fixed
+
+- Windows native-host manifests are isolated by browser to avoid registration
+  conflicts.
+- Node clients send existing agent credentials over local sockets and Windows
+  named pipes so they can connect to the authenticated Go v2 daemon. Legacy
+  local daemons remain usable without credential files.
 
 ## [1.12.5] - 2026-10-15
 

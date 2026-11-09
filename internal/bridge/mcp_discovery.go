@@ -195,6 +195,9 @@ func (s *mcpSession) status(ctx context.Context, args object, era string) (objec
 			for _, key := range strings.Fields("extensionConnected accessEnabled routeReady routeTabId") {
 				result[key] = report[key]
 			}
+			if report["accessSettings"] != nil {
+				result["accessSettings"] = report["accessSettings"]
+			}
 			results = append(results, result)
 			continue
 		}

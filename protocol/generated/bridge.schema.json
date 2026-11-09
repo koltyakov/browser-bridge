@@ -150,6 +150,9 @@
         "accessEnabled": {
           "type": "boolean"
         },
+        "accessSettings": {
+          "$ref": "#/$defs/AccessSettingsSnapshot"
+        },
         "enabledWindow": {},
         "windowAccessUpdates": {
           "type": "boolean"
@@ -284,6 +287,7 @@
         "webmcp.get_tool",
         "webmcp.execute_tool",
         "access.request",
+        "access.wait_for_change",
         "protocol.describe",
         "tabs.list",
         "tabs.create",
@@ -375,6 +379,9 @@
     "BridgeMeta": {
       "type": "object",
       "properties": {
+        "access_settings": {
+          "$ref": "#/$defs/AccessSettingsSnapshot"
+        },
         "target_extension": {
           "type": "string"
         },
@@ -515,6 +522,46 @@
         }
       },
       "required": [],
+      "additionalProperties": true
+    },
+    "AccessSettingsSnapshot": {
+      "type": "object",
+      "properties": {
+        "settingsRevision": {
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/AccessSettings"
+        }
+      },
+      "required": [
+        "settingsRevision",
+        "settings"
+      ],
+      "additionalProperties": true
+    },
+    "AccessSettings": {
+      "type": "object",
+      "properties": {
+        "allowCreatingTabs": {
+          "type": "boolean"
+        },
+        "allowClosingUserTabs": {
+          "type": "boolean"
+        },
+        "closeAiTabsWhenDone": {
+          "type": "boolean"
+        },
+        "allowOffDomainNavigation": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "allowCreatingTabs",
+        "allowClosingUserTabs",
+        "closeAiTabsWhenDone",
+        "allowOffDomainNavigation"
+      ],
       "additionalProperties": true
     },
     "CostClass": {
@@ -983,6 +1030,57 @@
         }
       },
       "required": [],
+      "additionalProperties": true
+    },
+    "AccessWaitForChangeParams": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "string"
+        },
+        "timeoutMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "additionalProperties": true
+    },
+    "NormalizedAccessWaitForChangeParams": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "string"
+        },
+        "timeoutMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "revision",
+        "timeoutMs"
+      ],
+      "additionalProperties": true
+    },
+    "AccessWaitForChangeResult": {
+      "type": "object",
+      "properties": {
+        "settingsRevision": {
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/AccessSettings"
+        },
+        "changed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "settingsRevision",
+        "settings",
+        "changed"
+      ],
       "additionalProperties": true
     },
     "NormalizedAccessRequestParams": {

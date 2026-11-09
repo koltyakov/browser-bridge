@@ -9,6 +9,7 @@ import {
   createCdpKeyPressEventPair,
   enforceTokenBudget,
   getErrorMessage,
+  getErrorMessageWithCauses,
   getResponseDiagnostics,
   matchesConsoleLevel,
   normalizeRuntimeErrorMessage,
@@ -126,6 +127,35 @@ test('background helpers reject invalid CDP key input', () => {
     () => createCdpKeyPressEventPair({ key: 'Escape', modifiers: 16 }),
     /modifiers must be an array of Alt, Control, Meta, Shift or a bitmask 0-15\./
   );
+});
+
+test('error details retain nested cleanup causes and bound cyclic or oversized trees', () => {
+  const cause = new Error('Storage unavailable');
+  const resource = new Error('Could not clear downloads for tab 41', { cause });
+  const nested = new AggregateError(
+    [new AggregateError([resource], 'Tab cleanup failed')],
+    'Access is disabled, but some cleanup could not finish.'
+  );
+  assert.equal(
+    getErrorMessageWithCauses(nested),
+    'Access is disabled, but some cleanup could not finish. Could not clear downloads for tab 41: Storage unavailable'
+  );
+  assert.equal(getErrorMessageWithCauses('failure'), 'failure');
+  assert.equal(
+    getErrorMessageWithCauses(new AggregateError([], 'Empty aggregate')),
+    'Empty aggregate'
+  );
+  const cycle = new Error('Cycle');
+  cycle.cause = cycle;
+  assert.equal(getErrorMessageWithCauses(cycle), 'Cycle');
+  const large = new AggregateError(
+    Array.from({ length: 100 }, () => new Error('x'.repeat(10_000))),
+    'Cleanup'
+  );
+  assert(getErrorMessageWithCauses(large).length <= 1_000);
+  let deep = new Error('Leaf');
+  for (let i = 0; i < 30; i++) deep = new Error('Wrapper', { cause: deep });
+  assert.doesNotThrow(() => getErrorMessageWithCauses(deep));
 });
 
 test('getErrorMessage returns string, Error message, and sentinel fallback', () => {

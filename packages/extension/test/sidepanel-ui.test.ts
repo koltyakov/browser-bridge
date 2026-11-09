@@ -18,6 +18,7 @@ type SidepanelStateSync = {
     nativeConnected: true;
     nativeHostVersion: string | null;
     currentTab: SidepanelCurrentTab | null;
+    accessSettings?: import('../src/access-settings.js').AccessSettings;
     agentTabs?: import('../src/background-ui.js').AgentTabUiState[];
     otherEnabledWindows?: import('../../../protocol/src/window-access.js').BrowserWindowAccess[];
     setupStatus: SetupStatus | null;
@@ -34,6 +35,7 @@ type SidepanelCurrentTab = {
   title: string;
   url: string;
   enabled: boolean;
+  accessScope?: 'tab';
   accessRequested: boolean;
   restricted: boolean;
 };
@@ -603,7 +605,7 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     assert.ok(button, 'sidepanel toggle button should be present');
 
     portPair.left.dispatchMessage(createSidepanelStateSync(false));
-    assert.equal(button.textContent, 'Enable Window Access');
+    assert.equal(button.textContent, 'Enable window access');
     assert.equal(button.dataset.enabled, 'false');
     assert.equal(button.disabled, false);
     assert.equal(
@@ -720,6 +722,105 @@ test('compact help uses remaining height and dismisses without adding activity c
     assert.equal(
       document.querySelector('.activity-summary > span:last-child')?.getAttribute('title'),
       'Ran health.ping'
+    );
+    window.dispatchEvent(new window.Event('beforeunload'));
+  });
+});
+
+test('access options show defaults, update settings and enable only this tab', async (t) => {
+  const html = await readFile(SIDEPANEL_HTML_URL, 'utf8');
+  const savedChrome = globalThis.chrome;
+  const savedSetInterval = globalThis.setInterval;
+  const savedClearInterval = globalThis.clearInterval;
+  t.after(() => {
+    restoreGlobal('chrome', savedChrome);
+    restoreGlobal('setInterval', savedSetInterval);
+    restoreGlobal('clearInterval', savedClearInterval);
+  });
+  Reflect.set(globalThis, 'setInterval', (() => 0) as unknown as typeof setInterval);
+  Reflect.set(globalThis, 'clearInterval', (() => {}) as typeof clearInterval);
+  const pair = createMessagePortPair();
+  Reflect.set(
+    globalThis,
+    'chrome',
+    createChromeFake({
+      runtime: {
+        connect() {
+          return pair.left.port as unknown as chrome.runtime.Port;
+        },
+      },
+    })
+  );
+  await withDocument(html, async ({ window }) => {
+    Reflect.set(window, 'location', new URL('https://example.com/sidepanel.html?tabId=41'));
+    await importFreshSidepanelScript();
+    await flushMicrotasks();
+    pair.left.dispatchMessage(createSidepanelStateSync(false));
+    const options = document.getElementById('access-options') as HTMLDetailsElement;
+    const create = document.getElementById('allow-creating-tabs') as HTMLInputElement;
+    const close = document.getElementById('allow-closing-user-tabs') as HTMLInputElement;
+    const cleanup = document.getElementById('close-ai-tabs-when-done') as HTMLInputElement;
+    const offDomain = document.getElementById('allow-off-domain-navigation') as HTMLInputElement;
+    assert.equal(options.previousElementSibling?.id, 'bridge-toggle');
+    assert.equal(
+      document.getElementById('enable-tab-access')?.textContent,
+      'Enable this tab access (only)'
+    );
+    assert.equal(options.querySelectorAll('svg circle[cy="9"]').length, 3);
+    assert.equal(create.checked, true);
+    assert.equal(close.checked, false);
+    assert.equal(cleanup.checked, true);
+    assert.equal(offDomain.checked, false);
+    options.open = true;
+    close.checked = true;
+    close.dispatchEvent(new window.Event('change', { bubbles: true }));
+    assert.equal(options.open, true);
+    assert.deepEqual(pair.left.postedMessages.at(-1), {
+      type: 'access.settings.update',
+      settings: {
+        allowCreatingTabs: true,
+        allowClosingUserTabs: true,
+        closeAiTabsWhenDone: true,
+        allowOffDomainNavigation: false,
+      },
+    });
+    const settings = {
+      allowCreatingTabs: false,
+      allowClosingUserTabs: true,
+      closeAiTabsWhenDone: false,
+      allowOffDomainNavigation: true,
+    };
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(false, null, null, [], { accessSettings: settings })
+    );
+    assert.equal(create.checked, false);
+    assert.equal(cleanup.checked, false);
+    assert.equal(offDomain.checked, true);
+    document.body.dispatchEvent(new window.Event('click', { bubbles: true }));
+    assert.equal(options.open, false);
+    options.open = true;
+    const escape = new window.Event('keydown', { bubbles: true });
+    Reflect.set(escape, 'key', 'Escape');
+    document.dispatchEvent(escape);
+    assert.equal(options.open, false);
+    options.open = true;
+    (document.getElementById('enable-tab-access') as HTMLButtonElement).click();
+    assert.deepEqual(pair.left.postedMessages.at(-1), {
+      type: 'scope.set_enabled',
+      tabId: 41,
+      enabled: true,
+      scope: 'tab',
+    });
+    assert.equal(options.open, false);
+    const sync = createSidepanelStateSync(true);
+    assert.ok(sync.state.currentTab);
+    sync.state.currentTab.accessScope = 'tab';
+    pair.left.dispatchMessage(sync);
+    assert.equal(document.getElementById('bridge-toggle')?.textContent, 'Disable Tab Access');
+    assert.equal(document.getElementById('agent-status')?.textContent, 'Tab access enabled');
+    assert.equal(
+      (document.getElementById('enable-tab-access') as HTMLButtonElement).disabled,
+      true
     );
     window.dispatchEvent(new window.Event('beforeunload'));
   });
@@ -1386,6 +1487,11 @@ test('sidepanel UI groups consecutive pings with a light counter and combined to
   });
   const css = await readFile(extensionFile('ui/ui.css'), 'utf8');
   assert.match(css, /\.activity-repeat-count\s*\{[^}]*font-weight:\s*400/u);
+});
+
+test('section headings use uppercase', async () => {
+  const css = await readFile(extensionFile('ui/ui.css'), 'utf8');
+  assert.match(css, /\.eyebrow\s*\{[^}]*text-transform:\s*uppercase/u);
 });
 
 test('sidepanel clears activity only from this view and keeps new events visible', async (t) => {

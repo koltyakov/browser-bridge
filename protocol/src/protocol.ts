@@ -1,4 +1,5 @@
 import { normalizeBridgeCaller } from './caller.js';
+import { normalizeAccessWaitForChangeParams } from './access-settings.js';
 import { applyBudget } from './budget.js';
 import { normalizeWebMcpParams } from './webmcp.js';
 import { normalizeEmulation, onlyKeys } from './emulation.js';
@@ -303,6 +304,13 @@ function getRoutingRecovery(
       hint: "Choose the intended extensionId from connectedExtensions before requesting access. Ask the user to enable only that profile's window.",
     };
   }
+  if (code === ERROR_CODES.ACCESS_DENIED && reason === 'policy_setting_disabled') {
+    return {
+      retry: false,
+      alternativeMethod: 'access.wait_for_change',
+      hint: 'The extension blocked this operation before dispatch because a user setting is off. Ask the user to change that setting. Read health.ping or wait with access.wait_for_change using details.settingsRevision and the same extensionId. Retry deliberately only after the relevant setting is enabled and access is still granted. Do not request window access again or bypass the setting through another method.',
+    };
+  }
   return null;
 }
 
@@ -511,6 +519,8 @@ export function normalizeRequestParams(
     }
     case 'access.request':
       return normalizeAccessRequestParams(params);
+    case 'access.wait_for_change':
+      return normalizeAccessWaitForChangeParams(params);
     case 'log.tail':
       return normalizeLogTailParams(params);
     case 'health.ping':

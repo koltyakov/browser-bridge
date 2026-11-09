@@ -26,6 +26,7 @@ import {
   readRequestedTabId,
   renderSidepanelState,
 } from '../src/sidepanel-runtime.js';
+import { normalizeAccessSettings } from '../src/access-settings.js';
 
 export type McpClientStatus = import('../../../protocol/src/types.js').McpClientStatus;
 export type SkillInstallationStatus =
@@ -42,6 +43,7 @@ export type SidePanelCurrentTab = {
   title: string;
   url: string;
   enabled: boolean;
+  accessScope?: 'tab';
   accessRequested: boolean;
   restricted: boolean;
   accessRequestContext?: import('../src/background-state.js').AccessRequestContext;
@@ -90,6 +92,7 @@ export type UiSnapshot = {
   nativeHostVersion: string | null;
   daemonProxy: DaemonProxyStatus | null;
   currentTab: SidePanelCurrentTab | null;
+  accessSettings?: import('../src/access-settings.js').AccessSettings;
   agentTabs?: import('../src/background-ui.js').AgentTabUiState[];
   otherEnabledWindows?: import('../../../protocol/src/window-access.js').BrowserWindowAccess[];
   setupStatus: SetupStatus | null;
@@ -129,6 +132,17 @@ const extensionVersion = document.getElementById('extension-version') as HTMLSpa
 const manifest = chrome.runtime.getManifest();
 extensionVersion.textContent = `Extension: v${manifest.version_name ?? manifest.version}\nHarness: disconnected`;
 const toggleButton = document.getElementById('bridge-toggle') as HTMLButtonElement;
+const accessOptions = document.getElementById('access-options') as HTMLDetailsElement;
+const accessOptionsToggle = document.getElementById('access-options-toggle') as HTMLElement;
+const enableTabAccess = document.getElementById('enable-tab-access') as HTMLButtonElement;
+const accessSettingInputs = {
+  allowCreatingTabs: document.getElementById('allow-creating-tabs') as HTMLInputElement,
+  allowClosingUserTabs: document.getElementById('allow-closing-user-tabs') as HTMLInputElement,
+  closeAiTabsWhenDone: document.getElementById('close-ai-tabs-when-done') as HTMLInputElement,
+  allowOffDomainNavigation: document.getElementById(
+    'allow-off-domain-navigation'
+  ) as HTMLInputElement,
+};
 const actionLog = document.getElementById('action-log') as HTMLDivElement;
 const setupSection = document.getElementById('native-setup') as HTMLElement;
 const nativeLoading = document.getElementById('native-loading') as HTMLElement;
@@ -361,7 +375,7 @@ const TOGGLE_ERROR_DISPLAY_MS = 6_000;
 const toggleErrorEl = document.createElement('p');
 toggleErrorEl.className = 'toggle-error';
 toggleErrorEl.hidden = true;
-toggleButton.insertAdjacentElement('afterend', toggleErrorEl);
+document.querySelector('.access-actions')?.insertAdjacentElement('afterend', toggleErrorEl);
 const setupContextMenu = document.createElement('div');
 setupContextMenu.className = 'setup-context-menu';
 setupContextMenu.hidden = true;
@@ -484,12 +498,13 @@ const activityHistogramTimer = setInterval(() => {
   updateActivityVisualizations();
 }, ACTIVITY_HISTOGRAM_TICK_MS);
 
-toggleButton.addEventListener('click', () => {
+function setAccess(scope?: 'tab'): void {
   if (!currentTabState || toggleButton.dataset.pending === 'true') {
     return;
   }
 
-  const pendingEnabled = !currentTabState.enabled;
+  const pendingEnabled = scope === 'tab' || !currentTabState.enabled;
+  accessOptions.open = false;
   toggleButton.dataset.pending = 'true';
   toggleButton.textContent = pendingEnabled ? 'Enabling\u2026' : 'Disabling\u2026';
 
@@ -499,9 +514,7 @@ toggleButton.addEventListener('click', () => {
   pendingToggleTimer = setTimeout(() => {
     toggleButton.dataset.pending = 'false';
     if (currentTabState) {
-      toggleButton.textContent = currentTabState.enabled
-        ? 'Disable Window Access'
-        : 'Enable Window Access';
+      toggleButton.textContent = getSidepanelCurrentTabView(currentTabState).buttonLabel;
     }
     pendingToggleTimer = null;
   }, TOGGLE_PENDING_TIMEOUT_MS);
@@ -510,8 +523,22 @@ toggleButton.addEventListener('click', () => {
     type: 'scope.set_enabled',
     tabId: currentTabState.tabId,
     enabled: pendingEnabled,
+    ...(scope ? { scope } : {}),
   });
-});
+}
+
+toggleButton.addEventListener('click', () => setAccess());
+enableTabAccess.addEventListener('click', () => setAccess('tab'));
+for (const input of Object.values(accessSettingInputs)) {
+  input.addEventListener('change', () => {
+    port.postMessage({
+      type: 'access.settings.update',
+      settings: Object.fromEntries(
+        Object.entries(accessSettingInputs).map(([key, element]) => [key, element.checked])
+      ),
+    });
+  });
+}
 
 otherWindowsDisable.addEventListener('click', () => {
   startWindowAction('disable', { type: 'windows.disable_others' });
@@ -623,6 +650,8 @@ document.addEventListener('click', () => {
 });
 
 document.addEventListener('click', (event) => {
+  if (event.target instanceof Node && !accessOptions.contains(event.target))
+    accessOptions.open = false;
   if (event.target instanceof Node && !otherWindows.contains(event.target))
     otherWindows.open = false;
   if (event.target instanceof Node && !agentTabRow.contains(event.target)) agentTabRow.open = false;
@@ -634,6 +663,10 @@ document.addEventListener('click', (event) => {
 
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
+    if (accessOptions.open) {
+      accessOptions.open = false;
+      accessOptionsToggle.focus();
+    }
     hideSetupContextMenu();
     for (const details of [installationSection, examplesSection, agentTabRow]) {
       if (details.open) {
@@ -669,6 +702,10 @@ window.addEventListener('beforeunload', () => {
 });
 
 function renderState(state: UiSnapshot): void {
+  const settings = normalizeAccessSettings(state.accessSettings);
+  for (const key of Object.keys(accessSettingInputs) as Array<keyof typeof accessSettingInputs>) {
+    accessSettingInputs[key].checked = settings[key];
+  }
   latestState = state;
   hasAgentWork = hasSidepanelAgentWork(state);
   renderHostVersion(state.nativeHostVersion);
@@ -731,6 +768,11 @@ function renderCurrentTab(currentTab: SidePanelCurrentTab | null): void {
   }
 
   const view = getSidepanelCurrentTabView(currentTab);
+  enableTabAccess.disabled =
+    !currentTab ||
+    currentTab.restricted ||
+    view.buttonDisabled ||
+    (currentTab.enabled && currentTab.accessScope === 'tab');
   toggleButton.textContent = view.buttonLabel;
   toggleButton.disabled = view.buttonDisabled;
   toggleButton.dataset.enabled = String(view.buttonEnabled);
@@ -748,9 +790,7 @@ function renderToggleError(errorMessage: string): void {
   }
 
   if (currentTabState) {
-    toggleButton.textContent = currentTabState.enabled
-      ? 'Disable Window Access'
-      : 'Enable Window Access';
+    toggleButton.textContent = getSidepanelCurrentTabView(currentTabState).buttonLabel;
   }
 
   const friendly = normalizeSidepanelToggleError(errorMessage);

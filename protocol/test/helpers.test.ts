@@ -25,6 +25,7 @@ import type { BridgeMethod, Capability } from '../src/types.js';
 
 const EXPECTED_BRIDGE_METHOD_ORDER: readonly BridgeMethod[] = [
   'access.request',
+  'access.wait_for_change',
   'protocol.describe',
   'skill.get_runtime_context',
   'setup.get_status',
@@ -322,7 +323,7 @@ test('describeBridgeMethods returns compact method, group, and index shapes', ()
 
   assert.deepEqual(describeBridgeMethods(), {
     groups: [
-      { group: 'system', count: 8 },
+      { group: 'system', count: 9 },
       { group: 'tabs', count: 4 },
       { group: 'page', count: 13 },
       { group: 'wait', count: 2 },
@@ -365,6 +366,7 @@ test('registry policies preserve every method capability classification', () => 
       null,
       [
         'access.request',
+        'access.wait_for_change',
         'protocol.describe',
         'tabs.list',
         'skill.get_runtime_context',

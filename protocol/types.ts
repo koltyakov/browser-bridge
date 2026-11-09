@@ -43,6 +43,7 @@ export interface DaemonMessage {
   profileLabel?: string;
   browserExtensionId?: string;
   accessEnabled?: boolean;
+  accessSettings?: AccessSettingsSnapshot;
   enabledWindow?: unknown;
   windowAccessUpdates?: boolean;
   windowActions?: boolean;
@@ -95,6 +96,35 @@ export type AccessIntent = 'inspect' | 'interact' | 'capture' | 'navigate' | 'de
 
 export interface AccessRequestParams {
   intent?: AccessIntent;
+}
+
+/** User-controlled extension policy. These settings do not grant window/tab access. */
+export interface AccessSettings {
+  allowCreatingTabs: boolean;
+  allowClosingUserTabs: boolean;
+  closeAiTabsWhenDone: boolean;
+  allowOffDomainNavigation: boolean;
+}
+
+export interface AccessSettingsSnapshot {
+  settingsRevision: string;
+  settings: AccessSettings;
+}
+
+export interface AccessWaitForChangeParams {
+  /** Opaque settings revision from health.ping or a policy-denial response. */
+  revision: string;
+  /** Bounded read-only wait, 0..25000ms; default 25000. Never replays a blocked action. */
+  timeoutMs?: number;
+}
+
+export interface NormalizedAccessWaitForChangeParams extends BridgeParams {
+  revision: string;
+  timeoutMs: number;
+}
+
+export interface AccessWaitForChangeResult extends AccessSettingsSnapshot {
+  changed: boolean;
 }
 
 export interface NormalizedAccessRequestParams extends BridgeParams {
@@ -189,6 +219,7 @@ export type BridgeMethod =
   | 'webmcp.get_tool'
   | 'webmcp.execute_tool'
   | 'access.request'
+  | 'access.wait_for_change'
   | 'protocol.describe'
   | 'tabs.list'
   | 'tabs.create'
@@ -280,6 +311,8 @@ export interface BrowserTarget {
 }
 
 export interface BridgeMeta {
+  /** Sent once per transport/session revision so active agents see policy changes on their next response. */
+  access_settings?: AccessSettingsSnapshot;
   target_extension?: string;
   target_browser?: string;
   target_profile?: string;

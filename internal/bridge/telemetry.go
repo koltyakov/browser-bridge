@@ -346,6 +346,25 @@ func healthCounts(source object, keys []string) object {
 	return result
 }
 
+func normalizeAccessSettingsSnapshot(source object) *protocol.AccessSettingsSnapshot {
+	if source == nil || !workerIDPattern.MatchString(source.text("settingsRevision")) {
+		return nil
+	}
+	settings := source.object("settings")
+	for _, key := range []string{"allowCreatingTabs", "allowClosingUserTabs", "closeAiTabsWhenDone", "allowOffDomainNavigation"} {
+		if !jsonBoolean(settings[key]) {
+			return nil
+		}
+	}
+	var snapshot protocol.AccessSettingsSnapshot
+	if json.Unmarshal(value(source), &snapshot) != nil {
+		return nil
+	}
+	snapshot.Extra = nil
+	snapshot.Settings.Extra = nil
+	return &snapshot
+}
+
 func normalizeExtensionHealth(source object, diagnostics bool) object {
 	result := object{}
 	if source == nil {
@@ -353,6 +372,9 @@ func normalizeExtensionHealth(source object, diagnostics bool) object {
 	}
 	if source.text("extension") == "ok" {
 		result["extension"] = value("ok")
+	}
+	if snapshot := normalizeAccessSettingsSnapshot(source.object("accessSettings")); snapshot != nil {
+		result["accessSettings"] = value(snapshot)
 	}
 	if extensionVersionPattern.MatchString(source.text("extensionVersion")) {
 		result["extensionVersion"] = source["extensionVersion"]

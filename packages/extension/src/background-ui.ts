@@ -22,9 +22,10 @@ export type UiDeps = {
     windowId: number,
     title: string,
     enabled: boolean,
-    context?: { tabId: number; url: string }
+    context?: { tabId: number; url: string; scope?: 'tab' }
   ) => Promise<void>;
   setCurrentWindowEnabled: (enabled: boolean) => Promise<void>;
+  updateAccessSettings?: (settings: unknown) => Promise<void>;
   getAgentTabState?: (windowId: number, currentTabId: number) => Promise<AgentTabUiState[]>;
   moveAgentToTab?: (tabId: number) => Promise<void>;
   requestWindowAction?: (
@@ -35,6 +36,7 @@ export type UiDeps = {
 };
 import { BridgeError, ERROR_CODES, sanitizeIncidentalText } from '../../../protocol/src/index.js';
 import { POPUP_PATH } from './background-state.js';
+import { getErrorMessageWithCauses } from './background-helpers.js';
 
 export function getUiSurfaceFromPortName(portName: string): 'popup' | 'sidepanel' | null {
   if (portName === 'ui-popup') {
@@ -132,6 +134,7 @@ export async function emitUiStateForPort(
       nativeHostVersion: state.nativeHostVersion,
       daemonProxy: state.daemonProxy,
       currentTab,
+      accessSettings: state.accessSettings,
       otherEnabledWindows: getOtherEnabledWindows(
         state,
         currentTab?.windowId ?? portState.scopeWindowId
@@ -232,7 +235,22 @@ export async function handleUiMessage(
     return;
   }
 
+  if (message?.type === 'access.settings.update') {
+    if (!state.uiPorts.has(port) || !deps.updateAccessSettings) return;
+    try {
+      await deps.updateAccessSettings(message.settings);
+    } catch (error) {
+      postToUiPort(state, port, {
+        type: 'toggle.error',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    await emitUiState(state, deps);
+    return;
+  }
+
   if (message?.type === 'scope.set_enabled') {
+    if (!state.uiPorts.has(port)) return;
     const requestedTabId = Number(message.tabId);
     try {
       // -- DEBUG: simulate slow/error toggles. Set to "delay", "error", or "" --
@@ -253,12 +271,16 @@ export async function handleUiMessage(
         await deps.setWindowEnabled(tabState.windowId, tabState.title, Boolean(message.enabled), {
           tabId: tabState.tabId,
           url: tabState.url,
+          ...(message.scope === 'tab' ? { scope: 'tab' } : {}),
         });
+        if (message.enabled === true && message.scope === 'tab') {
+          await deps.moveAgentToTab?.(tabState.tabId);
+        }
       } else {
         await deps.setCurrentWindowEnabled(Boolean(message.enabled));
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = sanitizeIncidentalText(getErrorMessageWithCauses(error));
       try {
         port.postMessage({ type: 'toggle.error', error: errorMessage });
       } catch {

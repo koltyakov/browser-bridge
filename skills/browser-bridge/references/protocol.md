@@ -36,6 +36,7 @@ omit both for the group index.
 | Method                             | Tab? | CDP?       | Group       | Capability           | Notes                                                                                      |
 | ---------------------------------- | ---- | ---------- | ----------- | -------------------- | ------------------------------------------------------------------------------------------ |
 | `access.request`                   | No   | -          | system      | `intent?`            | Request window access with bounded operation context in the extension UI                    |
+| `access.wait_for_change`           | No   | -          | system      | `revision, timeoutMs?` | Wait up to 25 seconds for a user access-setting revision change, without replaying an action |
 | `protocol.describe`                | No   | -          | system      | `-`                  | Local compact method/group parameters and metadata                                          |
 | `tabs.list`                        | No   | -          | tabs        | `-`                  | Discover tabs in the enabled window                                                        |
 | `tabs.create`                      | No   | -          | tabs        | `tabs.manage`        | Open a new tab; optional `url` and `active`                                                |
@@ -156,7 +157,13 @@ bbx call access.request '{"intent":"capture"}'
 
 `intent` is optional and defaults to `general`. Accepted values are `inspect`, `interact`, `capture`, `navigate`, `debugger`, and `general`; arbitrary prompt text is rejected. The source and intent are reported context, while the title and origin are resolved and sanitized by the extension.
 
-If a tab-bound call returns `ACCESS_DENIED`, it also surfaces the Enable prompt automatically - so explicit `access.request` is optional but useful for proactive setup.
+If a tab-bound call returns `ACCESS_DENIED` because window access is off, it also surfaces the Enable prompt automatically. Explicit `access.request` is optional but useful for proactive setup. Policy denials with `details.reason=policy_setting_disabled` do not request window access again.
+
+### access.wait_for_change
+
+Read `health.ping.accessSettings`, or a policy-denial error's `details`, for `settingsRevision` and `settings`. Pass the revision to `access.wait_for_change` on the same destination and extensionId. `timeoutMs` is 0..25000, default 25000. The read returns `{ changed, settingsRevision, settings }` when settings change or the timeout expires. A revision already superseded returns immediately. Cancellation removes the wait. It never opens an access prompt or replays a blocked operation.
+
+Settings update in the extension before asynchronous persistence completes. If persistence fails, the UI reports the failure, restores the last saved settings, and publishes another revision. Recheck the relevant boolean before deliberately retrying an operation denied with `dispatched:false`. Operations already sent to Chrome may finish. Idle agent conversations cannot be resumed by an extension checkbox alone.
 
 If access is already pending for a window, do not call `access.request` again. Ask the user to click `Enable` for the requested window and wait for confirmation before continuing.
 

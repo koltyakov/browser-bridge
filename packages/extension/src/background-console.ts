@@ -3,7 +3,11 @@ import {
   sanitizeIncidentalText,
   sanitizeIncidentalValue,
 } from '../../../protocol/src/index.js';
-import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-helpers.js';
+import {
+  getErrorMessage,
+  isUnavailableDocumentError,
+  normalizeRuntimeErrorMessage,
+} from './background-helpers.js';
 import { getMainWorldInstrumentationKey } from './background-main-world-instrumentation.js';
 import { isNumber } from './background-state.js';
 
@@ -349,6 +353,7 @@ export function isRecoverableInstrumentationError(error: unknown): boolean {
   const message = normalizeRuntimeErrorMessage(getErrorMessage(error));
   return (
     message === ERROR_CODES.TAB_MISMATCH ||
+    isUnavailableDocumentError(message) ||
     /Cannot access contents of/i.test(message) ||
     /The extensions gallery cannot be scripted/i.test(message) ||
     /Cannot access a chrome:\/\//i.test(message) ||

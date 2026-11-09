@@ -134,6 +134,9 @@ func (s *mcpSession) destinationConnectionContext(ctx context.Context, destinati
 }
 
 func mcpRetrySafe(method string, params object) bool {
+	if method == "access.wait_for_change" {
+		return true
+	}
 	if method == "page.get_console" || method == "page.get_network" {
 		return batchSafe(method, params)
 	}

@@ -10,6 +10,7 @@ import {
 import { loadBackground, type LoadedBackground } from '../../../tests/_helpers/loadBackground.ts';
 import { createMessagePortPair } from '../../../tests/_helpers/messagePort.ts';
 import { createRequest, createSuccess } from '../../../protocol/src/index.js';
+import { DEFAULT_ACCESS_SETTINGS } from '../src/access-settings.js';
 
 type SetupStatus = {
   mcpClients?: unknown[];
@@ -298,6 +299,7 @@ test('background UI port syncs current state and updates scoped tab state on req
       nativeUnstable: false,
       nativeHostVersion: '1.2.0',
       daemonProxy: null,
+      accessSettings: DEFAULT_ACCESS_SETTINGS,
       otherEnabledWindows: [],
       currentTab: {
         tabId: 31,
@@ -332,6 +334,7 @@ test('background UI port syncs current state and updates scoped tab state on req
       nativeUnstable: false,
       nativeHostVersion: '1.2.0',
       daemonProxy: null,
+      accessSettings: DEFAULT_ACCESS_SETTINGS,
       otherEnabledWindows: [],
       currentTab: {
         tabId: 41,
@@ -524,6 +527,7 @@ test('background UI port refresh clears setup status when the native host is una
       nativeUnstable: false,
       nativeHostVersion: null,
       daemonProxy: null,
+      accessSettings: DEFAULT_ACCESS_SETTINGS,
       otherEnabledWindows: [],
       currentTab: null,
       setupStatus: null,

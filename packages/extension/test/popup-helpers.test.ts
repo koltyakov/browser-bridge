@@ -19,7 +19,7 @@ test('getPopupViewState renders the unavailable state', () => {
     detail: 'Open a normal web page to manage Browser Bridge for this browser window.',
     disclosureHidden: false,
     attention: false,
-    buttonLabel: 'Enable Window Access',
+    buttonLabel: 'Enable window access',
     buttonDisabled: true,
   });
 });
@@ -50,7 +50,7 @@ test('getPopupViewState returns the access requested variant when access is pend
         'MCP Modern requested access to inspect pages in this browser window. Current tab: Pending access - https://example.com.',
       disclosureHidden: false,
       attention: true,
-      buttonLabel: 'Enable Window Access',
+      buttonLabel: 'Enable window access',
       buttonDisabled: false,
     }
   );
@@ -96,7 +96,7 @@ test('getPopupViewState returns the default disabled state when access is not en
         'Enable Browser Bridge to let your connected agent inspect and interact with pages in this browser window.',
       disclosureHidden: false,
       attention: false,
-      buttonLabel: 'Enable Window Access',
+      buttonLabel: 'Enable window access',
       buttonDisabled: false,
     }
   );
@@ -225,7 +225,7 @@ test('renderPopupViewState applies the derived popup copy and button state to DO
   assert.match(targets.accessDetail.textContent, /requested access to use pages/);
   assert.equal(targets.accessDisclosure.hidden, false);
   assert.equal(attention.has('attention'), true);
-  assert.equal(button.textContent, 'Enable Window Access');
+  assert.equal(button.textContent, 'Enable window access');
   assert.equal(button.disabled, false);
   assert.equal(button.dataset.pending, 'false');
 });
@@ -239,7 +239,7 @@ test('renderPopupButtonState resets pending flags for unavailable state', () => 
 
   renderPopupButtonState(null, button);
 
-  assert.equal(button.textContent, 'Enable Window Access');
+  assert.equal(button.textContent, 'Enable window access');
   assert.equal(button.disabled, true);
   assert.equal(button.dataset.pending, 'false');
   assert.equal(button.dataset.enabled, 'false');

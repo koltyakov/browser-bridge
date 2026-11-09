@@ -224,6 +224,31 @@
       "profileLabel": "wire-✓",
       "browserExtensionId": "wire-✓",
       "accessEnabled": false,
+      "accessSettings": {
+        "settingsRevision": "wire-✓",
+        "settings": {
+          "allowCreatingTabs": false,
+          "allowClosingUserTabs": false,
+          "closeAiTabsWhenDone": false,
+          "allowOffDomainNavigation": false,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
       "enabledWindow": {
         "arbitrary": [
           null,
@@ -366,6 +391,31 @@
     "type": "BridgeMeta",
     "valid": true,
     "input": {
+      "access_settings": {
+        "settingsRevision": "wire-✓",
+        "settings": {
+          "allowCreatingTabs": false,
+          "allowClosingUserTabs": false,
+          "closeAiTabsWhenDone": false,
+          "allowOffDomainNavigation": false,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
       "target_extension": "wire-✓",
       "target_browser": "wire-✓",
       "target_profile": "wire-✓",
@@ -422,6 +472,53 @@
       "tab_id": 1.25,
       "tab_routing": "explicit",
       "active_tab_id": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "AccessSettingsSnapshot",
+    "valid": true,
+    "input": {
+      "settingsRevision": "wire-✓",
+      "settings": {
+        "allowCreatingTabs": false,
+        "allowClosingUserTabs": false,
+        "closeAiTabsWhenDone": false,
+        "allowOffDomainNavigation": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "AccessSettings",
+    "valid": true,
+    "input": {
+      "allowCreatingTabs": false,
+      "allowClosingUserTabs": false,
+      "closeAiTabsWhenDone": false,
+      "allowOffDomainNavigation": false,
       "future_extension": {
         "arbitrary": [
           null,
@@ -890,6 +987,68 @@
     "valid": true,
     "input": {
       "intent": "inspect",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "AccessWaitForChangeParams",
+    "valid": true,
+    "input": {
+      "revision": "wire-✓",
+      "timeoutMs": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "NormalizedAccessWaitForChangeParams",
+    "valid": true,
+    "input": {
+      "revision": "wire-✓",
+      "timeoutMs": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "AccessWaitForChangeResult",
+    "valid": true,
+    "input": {
+      "settingsRevision": "wire-✓",
+      "settings": {
+        "allowCreatingTabs": false,
+        "allowClosingUserTabs": false,
+        "closeAiTabsWhenDone": false,
+        "allowOffDomainNavigation": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "changed": false,
       "future_extension": {
         "arbitrary": [
           null,

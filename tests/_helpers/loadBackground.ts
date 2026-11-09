@@ -246,7 +246,8 @@ export async function loadBackground(
     if (options.flushMicrotasks !== false) {
       await Promise.resolve();
       await Promise.resolve();
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Let all startup storage chains settle before tests mutate shared state.
+      await new Promise((resolve) => setImmediate(resolve));
     }
     return {
       chrome,

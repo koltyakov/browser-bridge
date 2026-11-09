@@ -5,6 +5,7 @@ import {
   isBatchSafeBridgeCall,
 } from '../../../protocol/src/index.js';
 import { requestLifetimes } from './background-request-lifetime.js';
+import { isUnavailableDocumentError } from './background-helpers.js';
 
 /** How long a timed-out mutation keeps its tab turn while its content command
  * is still running. A hung renderer never settles, so the turn is released. */
@@ -33,7 +34,8 @@ export function isRestrictedScriptingError(message: string): boolean {
     /Cannot access contents of/i.test(message) ||
     /The extensions gallery cannot be scripted/i.test(message) ||
     /Cannot access a chrome:\/\//i.test(message) ||
-    /Cannot script/i.test(message)
+    /Cannot script/i.test(message) ||
+    isUnavailableDocumentError(message)
   );
 }
 

@@ -34,6 +34,9 @@ func mcpDoctorResolve(report, health, rawMetrics, logs object, connectionError e
 		health = nil
 	}
 	access := health.object("access")
+	if snapshot := normalizeAccessSettingsSnapshot(health.object("accessSettings")); snapshot != nil {
+		report["accessSettings"] = value(snapshot)
+	}
 	report["extensionConnected"], report["accessEnabled"], report["routeReady"] = value(health.boolean("extensionConnected")), value(access.boolean("enabled")), value(access.boolean("routeReady"))
 	for target, source := range map[string]string{"enabledWindowId": "windowId", "routeTabId": "routeTabId"} {
 		report[target] = cliNull

@@ -99,7 +99,7 @@
     {
       "name": "browser_health",
       "title": "Browser Bridge Health",
-      "description": "Check connectivity, compatibility, and access routing with a compact response. Set diagnostics:true for the full diagnostic report.",
+      "description": "Check connectivity, compatibility, access routing, and live user access settings with their revision. Settings are enforced per request, not cached permissions. Set diagnostics:true for the full diagnostic report.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1576,7 +1576,7 @@
     {
       "name": "browser_call",
       "title": "Raw Browser Bridge Call",
-      "description": "Call any bridge method by name through one approvable MCP tool. tabs.list returns 30 tabs by default; follow pagination.nextOffset until null before concluding a requested URL is missing. protocol.describe with params.method returns on-demand schemas and examples. Prefer structured reads and semantic DOM baselines. Only when DOM diffs cannot verify CSS, canvas, charts or visual regressions, opt in to screenshot.baseline.create/compare/release for local Go pixel comparison and bounded visual evidence; inspect its schema first. Normal screenshots do not retain baselines. For authorized known flows, input.perform combines ordered steps, DOM/URL/fresh fetch-XHR outcomes, and returnLastResult. OUTCOME_NOT_MET is not retryable. Stop for new decisions or approval; never blindly replay a partial flow.",
+      "description": "Call any bridge method by name through one approvable MCP tool. tabs.list returns 30 tabs by default; follow pagination.nextOffset until null before concluding a requested URL is missing. protocol.describe with params.method returns on-demand schemas and examples. Prefer structured reads and semantic DOM baselines. On ACCESS_DENIED with details.reason=policy_setting_disabled, ask the user to change that setting; health.ping reads live settings, and access.wait_for_change with {revision:details.settingsRevision,timeoutMs:25000} waits for a change on the same extensionId without replaying the action. Inspect the returned setting and access before a deliberate retry; never bypass a disabled policy. Only when DOM diffs cannot verify CSS, canvas, charts or visual regressions, opt in to screenshot.baseline.create/compare/release for local Go pixel comparison and bounded visual evidence; inspect its schema first. Normal screenshots do not retain baselines. For authorized known flows, input.perform combines ordered steps, DOM/URL/fresh fetch-XHR outcomes, and returnLastResult. OUTCOME_NOT_MET is not retryable. Stop for new decisions or approval; never blindly replay a partial flow.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

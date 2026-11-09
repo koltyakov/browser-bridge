@@ -1,8 +1,14 @@
 export const AGENT_GROUP_STORAGE_KEY = 'bbxAgentTabGroups';
 export const AGENT_GROUP_TITLE = 'AI';
 export const AGENT_GROUP_COLOR = 'blue';
+export const ACTIVE_AGENT_GROUP_COLOR = 'orange';
 
-export type OwnedGroup = { groupId: number; windowId: number; tabIds: number[] };
+export type OwnedGroup = {
+  groupId: number;
+  windowId: number;
+  tabIds: number[];
+  color?: 'blue' | 'orange';
+};
 export type AgentActivity = { windowId: number | null; tabIds: Set<number> };
 
 /** Highlight contiguous runs without moving tabs or taking over user groups.
@@ -42,6 +48,9 @@ export function createAgentTabGroupController(
           record.windowId < 0 ||
           !Array.isArray(record.tabIds) ||
           !record.tabIds.length ||
+          (record.color !== undefined &&
+            record.color !== AGENT_GROUP_COLOR &&
+            record.color !== ACTIVE_AGENT_GROUP_COLOR) ||
           !record.tabIds.every((id) => typeof id === 'number' && Number.isSafeInteger(id) && id > 0)
         )
           continue;
@@ -49,6 +58,10 @@ export function createAgentTabGroupController(
           groupId: record.groupId,
           windowId: record.windowId,
           tabIds: [...record.tabIds],
+          color:
+            record.color === ACTIVE_AGENT_GROUP_COLOR
+              ? ACTIVE_AGENT_GROUP_COLOR
+              : AGENT_GROUP_COLOR,
         });
       }
     }
@@ -63,7 +76,7 @@ export function createAgentTabGroupController(
     return (
       group.windowId === record.windowId &&
       group.title === AGENT_GROUP_TITLE &&
-      group.color === AGENT_GROUP_COLOR &&
+      group.color === (record.color ?? AGENT_GROUP_COLOR) &&
       !group.shared &&
       members.every((tab) => typeof tab.id === 'number' && record.tabIds.includes(tab.id))
     );
@@ -213,6 +226,23 @@ Recheck ownership because the user may edit groups while a sync is pending. */
         if (first !== undefined) await attach(tabs[0].windowId, [first, ...rest]);
       }
     }
+    for (const record of [...owned.values()]) {
+      // Recheck ownership before recoloring so a user's manual edits still win.
+      const members = await chromeObj.tabs.query({ groupId: record.groupId });
+      const group = await chromeObj.tabGroups.get(record.groupId).catch(() => null);
+      if (!group || !isUnchanged(record, group, members)) continue;
+      const latest = await deps.getActivity();
+      if (latest.windowId !== record.windowId) continue;
+      const color = members.some(
+        (tab) => tab.active && typeof tab.id === 'number' && latest.tabIds.has(tab.id)
+      )
+        ? ACTIVE_AGENT_GROUP_COLOR
+        : AGENT_GROUP_COLOR;
+      if (group.color === color) continue;
+      await chromeObj.tabGroups.update(record.groupId, { color });
+      record.color = color;
+      await persist();
+    }
   }
 
   /** Whether a neighboring group can absorb new agent tabs: a group this
@@ -226,7 +256,7 @@ the extension reloaded and lost its ownership records). */
       !!group &&
       group.windowId === windowId &&
       group.title === AGENT_GROUP_TITLE &&
-      group.color === AGENT_GROUP_COLOR &&
+      (group.color === AGENT_GROUP_COLOR || group.color === ACTIVE_AGENT_GROUP_COLOR) &&
       !group.shared
     );
   }
@@ -278,12 +308,17 @@ not create. */
       tabIds,
       createProperties: { windowId },
     });
-    const record = { groupId, windowId, tabIds };
+    const color = current.some(
+      (tab) => typeof tab.id === 'number' && tabIds.includes(tab.id) && tab.active
+    )
+      ? ACTIVE_AGENT_GROUP_COLOR
+      : AGENT_GROUP_COLOR;
+    const record: OwnedGroup = { groupId, windowId, tabIds, color };
     owned.set(groupId, record);
     try {
       await chromeObj.tabGroups.update(groupId, {
         title: AGENT_GROUP_TITLE,
-        color: AGENT_GROUP_COLOR,
+        color,
       });
       await persist();
     } catch (error) {

@@ -372,6 +372,10 @@ test('console instrumentation errors are classified for best-effort priming', ()
     'No tab with id: 9',
     'Cannot attach to this target',
     'Another debugger is already attached',
+    'Frame with ID 0 is showing error page',
+    'Frame with ID 8 was removed.',
+    'No frame with id 8 in tab 41',
+    'The tab was closed.',
   ];
 
   for (const message of recoverableMessages) {

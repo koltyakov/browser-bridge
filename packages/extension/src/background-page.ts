@@ -115,7 +115,7 @@ import {
 import { buildHar } from './background-har.js';
 import { resolveWindowScopedTab, selectRequestTabCandidate } from './background-routing.js';
 import { normalizeAgentSession } from './background-agent-tabs.js';
-import { captureWindowGrant } from './background-access.js';
+import { captureWindowGrant, isGrantedTab } from './background-access.js';
 import {
   ACCESS_DENIED_REASON_WINDOW_GONE,
   ACCESS_DENIED_REASON_WINDOW_OFF,
@@ -287,6 +287,9 @@ only an unbound or idle-expired session follows the active tab. */
       via: TabRoutingVia
     ): Promise<ResolvedTabTarget> => {
       assertAccess();
+      if (!isGrantedTab(state, resolved.tabId, resolved.windowId)) {
+        throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Access is not enabled for this tab.');
+      }
       const routing = { tabId: resolved.tabId, via, activeTabId };
       if (!peek) {
         if (agentTabs) await agentTabs.bind(session, resolved.tabId, resolved.windowId);
@@ -298,7 +301,11 @@ only an unbound or idle-expired session follows the active tab. */
     };
 
     if (hasExplicitTab || !agentTabs) {
-      const tab = selectRequestTabCandidate(request.tab_id, explicitTab, activeTab ?? null);
+      const initialTab =
+        !hasExplicitTab && grant.tabId !== undefined
+          ? await chromeObj.tabs.get(grant.tabId)
+          : activeTab;
+      const tab = selectRequestTabCandidate(request.tab_id, explicitTab, initialTab ?? null);
       return finish(
         resolveWindowScopedTab(tab, enabledWindowId, routingOptions),
         hasExplicitTab ? 'explicit' : 'active'
@@ -331,7 +338,9 @@ only an unbound or idle-expired session follows the active tab. */
       );
     }
 
-    return finish(resolveWindowScopedTab(activeTab, enabledWindowId, routingOptions), 'active');
+    const initialTab =
+      grant.tabId !== undefined ? await chromeObj.tabs.get(grant.tabId) : activeTab;
+    return finish(resolveWindowScopedTab(initialTab, enabledWindowId, routingOptions), 'active');
   }
 
   /** Wait for a tab to reach the `complete` status after a navigation-like action. */

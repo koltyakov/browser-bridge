@@ -40,6 +40,7 @@ type peer struct {
 	accessEpoch           uint64
 	active                int64
 	window                object
+	accessSettings        *protocol.AccessSettingsSnapshot
 	windowPush            bool
 	windowControl         bool
 	pending               int
@@ -488,6 +489,9 @@ func (d *daemon) snapshot() []object {
 			continue
 		}
 		entry := object{"extensionId": value(p.id), "accessEnabled": value(p.access)}
+		if p.accessSettings != nil {
+			entry["accessSettings"] = value(p.accessSettings)
+		}
 		if p.identity.boolean("mutationScheduling") {
 			entry["mutationScheduling"] = value(true)
 		}
@@ -573,6 +577,7 @@ func (d *daemon) handleEnvelope(p *peer, message, body object) {
 		d.identity(p, message)
 		d.windows()
 	case "extension.access_update":
+		p.accessSettings = normalizeAccessSettingsSnapshot(message.object("accessSettings"))
 		previousWindow := p.window
 		p.access = message.boolean("accessEnabled")
 		p.window = nil

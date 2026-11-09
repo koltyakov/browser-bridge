@@ -467,7 +467,7 @@ test('background dispatch rejects tabs.create when no window is enabled', async 
   assert.equal(response.meta?.method, 'tabs.create');
 });
 
-test('background dispatch closes a tab inside the enabled window', async () => {
+test('background dispatch closes a user tab only after opting in', async () => {
   const removedTabIds: number[] = [];
   const chrome = createChromeFake({
     tabs: {
@@ -489,6 +489,15 @@ test('background dispatch closes a tab inside the enabled window', async () => {
   });
 
   setEnabledWindow(loaded);
+
+  const state =
+    loaded.module.getStateForTest() as import('../src/background-state.js').ExtensionState;
+  const denied = await loaded.dispatch(
+    createRequest({ id: 'close-user-default', method: 'tabs.close', params: { tabId: 21 } })
+  );
+  assert.equal(denied.ok, false);
+  assert.deepEqual(removedTabIds, []);
+  state.accessSettings.allowClosingUserTabs = true;
 
   const response = await loaded.dispatch(
     createRequest({

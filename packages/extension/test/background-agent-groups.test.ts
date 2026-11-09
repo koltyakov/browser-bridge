@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createChromeFake, createStorageArea } from '../../../tests/_helpers/chromeFake.ts';
+import {
+  createChromeEvent,
+  createChromeFake,
+  createStorageArea,
+  type FakeChromeEvent,
+} from '../../../tests/_helpers/chromeFake.ts';
 import { loadBackground } from '../../../tests/_helpers/loadBackground.ts';
 import { createRequest } from '../../../protocol/src/index.js';
 import type { ExtensionState } from '../src/background-state.js';
@@ -11,7 +16,14 @@ import {
   createAgentTabGroupController,
 } from '../src/background-agent-groups.js';
 
-type Tab = { id: number; index: number; windowId: number; groupId: number; pinned: boolean };
+type Tab = {
+  id: number;
+  index: number;
+  windowId: number;
+  groupId: number;
+  pinned: boolean;
+  active: boolean;
+};
 
 function harness(ids: number[] = [1, 2, 3, 4, 5]) {
   const tabs: Tab[] = ids.map((id, index) => ({
@@ -20,6 +32,7 @@ function harness(ids: number[] = [1, 2, 3, 4, 5]) {
     windowId: 7,
     groupId: -1,
     pinned: false,
+    active: false,
   }));
   const groups = new Map<number, chrome.tabGroups.TabGroup>();
   const storage = createStorageArea();
@@ -172,6 +185,54 @@ test('adjacent active tabs share an AI group and separated tabs get separate gro
   assert.equal(h.calls.length, 2, 'repeated routing does not recreate groups');
 });
 
+test('the active working-tab group is orange and other AI groups stay blue without moving tabs', async () => {
+  const h = harness();
+  h.tabs[0].active = true;
+  h.setActive([1, 2, 4]);
+  await h.controller.sync();
+  const first = h.tabs[0].groupId;
+  const other = h.tabs[3].groupId;
+  assert.equal(h.groups.get(first)?.color, 'orange');
+  assert.equal(h.groups.get(other)?.color, 'blue');
+  const restored = h.create();
+  await restored.sync();
+  assert.equal(
+    h.groups.get(first)?.color,
+    'orange',
+    'worker restore keeps ownership of orange groups'
+  );
+  h.tabs[0].active = false;
+  h.tabs[3].active = true;
+  await restored.sync();
+  assert.equal(h.groups.get(first)?.color, 'blue');
+  assert.equal(h.groups.get(other)?.color, 'orange');
+  h.tabs[3].active = false;
+  h.tabs[2].active = true;
+  await restored.sync();
+  assert.equal(h.groups.get(first)?.color, 'blue');
+  assert.equal(
+    h.groups.get(other)?.color,
+    'blue',
+    'an unrelated active user tab is not highlighted as AI work'
+  );
+  assert.equal(h.groups.size, 2);
+  assert.deepEqual(h.order(), [1, 2, 3, 4, 5]);
+  assert.equal(h.calls.length, 2, 'color changes do not recreate or move groups');
+});
+
+test('manually recoloring an orange AI group relinquishes ownership even when the user chooses blue', async () => {
+  const h = harness();
+  h.tabs[0].active = true;
+  h.setActive([1]);
+  await h.controller.sync();
+  const group = h.groups.get(h.tabs[0].groupId)!;
+  assert.equal(group.color, 'orange');
+  group.color = 'blue';
+  await h.controller.sync();
+  assert.equal(group.color, 'blue');
+  assert.deepEqual(h.storage.snapshot()[AGENT_GROUP_STORAGE_KEY], []);
+});
+
 test('all 20 tabs used by one agent stay in the AI group without moving', async () => {
   const ids = Array.from({ length: 20 }, (_, index) => index + 1);
   const h = harness(ids);
@@ -276,7 +337,7 @@ test('a new tab next to an owned AI group joins it instead of regrouping', async
     [groupId, groupId, groupId, groupId, -1]
   );
   assert.deepEqual(h.storage.snapshot()[AGENT_GROUP_STORAGE_KEY], [
-    { groupId, windowId: 7, tabIds: [2, 3, 1, 4] },
+    { groupId, windowId: 7, tabIds: [2, 3, 1, 4], color: 'blue' },
   ]);
   await h.controller.sync();
   assert.equal(h.calls.length, 3, 'the extended group stays owned');
@@ -510,6 +571,56 @@ test('failed ownership reads prevent grouping and can be retried; unsupported AP
     },
   });
   await unsupported.sync();
+});
+
+test('enabling tab-only access groups the tab before any agent request', async () => {
+  const h = harness([81, 82]);
+  h.tabs[0].active = true;
+  const chromeObj = createChromeFake({
+    storage: { session: h.storage },
+    tabs: {
+      ...h.chromeObj.tabs,
+      async get(tabId: number) {
+        const tab = h.tabs.find((entry) => entry.id === tabId);
+        if (!tab) throw new Error('Tab closed');
+        return { ...tab, url: 'https://example.test/', title: `Tab ${tabId}`, status: 'complete' };
+      },
+    },
+  });
+  Reflect.set(chromeObj, 'tabGroups', h.chromeObj.tabGroups);
+  await loadBackground({ chrome: chromeObj });
+  const onMessage = createChromeEvent();
+  const messages: Array<Record<string, unknown>> = [];
+  (chromeObj.runtime.onConnect as FakeChromeEvent).dispatch({
+    name: 'ui-sidepanel',
+    onMessage,
+    onDisconnect: createChromeEvent(),
+    postMessage(message: Record<string, unknown>) {
+      messages.push(message);
+    },
+  });
+  onMessage.dispatch({ type: 'scope.set_enabled', tabId: 81, enabled: true, scope: 'tab' });
+  for (let i = 0; i < 30 && h.groups.size === 0; i++)
+    await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.groups.size, 1);
+  assert.equal([...h.groups.values()][0].title, 'AI');
+  assert.equal([...h.groups.values()][0].color, 'orange');
+  assert.equal(h.tabs[0].groupId, [...h.groups.keys()][0]);
+  assert.equal(h.tabs[1].groupId, -1);
+  assert.equal(
+    messages.some((message) => message.type === 'toggle.error'),
+    false
+  );
+  h.tabs[0].active = false;
+  h.tabs[1].active = true;
+  (chromeObj.tabs.onActivated as FakeChromeEvent).dispatch({ tabId: 82, windowId: 7 });
+  for (let i = 0; i < 30 && [...h.groups.values()][0].color !== 'blue'; i++)
+    await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(
+    [...h.groups.values()][0].color,
+    'blue',
+    'tab activation immediately refreshes group colors'
+  );
 });
 
 test('background routes real agent requests into adjacent AI groups, ignores pings, and cleans up access', async () => {

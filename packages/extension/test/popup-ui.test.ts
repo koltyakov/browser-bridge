@@ -107,7 +107,7 @@ test('popup UI flips the action label and styling state between enable and disab
     assert.ok(button, 'popup action button should be present');
 
     portPair.left.dispatchMessage(createPopupStateSync(false));
-    assert.equal(button.textContent, 'Enable Window Access');
+    assert.equal(button.textContent, 'Enable window access');
     assert.equal(button.dataset.enabled, 'false');
     assert.equal(button.disabled, false);
 
@@ -228,7 +228,7 @@ test('popup UI handles windowed diagnostics, toggles, and resize', async (t) => 
     assert.equal(timeoutCalls.at(-1)?.delay, 10_000);
     timeoutCalls.at(-1)?.callback();
     assert.equal(button.dataset.pending, 'false');
-    assert.equal(button.textContent, 'Enable Window Access');
+    assert.equal(button.textContent, 'Enable window access');
 
     portPair.left.dispatchMessage(createPopupStateSync(true, true));
     assert.equal(diagnostic.hidden, true);

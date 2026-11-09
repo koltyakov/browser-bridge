@@ -151,6 +151,8 @@ type DaemonMessage struct {
 
 	AccessEnabled Optional[bool] `json:"accessEnabled,omitzero"`
 
+	AccessSettings Optional[AccessSettingsSnapshot] `json:"accessSettings,omitzero"`
+
 	EnabledWindow Optional[json.RawMessage] `json:"enabledWindow,omitzero"`
 
 	WindowAccessUpdates Optional[bool] `json:"windowAccessUpdates,omitzero"`
@@ -194,13 +196,13 @@ type DaemonMessage struct {
 
 func (v DaemonMessage) MarshalJSON() ([]byte, error) {
 	type alias DaemonMessage
-	return marshalOpen(alias(v), v.Extra, []string{"type", "role", "clientId", "requestId", "entry", "request", "status", "error", "response", "browserName", "profileLabel", "browserExtensionId", "accessEnabled", "enabledWindow", "windowAccessUpdates", "windowActions", "mutationScheduling", "action", "windowId", "enabledAt", "extensionId", "ok", "authToken", "at", "artifactId", "tabId", "artifact", "chunkIndex", "data", "journalId", "offset", "messageId"})
+	return marshalOpen(alias(v), v.Extra, []string{"type", "role", "clientId", "requestId", "entry", "request", "status", "error", "response", "browserName", "profileLabel", "browserExtensionId", "accessEnabled", "accessSettings", "enabledWindow", "windowAccessUpdates", "windowActions", "mutationScheduling", "action", "windowId", "enabledAt", "extensionId", "ok", "authToken", "at", "artifactId", "tabId", "artifact", "chunkIndex", "data", "journalId", "offset", "messageId"})
 }
 
 func (v *DaemonMessage) UnmarshalJSON(data []byte) error {
 	type alias DaemonMessage
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"type", "role", "clientId", "requestId", "entry", "request", "status", "error", "response", "browserName", "profileLabel", "browserExtensionId", "accessEnabled", "enabledWindow", "windowAccessUpdates", "windowActions", "mutationScheduling", "action", "windowId", "enabledAt", "extensionId", "ok", "authToken", "at", "artifactId", "tabId", "artifact", "chunkIndex", "data", "journalId", "offset", "messageId"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"type", "role", "clientId", "requestId", "entry", "request", "status", "error", "response", "browserName", "profileLabel", "browserExtensionId", "accessEnabled", "accessSettings", "enabledWindow", "windowAccessUpdates", "windowActions", "mutationScheduling", "action", "windowId", "enabledAt", "extensionId", "ok", "authToken", "at", "artifactId", "tabId", "artifact", "chunkIndex", "data", "journalId", "offset", "messageId"})
 	if err != nil {
 		return err
 	}
@@ -294,6 +296,8 @@ const (
 	BridgeMethodWebmcpExecuteTool BridgeMethod = "webmcp.execute_tool"
 
 	BridgeMethodAccessRequest BridgeMethod = "access.request"
+
+	BridgeMethodAccessWaitForChange BridgeMethod = "access.wait_for_change"
 
 	BridgeMethodProtocolDescribe BridgeMethod = "protocol.describe"
 
@@ -458,7 +462,7 @@ const (
 
 func (v BridgeMethod) Valid() bool {
 	switch v {
-	case BridgeMethodSessionStart, BridgeMethodSessionJournalRead, BridgeMethodSessionJournalDelete, BridgeMethodSessionStatus, BridgeMethodSessionRead, BridgeMethodSessionStop, BridgeMethodSessionExport, BridgeMethodSessionRelease, BridgeMethodFilesStage, BridgeMethodFilesRelease, BridgeMethodInputSetFiles, BridgeMethodInputPasteImage, BridgeMethodDownloadResource, BridgeMethodDownloadStart, BridgeMethodDownloadStatus, BridgeMethodDownloadPause, BridgeMethodDownloadResume, BridgeMethodDownloadCancel, BridgeMethodDownloadRelease, BridgeMethodEmulationApply, BridgeMethodEmulationStatus, BridgeMethodEmulationReset, BridgeMethodWebmcpListTools, BridgeMethodWebmcpGetTool, BridgeMethodWebmcpExecuteTool, BridgeMethodAccessRequest, BridgeMethodProtocolDescribe, BridgeMethodTabsList, BridgeMethodTabsCreate, BridgeMethodTabsClose, BridgeMethodTabsActivate, BridgeMethodSkillGetRuntimeContext, BridgeMethodSetupGetStatus, BridgeMethodSetupInstall, BridgeMethodPageGetState, BridgeMethodPageEvaluate, BridgeMethodPageGetConsole, BridgeMethodPageHandleDialog, BridgeMethodPageWaitForLoadState, BridgeMethodPageGetStorage, BridgeMethodSensitiveRead, BridgeMethodPageGetText, BridgeMethodPageExtractContent, BridgeMethodPageGetNetwork, BridgeMethodNetworkExportHar, BridgeMethodNetworkInterceptAdd, BridgeMethodNetworkInterceptRemove, BridgeMethodNetworkInterceptList, BridgeMethodNetworkInterceptClear, BridgeMethodNavigationNavigate, BridgeMethodNavigationReload, BridgeMethodNavigationGoBack, BridgeMethodNavigationGoForward, BridgeMethodDomQuery, BridgeMethodDomBaselineCreate, BridgeMethodDomBaselineCompare, BridgeMethodDomBaselineDescribe, BridgeMethodDomBaselineRelease, BridgeMethodDomDescribe, BridgeMethodDomGetText, BridgeMethodDomGetAttributes, BridgeMethodDomWaitFor, BridgeMethodDomFindByText, BridgeMethodDomFindByRole, BridgeMethodDomGetHTML, BridgeMethodDomGetAccessibilityTree, BridgeMethodLayoutGetBoxModel, BridgeMethodLayoutHitTest, BridgeMethodStylesGetComputed, BridgeMethodStylesGetMatchedRules, BridgeMethodViewportScroll, BridgeMethodViewportResize, BridgeMethodInputClick, BridgeMethodInputFocus, BridgeMethodInputType, BridgeMethodInputFill, BridgeMethodInputPressKey, BridgeMethodInputSetChecked, BridgeMethodInputSelectOption, BridgeMethodInputHover, BridgeMethodInputDrag, BridgeMethodInputTouch, BridgeMethodInputPerform, BridgeMethodInputScrollIntoView, BridgeMethodScreenshotCaptureRegion, BridgeMethodScreenshotCaptureElement, BridgeMethodScreenshotCaptureFullPage, BridgeMethodScreenshotBaselineCreate, BridgeMethodScreenshotBaselineCompare, BridgeMethodScreenshotBaselineRelease, BridgeMethodArtifactRead, BridgeMethodArtifactDelete, BridgeMethodPatchApplyStyles, BridgeMethodPatchApplyDom, BridgeMethodPatchList, BridgeMethodPatchRollback, BridgeMethodPatchCommitSessionBaseline, BridgeMethodCDPGetDocument, BridgeMethodCDPGetDomSnapshot, BridgeMethodCDPGetBoxModel, BridgeMethodCDPGetComputedStylesForNode, BridgeMethodCDPDispatchKeyEvent, BridgeMethodPerformanceGetMetrics, BridgeMethodLogTail, BridgeMethodHealthPing, BridgeMethodDaemonMetrics:
+	case BridgeMethodSessionStart, BridgeMethodSessionJournalRead, BridgeMethodSessionJournalDelete, BridgeMethodSessionStatus, BridgeMethodSessionRead, BridgeMethodSessionStop, BridgeMethodSessionExport, BridgeMethodSessionRelease, BridgeMethodFilesStage, BridgeMethodFilesRelease, BridgeMethodInputSetFiles, BridgeMethodInputPasteImage, BridgeMethodDownloadResource, BridgeMethodDownloadStart, BridgeMethodDownloadStatus, BridgeMethodDownloadPause, BridgeMethodDownloadResume, BridgeMethodDownloadCancel, BridgeMethodDownloadRelease, BridgeMethodEmulationApply, BridgeMethodEmulationStatus, BridgeMethodEmulationReset, BridgeMethodWebmcpListTools, BridgeMethodWebmcpGetTool, BridgeMethodWebmcpExecuteTool, BridgeMethodAccessRequest, BridgeMethodAccessWaitForChange, BridgeMethodProtocolDescribe, BridgeMethodTabsList, BridgeMethodTabsCreate, BridgeMethodTabsClose, BridgeMethodTabsActivate, BridgeMethodSkillGetRuntimeContext, BridgeMethodSetupGetStatus, BridgeMethodSetupInstall, BridgeMethodPageGetState, BridgeMethodPageEvaluate, BridgeMethodPageGetConsole, BridgeMethodPageHandleDialog, BridgeMethodPageWaitForLoadState, BridgeMethodPageGetStorage, BridgeMethodSensitiveRead, BridgeMethodPageGetText, BridgeMethodPageExtractContent, BridgeMethodPageGetNetwork, BridgeMethodNetworkExportHar, BridgeMethodNetworkInterceptAdd, BridgeMethodNetworkInterceptRemove, BridgeMethodNetworkInterceptList, BridgeMethodNetworkInterceptClear, BridgeMethodNavigationNavigate, BridgeMethodNavigationReload, BridgeMethodNavigationGoBack, BridgeMethodNavigationGoForward, BridgeMethodDomQuery, BridgeMethodDomBaselineCreate, BridgeMethodDomBaselineCompare, BridgeMethodDomBaselineDescribe, BridgeMethodDomBaselineRelease, BridgeMethodDomDescribe, BridgeMethodDomGetText, BridgeMethodDomGetAttributes, BridgeMethodDomWaitFor, BridgeMethodDomFindByText, BridgeMethodDomFindByRole, BridgeMethodDomGetHTML, BridgeMethodDomGetAccessibilityTree, BridgeMethodLayoutGetBoxModel, BridgeMethodLayoutHitTest, BridgeMethodStylesGetComputed, BridgeMethodStylesGetMatchedRules, BridgeMethodViewportScroll, BridgeMethodViewportResize, BridgeMethodInputClick, BridgeMethodInputFocus, BridgeMethodInputType, BridgeMethodInputFill, BridgeMethodInputPressKey, BridgeMethodInputSetChecked, BridgeMethodInputSelectOption, BridgeMethodInputHover, BridgeMethodInputDrag, BridgeMethodInputTouch, BridgeMethodInputPerform, BridgeMethodInputScrollIntoView, BridgeMethodScreenshotCaptureRegion, BridgeMethodScreenshotCaptureElement, BridgeMethodScreenshotCaptureFullPage, BridgeMethodScreenshotBaselineCreate, BridgeMethodScreenshotBaselineCompare, BridgeMethodScreenshotBaselineRelease, BridgeMethodArtifactRead, BridgeMethodArtifactDelete, BridgeMethodPatchApplyStyles, BridgeMethodPatchApplyDom, BridgeMethodPatchList, BridgeMethodPatchRollback, BridgeMethodPatchCommitSessionBaseline, BridgeMethodCDPGetDocument, BridgeMethodCDPGetDomSnapshot, BridgeMethodCDPGetBoxModel, BridgeMethodCDPGetComputedStylesForNode, BridgeMethodCDPDispatchKeyEvent, BridgeMethodPerformanceGetMetrics, BridgeMethodLogTail, BridgeMethodHealthPing, BridgeMethodDaemonMetrics:
 		return true
 	}
 	return false
@@ -467,6 +471,8 @@ func (v BridgeMethod) Valid() bool {
 type BridgeParams map[string]json.RawMessage
 
 type BridgeMeta struct {
+	AccessSettings Optional[AccessSettingsSnapshot] `json:"access_settings,omitzero"`
+
 	TargetExtension Optional[string] `json:"target_extension,omitzero"`
 
 	TargetBrowser Optional[string] `json:"target_browser,omitzero"`
@@ -536,18 +542,72 @@ type BridgeMeta struct {
 
 func (v BridgeMeta) MarshalJSON() ([]byte, error) {
 	type alias BridgeMeta
-	return marshalOpen(alias(v), v.Extra, []string{"target_extension", "target_browser", "target_profile", "protocol_version", "token_budget", "transport_bytes", "transport_approx_tokens", "transport_cost_class", "text_bytes", "text_approx_tokens", "text_cost_class", "image_approx_tokens", "image_bytes", "source", "mcp_era", "caller", "response_bytes", "approx_tokens", "cost_class", "debugger_backed", "budget_applied", "budget_truncated", "continuation_hint", "automatic_retry", "stale_recovery", "agent_session", "transport_owner", "deadline_ms", "artifact_ack", "tab_id", "tab_routing", "active_tab_id"})
+	return marshalOpen(alias(v), v.Extra, []string{"access_settings", "target_extension", "target_browser", "target_profile", "protocol_version", "token_budget", "transport_bytes", "transport_approx_tokens", "transport_cost_class", "text_bytes", "text_approx_tokens", "text_cost_class", "image_approx_tokens", "image_bytes", "source", "mcp_era", "caller", "response_bytes", "approx_tokens", "cost_class", "debugger_backed", "budget_applied", "budget_truncated", "continuation_hint", "automatic_retry", "stale_recovery", "agent_session", "transport_owner", "deadline_ms", "artifact_ack", "tab_id", "tab_routing", "active_tab_id"})
 }
 
 func (v *BridgeMeta) UnmarshalJSON(data []byte) error {
 	type alias BridgeMeta
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"target_extension", "target_browser", "target_profile", "protocol_version", "token_budget", "transport_bytes", "transport_approx_tokens", "transport_cost_class", "text_bytes", "text_approx_tokens", "text_cost_class", "image_approx_tokens", "image_bytes", "source", "mcp_era", "caller", "response_bytes", "approx_tokens", "cost_class", "debugger_backed", "budget_applied", "budget_truncated", "continuation_hint", "automatic_retry", "stale_recovery", "agent_session", "transport_owner", "deadline_ms", "artifact_ack", "tab_id", "tab_routing", "active_tab_id"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"access_settings", "target_extension", "target_browser", "target_profile", "protocol_version", "token_budget", "transport_bytes", "transport_approx_tokens", "transport_cost_class", "text_bytes", "text_approx_tokens", "text_cost_class", "image_approx_tokens", "image_bytes", "source", "mcp_era", "caller", "response_bytes", "approx_tokens", "cost_class", "debugger_backed", "budget_applied", "budget_truncated", "continuation_hint", "automatic_retry", "stale_recovery", "agent_session", "transport_owner", "deadline_ms", "artifact_ack", "tab_id", "tab_routing", "active_tab_id"})
 	if err != nil {
 		return err
 	}
 	decoded.Extra = extra
 	*v = BridgeMeta(decoded)
+	return nil
+}
+
+type AccessSettingsSnapshot struct {
+	SettingsRevision string `json:"settingsRevision"`
+
+	Settings AccessSettings `json:"settings"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v AccessSettingsSnapshot) MarshalJSON() ([]byte, error) {
+	type alias AccessSettingsSnapshot
+	return marshalOpen(alias(v), v.Extra, []string{"settingsRevision", "settings"})
+}
+
+func (v *AccessSettingsSnapshot) UnmarshalJSON(data []byte) error {
+	type alias AccessSettingsSnapshot
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"settingsRevision", "settings"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = AccessSettingsSnapshot(decoded)
+	return nil
+}
+
+type AccessSettings struct {
+	AllowCreatingTabs bool `json:"allowCreatingTabs"`
+
+	AllowClosingUserTabs bool `json:"allowClosingUserTabs"`
+
+	CloseAiTabsWhenDone bool `json:"closeAiTabsWhenDone"`
+
+	AllowOffDomainNavigation bool `json:"allowOffDomainNavigation"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v AccessSettings) MarshalJSON() ([]byte, error) {
+	type alias AccessSettings
+	return marshalOpen(alias(v), v.Extra, []string{"allowCreatingTabs", "allowClosingUserTabs", "closeAiTabsWhenDone", "allowOffDomainNavigation"})
+}
+
+func (v *AccessSettings) UnmarshalJSON(data []byte) error {
+	type alias AccessSettings
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"allowCreatingTabs", "allowClosingUserTabs", "closeAiTabsWhenDone", "allowOffDomainNavigation"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = AccessSettings(decoded)
 	return nil
 }
 
@@ -1056,6 +1116,83 @@ func (v *AccessRequestParams) UnmarshalJSON(data []byte) error {
 	}
 	decoded.Extra = extra
 	*v = AccessRequestParams(decoded)
+	return nil
+}
+
+type AccessWaitForChangeParams struct {
+	Revision string `json:"revision"`
+
+	TimeoutMs Optional[float64] `json:"timeoutMs,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v AccessWaitForChangeParams) MarshalJSON() ([]byte, error) {
+	type alias AccessWaitForChangeParams
+	return marshalOpen(alias(v), v.Extra, []string{"revision", "timeoutMs"})
+}
+
+func (v *AccessWaitForChangeParams) UnmarshalJSON(data []byte) error {
+	type alias AccessWaitForChangeParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"revision", "timeoutMs"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = AccessWaitForChangeParams(decoded)
+	return nil
+}
+
+type NormalizedAccessWaitForChangeParams struct {
+	Revision string `json:"revision"`
+
+	TimeoutMs float64 `json:"timeoutMs"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v NormalizedAccessWaitForChangeParams) MarshalJSON() ([]byte, error) {
+	type alias NormalizedAccessWaitForChangeParams
+	return marshalOpen(alias(v), v.Extra, []string{"revision", "timeoutMs"})
+}
+
+func (v *NormalizedAccessWaitForChangeParams) UnmarshalJSON(data []byte) error {
+	type alias NormalizedAccessWaitForChangeParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"revision", "timeoutMs"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = NormalizedAccessWaitForChangeParams(decoded)
+	return nil
+}
+
+type AccessWaitForChangeResult struct {
+	SettingsRevision string `json:"settingsRevision"`
+
+	Settings AccessSettings `json:"settings"`
+
+	Changed bool `json:"changed"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v AccessWaitForChangeResult) MarshalJSON() ([]byte, error) {
+	type alias AccessWaitForChangeResult
+	return marshalOpen(alias(v), v.Extra, []string{"settingsRevision", "settings", "changed"})
+}
+
+func (v *AccessWaitForChangeResult) UnmarshalJSON(data []byte) error {
+	type alias AccessWaitForChangeResult
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"settingsRevision", "settings", "changed"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = AccessWaitForChangeResult(decoded)
 	return nil
 }
 

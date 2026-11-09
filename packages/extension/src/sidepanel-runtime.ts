@@ -6,6 +6,7 @@ export type SidePanelCurrentTab = {
   title: string;
   url: string;
   enabled: boolean;
+  accessScope?: 'tab';
   accessRequested: boolean;
   restricted: boolean;
   accessRequestContext?: import('./background-state.js').AccessRequestContext;
@@ -54,6 +55,7 @@ export type UiSnapshot = {
   nativeHostVersion: string | null;
   daemonProxy: DaemonProxyStatus | null;
   currentTab: SidePanelCurrentTab | null;
+  accessSettings?: import('./access-settings.js').AccessSettings;
   agentTabs?: import('./background-ui.js').AgentTabUiState[];
   otherEnabledWindows?: import('../../../protocol/src/window-access.js').BrowserWindowAccess[];
   setupStatus: SetupStatus | null;

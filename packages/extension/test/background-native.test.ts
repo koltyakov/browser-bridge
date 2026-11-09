@@ -24,6 +24,8 @@ import type { SetupStatus } from '../../../protocol/src/types.js';
 import { createNativeConnectionController, refreshSetupStatus } from '../src/background-native.js';
 import { createExtensionState, NATIVE_SETUP_RETRY_ALARM } from '../src/background-state.js';
 import type { ExtensionState } from '../src/background-state.js';
+import { DEFAULT_ACCESS_SETTINGS, getAccessSettingsSnapshot } from '../src/access-settings.js';
+import { getErrorMessageWithCauses } from '../src/background-helpers.js';
 
 type ScheduledTimer = {
   handle: ReturnType<typeof setTimeout>;
@@ -785,6 +787,7 @@ test('background native enable flow primes console capture and swallows recovera
   assert.deepEqual(findMessage(nativeMessages, 'host.access_update'), {
     type: 'host.access_update',
     accessEnabled: true,
+    accessSettings: getAccessSettingsSnapshot(getNativeModule(loaded).getStateForTest()),
     enabledWindow: getNativeModule(loaded).getStateForTest().enabledWindow,
   });
 });
@@ -823,6 +826,7 @@ test('background native connect syncs restored enabled access after startup', as
   assert.deepEqual(findMessage(nativeMessages, 'host.access_update'), {
     type: 'host.access_update',
     accessEnabled: true,
+    accessSettings: getAccessSettingsSnapshot(getNativeModule(loaded).getStateForTest()),
     enabledWindow: { windowId: 8, title: 'Restored Window', enabledAt: 123 },
   });
 });
@@ -919,7 +923,11 @@ test('background native scheduleNativeReconnect backs off and clears the prior r
       summaryPrefix: 'Native host disconnected',
       updateDisconnectedUi: false,
     });
-    await flushAsyncWork();
+    await waitForCondition(
+      () =>
+        state.actionLog.at(-1)?.summary ===
+        'Native host disconnected (attempt 2): still down. Reconnecting in 4000ms.'
+    );
 
     assert.equal(state.nativeReconnectAttempts, 2);
     assert.equal(state.setupStatus, null);
@@ -1152,6 +1160,7 @@ test('background native scheduleNativeReconnect broadcasts disconnect state and 
         nativeUnstable: false,
         nativeHostVersion: null,
         daemonProxy: null,
+        accessSettings: DEFAULT_ACCESS_SETTINGS,
         currentTab: null,
         otherEnabledWindows: [],
         setupStatus: null,
@@ -1368,6 +1377,7 @@ test('background native enable flow broadcasts synced UI state and posts an acce
       nativeUnstable: false,
       nativeHostVersion: '1.2.0',
       daemonProxy: null,
+      accessSettings: DEFAULT_ACCESS_SETTINGS,
       otherEnabledWindows: [],
       currentTab: {
         tabId: 31,
@@ -1394,6 +1404,7 @@ test('background native enable flow broadcasts synced UI state and posts an acce
   assert.deepEqual(findMessage(nativeMessages, 'host.access_update'), {
     type: 'host.access_update',
     accessEnabled: true,
+    accessSettings: getAccessSettingsSnapshot(state),
     enabledWindow: state.enabledWindow,
   });
 });
@@ -1535,10 +1546,9 @@ test('background native clearTabBridgeState surfaces unexpected network buffer r
 
   await assert.rejects(getNativeModule(loaded).clearTabBridgeState(91), (error: unknown) => {
     assert(error instanceof AggregateError);
-    assert(
-      error.errors.some(
-        (cause: unknown) => cause instanceof Error && /network buffer exploded/.test(cause.message)
-      )
+    assert.match(
+      getErrorMessageWithCauses(error),
+      /Could not stop network capture for tab 91: network buffer exploded/
     );
     return true;
   });

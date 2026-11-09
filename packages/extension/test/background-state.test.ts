@@ -26,6 +26,8 @@ import {
 } from '../src/background-state.js';
 import type { ActionLogEntry } from '../src/background-state.js';
 import { DEVELOPMENT_RELOAD_ALARM } from '../src/background-development.js';
+import { getErrorMessageWithCauses } from '../src/background-helpers.js';
+import { getAccessSettingsSnapshot } from '../src/access-settings.js';
 
 type EnabledWindow = {
   windowId: number;
@@ -34,6 +36,8 @@ type EnabledWindow = {
 };
 
 type BackgroundState = {
+  accessSettings: import('../src/access-settings.js').AccessSettings;
+  accessSettingsRevision: string;
   nativePort?: FakeRuntimePort | null;
   enabledWindow: EnabledWindow | null;
   requestedAccessWindowId: number | null;
@@ -769,6 +773,7 @@ test('background state clearEnabledWindowIfGone clears missing windows and sends
   assert.deepEqual(nativeMessages.at(-1), {
     type: 'host.access_update',
     accessEnabled: false,
+    accessSettings: getAccessSettingsSnapshot(loaded.module.getStateForTest()),
     enabledWindow: null,
   });
 });
@@ -1113,15 +1118,9 @@ test('background state clearWindowBridgeState clears sibling tabs before reporti
 
   await assert.rejects(loaded.module.clearWindowBridgeState(9), (error: unknown) => {
     assert(error instanceof AggregateError);
-    assert(
-      error.errors.some(
-        (cause: unknown) =>
-          cause instanceof AggregateError &&
-          cause.errors.some(
-            (failure: unknown) =>
-              failure instanceof Error && /Patch enumeration failed/.test(failure.message)
-          )
-      )
+    assert.match(
+      getErrorMessageWithCauses(error),
+      /Could not roll back page changes for tab \d+: Patch enumeration failed/
     );
     return true;
   });
@@ -1355,6 +1354,7 @@ test('background state clears enabled access and updates the action when the ena
   assert.deepEqual(nativeMessages.at(-1), {
     type: 'host.access_update',
     accessEnabled: false,
+    accessSettings: getAccessSettingsSnapshot(loaded.module.getStateForTest()),
     enabledWindow: null,
   });
 });

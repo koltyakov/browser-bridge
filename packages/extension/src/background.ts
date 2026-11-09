@@ -8,6 +8,7 @@ import {
   createRuntimeContext,
   createSuccess,
   normalizeNetworkInterceptAddParams,
+  normalizeAccessWaitForChangeParams,
   normalizeTabCloseParams,
   RecoveryTelemetryCollector,
 } from '../../../protocol/src/index.js';
@@ -17,7 +18,14 @@ import {
   shouldLogAction,
 } from './background-helpers.js';
 import { isRestrictedAutomationUrl } from './background-routing.js';
-import { captureWindowGrant, getAccessStatus, sameWindowGrant } from './background-access.js';
+import {
+  captureWindowGrant,
+  getAccessStatus,
+  isGrantedTab,
+  sameWindowGrant,
+} from './background-access.js';
+import { createAccessSettingsController } from './background-access-settings.js';
+import { getAccessPolicyDenial, getAccessSettingsSnapshot } from './access-settings.js';
 import {
   createNativeConnectionController,
   sendAccessUpdate as sendAccessUpdateNative,
@@ -156,6 +164,13 @@ const chrome: typeof globalThis.chrome = globalThis.chrome;
 
 const state: ExtensionState = createExtensionState();
 setExtensionState(state);
+const accessSettings = createAccessSettingsController(state, chrome, {
+  onChanged() {
+    sendAccessUpdate(Boolean(state.enabledWindow));
+    void emitUiState().catch(reportAsyncError);
+  },
+});
+const accessSettingsInitialization = accessSettings.restore().catch(reportAsyncError);
 const domBaselines = createDomBaselineController();
 const stagedFiles = createFileStaging();
 const loadedBuild = Object.freeze({
@@ -174,6 +189,7 @@ const resourceOwners: Map<number, string> = new Map();
 const agentTabs = createAgentTabLeaseStore({
   storage: chrome.storage?.session ?? null,
 });
+const reportedSettingsRevisions = new Map<string, string>();
 const agentGroups = createAgentTabGroupController(chrome, {
   async getActivity() {
     const windowId = state.enabledWindow?.windowId ?? null;
@@ -285,7 +301,7 @@ const recordings = createRecordingController({
     const tab = await chrome.tabs.get(tabId);
     if (
       !state.enabledWindow ||
-      tab.windowId !== state.enabledWindow.windowId ||
+      !isGrantedTab(state, tabId, tab.windowId) ||
       isRestrictedAutomationUrl(tab.url ?? '')
     )
       throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Child tab is outside the enabled window.');
@@ -449,14 +465,39 @@ const clearTabBridgeState = async (
   await tabCleanupController.clearTabBridgeState(tabId, shouldContinue);
 };
 
-const clearWindowBridgeState = async (windowId: number) => {
+const clearWindowBridgeState = async (
+  windowId: number,
+  grant?: import('./background-access.js').EnabledWindowState
+) => {
   requestLifetimes.disconnect();
   domBaselines.clearWindow(windowId);
   await agentGroups.clearWindow(windowId).catch(reportAsyncError);
   await agentTabs.clear();
   await agentGroups.sync().catch(reportAsyncError);
   void syncWorkingTabIndicators().catch(reportAsyncError);
-  await tabCleanupController.clearWindowBridgeState(windowId);
+  const tabIds =
+    grant?.tabId !== undefined
+      ? new Set([
+          grant.tabId,
+          ...Object.entries(state.aiCreatedTabs)
+            .filter(
+              ([, owner]) => owner.windowId === windowId && owner.enabledAt === grant.enabledAt
+            )
+            .map(([id]) => Number(id)),
+        ])
+      : undefined;
+  const errors: unknown[] = [];
+  try {
+    await tabCleanupController.clearWindowBridgeState(windowId, tabIds);
+  } catch (error) {
+    errors.push(error);
+  }
+  try {
+    await accessSettings.closeWhenDone(windowId);
+  } catch (error) {
+    errors.push(new Error('Could not close AI-created tabs', { cause: error }));
+  }
+  if (errors.length) throw new AggregateError(errors, `Window ${windowId} cleanup failed`);
 };
 const rollbackAllPatchesForTab = tabCleanupController.rollbackAllPatchesForTab;
 
@@ -512,6 +553,7 @@ const {
   injectContentScriptsForWindow,
   primeWindowConsoleCapture,
   primeTabConsoleCapture,
+  ensureContentScript,
   clearWindowBridgeState,
   cancelNavigationWaitsForWindow: (windowId) => navigationWaits.cancelWindow(windowId),
   appendActionLogEntry: (entry) => appendActionLogEntry(entry),
@@ -956,7 +998,9 @@ const tabBoundRequestDependencies: Parameters<typeof executeTabBoundRequest>[1] 
   frames: { listFrames, getFrameForRef, sendFrameMessage },
 };
 
-const accessStateInitialization = restoreEnabledWindow().catch(reportAsyncError);
+const accessStateInitialization = accessSettingsInitialization
+  .then(restoreEnabledWindow)
+  .catch(reportAsyncError);
 void initializeState().catch(reportAsyncError);
 connectNative();
 if (DEVELOPMENT_AUTO_RELOAD) {
@@ -978,6 +1022,7 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
+  void agentGroups.sync().catch(reportAsyncError);
   sendActivityUpdate();
   void updateActionIndicatorForTab(tabId).catch(reportAsyncError);
   void syncGlobalBadgeToActiveTab().catch(reportAsyncError);
@@ -1017,6 +1062,9 @@ chrome.tabs.onMoved?.addListener(() => {
 });
 
 chrome.tabs.onAttached?.addListener((tabId, attachInfo) => {
+  const owner = state.aiCreatedTabs[String(tabId)];
+  if (owner && owner.windowId !== attachInfo.newWindowId)
+    void accessSettings.forget(tabId).catch(reportAsyncError);
   navigationWaits.handleTabMoved(tabId, attachInfo.newWindowId);
   void agentTabs
     .handleTabMoved(tabId, attachInfo.newWindowId)
@@ -1026,6 +1074,7 @@ chrome.tabs.onAttached?.addListener((tabId, attachInfo) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+  if (state.aiCreatedTabs[String(tabId)]) void accessSettings.forget(tabId).catch(reportAsyncError);
   mutationGate.invalidate(tabId);
   void webmcp.clearTab(tabId).catch(reportAsyncError);
   domBaselines.clearTab(tabId);
@@ -1100,7 +1149,12 @@ function sendActivityUpdate(port: chrome.runtime.Port | null = state.nativePort)
 
 /** Notify the daemon whether this extension currently has access enabled. */
 function sendAccessUpdate(enabled: boolean): void {
-  sendAccessUpdateNative(enabled, state.nativePort, state.enabledWindow);
+  sendAccessUpdateNative(
+    enabled,
+    state.nativePort,
+    state.enabledWindow,
+    getAccessSettingsSnapshot(state)
+  );
 }
 
 /** Restore persisted window access state when the service worker starts so the
@@ -1120,6 +1174,7 @@ async function initializeState(): Promise<void> {
 /** Route a validated bridge request to the extension capability that should
 satisfy it. */
 async function handleBridgeRequest(request: BridgeRequest): Promise<void> {
+  await accessStateInitialization;
   let finish: () => void;
   try {
     finish = requestLifetimes.begin(request);
@@ -1159,6 +1214,17 @@ async function handleBridgeRequest(request: BridgeRequest): Promise<void> {
       }
     }
     response = attachTabRouting(request, response);
+    const settingsSession = `${String(request.meta?.transport_owner ?? 'default')}:${normalizeAgentSession(request.meta?.agent_session)}`;
+    if (reportedSettingsRevisions.get(settingsSession) !== state.accessSettingsRevision) {
+      reportedSettingsRevisions.set(settingsSession, state.accessSettingsRevision);
+      if (reportedSettingsRevisions.size > 128)
+        reportedSettingsRevisions.delete(reportedSettingsRevisions.keys().next().value!);
+      if (request.method !== 'health.ping' && request.method !== 'access.wait_for_change')
+        response = {
+          ...response,
+          meta: { ...response.meta, access_settings: getAccessSettingsSnapshot(state) },
+        };
+    }
     response = enrichBridgeResponse(request, response);
     if (request.method === 'sensitive.read') {
       const loggedResponse = response;
@@ -1295,6 +1361,7 @@ async function dispatchBridgeRequest(request: BridgeRequest): Promise<BridgeResp
       const result = {
         extension: 'ok',
         extensionVersion: chrome.runtime.getManifest().version,
+        accessSettings: getAccessSettingsSnapshot(state),
         access: routing,
         ...getVersionNegotiationPayload(request.meta?.protocol_version),
       };
@@ -1334,6 +1401,15 @@ async function dispatchBridgeRequest(request: BridgeRequest): Promise<BridgeResp
     }
     case 'access.request':
       return handleAccessRequest(request);
+    case 'access.wait_for_change': {
+      const params = normalizeAccessWaitForChangeParams(request.params);
+      const result = await accessSettings.waitForChange(
+        params.revision,
+        params.timeoutMs,
+        (cancel) => requestLifetimes.track(request.id, cancel)
+      );
+      return createSuccess(request.id, result, { method: request.method });
+    }
     case 'dom.baseline.create':
     case 'dom.baseline.compare':
     case 'dom.baseline.describe':
@@ -1462,6 +1538,22 @@ cycle to complete. */
 async function handleNavigationRequest(request: BridgeRequest): Promise<BridgeResponse> {
   return executeNavigationRequest(request, {
     captureAccess: () => captureWindowGrant(state),
+    assertNavigationAllowed: (target, url) => {
+      const current = new URL(target.url);
+      const destination = new URL(url);
+      // A new, blank AI tab has no domain yet. Its first navigation establishes one.
+      if (
+        !state.accessSettings.allowOffDomainNavigation &&
+        current.hostname &&
+        current.hostname !== destination.hostname
+      ) {
+        throw new BridgeError(
+          ERROR_CODES.ACCESS_DENIED,
+          'Navigating to a different domain is disabled in access settings.',
+          getAccessPolicyDenial(state, 'allowOffDomainNavigation')
+        );
+      }
+    },
     resolveRequestTarget,
     updateTab: (tabId, properties) => chrome.tabs.update(tabId, properties),
     reloadTab: (tabId) => chrome.tabs.reload(tabId),
@@ -1486,11 +1578,25 @@ async function handlePageEvaluate(request: BridgeRequest): Promise<BridgeRespons
 
 /** Create a new tab with an optional URL. */
 async function handleCreateTab(request: BridgeRequest): Promise<BridgeResponse> {
+  const grant = state.enabledWindow;
+  const assertGrant = captureWindowGrant(state);
   const response = await executeCreateTab(
     request,
     state,
     {
-      createTab: (properties) => chrome.tabs.create(properties),
+      createTab: async (properties) => {
+        assertGrant();
+        const tab = await chrome.tabs.create(properties);
+        try {
+          assertGrant();
+          if (grant && typeof tab.id === 'number') await accessSettings.track(tab.id, grant);
+          assertGrant();
+          return tab;
+        } catch (error) {
+          if (typeof tab.id === 'number') await chrome.tabs.remove(tab.id);
+          throw error;
+        }
+      },
     },
     ACCESS_DENIED_WINDOW_OFF
   );
@@ -1505,6 +1611,7 @@ async function handleCreateTab(request: BridgeRequest): Promise<BridgeResponse> 
 
 /** Close a tab by tabId. */
 async function handleCloseTab(request: BridgeRequest): Promise<BridgeResponse> {
+  const assertGrant = captureWindowGrant(state);
   const params = normalizeTabCloseParams(request.params);
   if (!state.enabledWindow) {
     return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_WINDOW_OFF, null, {
@@ -1523,10 +1630,29 @@ async function handleCloseTab(request: BridgeRequest): Promise<BridgeResponse> {
       { method: request.method }
     );
   }
+  assertGrant();
   if (tab.windowId !== state.enabledWindow.windowId) {
     return createFailure(request.id, ERROR_CODES.ACCESS_DENIED, ACCESS_DENIED_TAB_CLOSE, null, {
       method: request.method,
     });
+  }
+  if (!isGrantedTab(state, params.tabId, tab.windowId)) {
+    return createFailure(
+      request.id,
+      ERROR_CODES.ACCESS_DENIED,
+      'Access is not enabled for this tab.',
+      null,
+      { method: request.method }
+    );
+  }
+  if (!state.accessSettings.allowClosingUserTabs && !state.aiCreatedTabs[String(params.tabId)]) {
+    return createFailure(
+      request.id,
+      ERROR_CODES.ACCESS_DENIED,
+      'Closing user tabs is disabled in access settings.',
+      getAccessPolicyDenial(state, 'allowClosingUserTabs'),
+      { method: request.method }
+    );
   }
   await chrome.tabs.remove(params.tabId);
   return createSuccess(
@@ -1596,6 +1722,7 @@ async function handleFetchInterceptRequest(request: BridgeRequest) {
  */
 
 async function handleActivateTab(request: BridgeRequest) {
+  const assertGrant = captureWindowGrant(state);
   const tabId = request.params?.tabId;
   if (typeof tabId !== 'number' || !Number.isFinite(tabId)) {
     return createFailure(request.id, ERROR_CODES.INVALID_REQUEST, 'tabId is required.', null, {
@@ -1615,7 +1742,8 @@ async function handleActivateTab(request: BridgeRequest) {
       method: request.method,
     });
   }
-  if (tab.windowId !== state.enabledWindow.windowId) {
+  assertGrant();
+  if (!isGrantedTab(state, tabId, tab.windowId)) {
     return createFailure(
       request.id,
       ERROR_CODES.ACCESS_DENIED,
@@ -1739,6 +1867,7 @@ async function handleUiMessage(
   port: chrome.runtime.Port,
   message: Record<string, unknown>
 ): Promise<void> {
+  await accessStateInitialization;
   await handleUiMessageUi(state, port, message, {
     retryNativeConnection,
     refreshSetupStatus,
@@ -1750,6 +1879,7 @@ async function handleUiMessage(
     getAgentTabState,
     moveAgentToTab,
     requestWindowAction: windowActions.request,
+    updateAccessSettings: accessSettings.update,
   });
 }
 
@@ -1804,9 +1934,10 @@ tabs no longer moves it. */
 async function moveAgentToTab(tabId: number): Promise<void> {
   if (!state.enabledWindow) return;
   const tab = await chrome.tabs.get(tabId);
-  if (tab.windowId !== state.enabledWindow.windowId) return;
+  if (!isGrantedTab(state, tabId, tab.windowId)) return;
   await agentTabs.rebindWindow(tab.windowId, tabId);
   await syncWorkingTabIndicators();
+  await agentGroups.sync();
   await emitUiState();
 }
 

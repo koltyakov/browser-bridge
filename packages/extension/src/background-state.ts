@@ -7,17 +7,18 @@ import {
   sanitizeIncidentalUrl,
   sanitizeIncidentalValue,
 } from '../../../protocol/src/index.js';
-import { getErrorMessage, normalizeRuntimeErrorMessage } from './background-helpers.js';
+import {
+  getErrorMessage,
+  getErrorMessageWithCauses,
+  normalizeRuntimeErrorMessage,
+} from './background-helpers.js';
+import { DEFAULT_ACCESS_SETTINGS } from './access-settings.js';
 
 export type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
 export type BridgeResponse = import('../../../protocol/src/types.js').BridgeResponse;
 export type ErrorCode = import('../../../protocol/src/types.js').ErrorCode;
 
-export type EnabledWindowState = {
-  windowId: number;
-  title: string;
-  enabledAt: number;
-};
+export type EnabledWindowState = import('./background-access.js').EnabledWindowState;
 
 export type ResolvedTabTarget = {
   tabId: number;
@@ -74,6 +75,7 @@ export type CurrentTabState = {
   title: string;
   url: string;
   enabled: boolean;
+  accessScope?: 'tab';
   accessRequested: boolean;
   restricted: boolean;
   accessRequestContext?: AccessRequestContext;
@@ -109,6 +111,9 @@ export type ExtensionState = {
   nativeHostVersionRequestId: string | null;
   daemonProxy: DaemonProxyStatus | null;
   enabledWindow: EnabledWindowState | null;
+  accessSettings: import('./access-settings.js').AccessSettings;
+  accessSettingsRevision: string;
+  aiCreatedTabs: Record<string, { windowId: number; enabledAt: number }>;
   otherEnabledWindows?: import('../../../protocol/src/window-access.js').BrowserWindowAccess[];
   requestedAccessWindowId: number | null;
   requestedAccessContext?: AccessRequestContext | null;
@@ -176,6 +181,9 @@ export function createExtensionState(): ExtensionState {
     nativeHostVersionRequestId: null,
     daemonProxy: null,
     enabledWindow: null,
+    accessSettings: { ...DEFAULT_ACCESS_SETTINGS },
+    accessSettingsRevision: crypto.randomUUID(),
+    aiCreatedTabs: {},
     otherEnabledWindows: [],
     requestedAccessWindowId: null,
     requestedAccessContext: null,
@@ -396,7 +404,7 @@ export function reportAsyncError(error: unknown): void {
   if (normalizeRuntimeErrorMessage(getErrorMessage(error)) === ERROR_CODES.TAB_MISMATCH) {
     return;
   }
-  console.error(sanitizeIncidentalText(getErrorMessage(error)));
+  console.error(sanitizeIncidentalText(getErrorMessageWithCauses(error)));
 }
 
 /** Expose the live module state to tests that need to seed or inspect routing,

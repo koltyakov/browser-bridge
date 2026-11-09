@@ -3,6 +3,7 @@
  * request/response normalization utilities.
  */
 export * from './budget-presets.js';
+export * from './access-settings.js';
 export * from './budget.js';
 export * from './capability-values.js';
 export * from './caller.js';

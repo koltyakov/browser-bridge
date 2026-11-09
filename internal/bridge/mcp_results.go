@@ -230,6 +230,11 @@ func mcpResponse(response object, method string, params object) object {
 // the error's details too, bounded like a hint. Structured content already
 // carries them under error.details.
 func mcpErrorDetailsText(details json.RawMessage) string {
+	if policy, err := decodeObject(details); err == nil && policy.text("reason") == "policy_setting_disabled" {
+		if snapshot := normalizeAccessSettingsSnapshot(policy); snapshot != nil {
+			return fmt.Sprintf(" Policy setting: %s. Settings revision: %s. Wait with access.wait_for_change using this revision and the same extensionId; inspect the relevant setting before a deliberate retry.", policy.text("setting"), snapshot.SettingsRevision)
+		}
+	}
 	switch string(details) {
 	case "", "null", "{}", "[]":
 		return ""

@@ -33,7 +33,7 @@ export function getPopupViewState(currentTab: PopupCurrentTab | null): PopupView
       detail: 'Open a normal web page to manage Browser Bridge for this browser window.',
       disclosureHidden: false,
       attention: false,
-      buttonLabel: 'Enable Window Access',
+      buttonLabel: 'Enable window access',
       buttonDisabled: true,
     };
   }
@@ -83,7 +83,7 @@ export function getPopupViewState(currentTab: PopupCurrentTab | null): PopupView
       detail: `${source} requested access to ${intent} pages in this browser window.${tab}`,
       disclosureHidden: false,
       attention: true,
-      buttonLabel: 'Enable Window Access',
+      buttonLabel: 'Enable window access',
       buttonDisabled: !currentTab.url,
     };
   }
@@ -94,7 +94,7 @@ export function getPopupViewState(currentTab: PopupCurrentTab | null): PopupView
       'Enable Browser Bridge to let your connected agent inspect and interact with pages in this browser window.',
     disclosureHidden: false,
     attention: false,
-    buttonLabel: 'Enable Window Access',
+    buttonLabel: 'Enable window access',
     buttonDisabled: !currentTab.url,
   };
 }

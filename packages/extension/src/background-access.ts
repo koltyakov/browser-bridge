@@ -25,6 +25,7 @@ export function sameWindowGrant(
     captured &&
     current &&
     captured.windowId === current.windowId &&
+    captured.tabId === current.tabId &&
     captured.enabledAt === current.enabledAt
   );
 }
@@ -33,7 +34,23 @@ export type EnabledWindowState = {
   windowId: number;
   title: string;
   enabledAt: number;
+  tabId?: number;
 };
+
+export function isGrantedTab(
+  state: {
+    enabledWindow: { windowId: number; enabledAt?: number; tabId?: number } | null;
+    aiCreatedTabs?: Record<string, { windowId: number; enabledAt: number }>;
+  },
+  tabId: number,
+  windowId: number
+): boolean {
+  const grant = state.enabledWindow;
+  if (!grant || grant.windowId !== windowId) return false;
+  if (grant.tabId === undefined || grant.tabId === tabId) return true;
+  const owner = state.aiCreatedTabs?.[String(tabId)];
+  return owner?.windowId === windowId && owner.enabledAt === grant.enabledAt;
+}
 
 export type EnabledWindowContainer = { enabledWindow: EnabledWindowState | null };
 
@@ -64,11 +81,19 @@ export function normalizeStoredEnabledWindow(
   if (!Number.isFinite(windowId) || windowId <= 0) {
     return null;
   }
+  if (
+    candidate.tabId !== undefined &&
+    (!Number.isSafeInteger(candidate.tabId) || Number(candidate.tabId) <= 0)
+  )
+    return null;
 
   return {
     windowId,
     title: typeof candidate.title === 'string' ? candidate.title : '',
     enabledAt: Number(candidate.enabledAt) || now(),
+    ...(Number.isSafeInteger(candidate.tabId) && Number(candidate.tabId) > 0
+      ? { tabId: Number(candidate.tabId) }
+      : {}),
   };
 }
 
@@ -105,7 +130,7 @@ export async function getAccessStatus({
     windows: { get: (windowId: number) => Promise<unknown> };
     tabs: {
       query: (query: {
-        active: boolean;
+        active?: boolean;
         windowId: number;
       }) => Promise<Array<{ id?: number; url?: unknown }>>;
     };
@@ -142,10 +167,13 @@ export async function getAccessStatus({
   }
 
   const tabs = await chrome.tabs.query({
-    active: true,
+    ...(state.enabledWindow.tabId === undefined ? { active: true } : {}),
     windowId: state.enabledWindow.windowId,
   });
-  const tab = tabs[0];
+  const tab =
+    state.enabledWindow.tabId === undefined
+      ? tabs[0]
+      : tabs.find((tab) => tab.id === state.enabledWindow?.tabId);
   if (!tab?.id || typeof tab.url !== 'string') {
     return {
       enabled: true,

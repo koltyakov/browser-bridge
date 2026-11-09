@@ -1,5 +1,9 @@
 import { BridgeError, ERROR_CODES } from '../../../protocol/src/index.js';
-import { normalizeStoredEnabledWindow, restoreEnabledWindowState } from './background-access.js';
+import {
+  isGrantedTab,
+  normalizeStoredEnabledWindow,
+  restoreEnabledWindowState,
+} from './background-access.js';
 import { getErrorMessage } from './background-helpers.js';
 import {
   ENABLED_WINDOW_STORAGE_KEY,
@@ -21,7 +25,11 @@ export type WindowSessionControllerDeps = {
     resetBuffer?: boolean
   ) => Promise<void>;
   primeTabConsoleCapture: (tabId: number, chrome: typeof globalThis.chrome) => Promise<void>;
-  clearWindowBridgeState: (windowId: number) => Promise<void>;
+  ensureContentScript?: (tabId: number) => Promise<void>;
+  clearWindowBridgeState: (
+    windowId: number,
+    grant?: import('./background-access.js').EnabledWindowState
+  ) => Promise<void>;
   cancelNavigationWaitsForWindow: (windowId: number) => void;
   appendActionLogEntry: (entry: {
     method: string;
@@ -56,7 +64,7 @@ export function createWindowSessionController(
     windowId: number,
     title: string,
     enabled: boolean,
-    context?: { tabId: number; url: string }
+    context?: { tabId: number; url: string; scope?: 'tab' }
   ) => Promise<void>;
   handleTabUpdated: (
     tabId: number,
@@ -99,7 +107,10 @@ export function createWindowSessionController(
       windowId: tab.windowId,
       title: tab.title ?? '',
       url: tab.url,
-      enabled: state.enabledWindow?.windowId === tab.windowId,
+      enabled: isGrantedTab(state, tab.id, tab.windowId),
+      ...(state.enabledWindow?.windowId === tab.windowId && state.enabledWindow.tabId !== undefined
+        ? { accessScope: 'tab' as const }
+        : {}),
       accessRequested: state.requestedAccessWindowId === tab.windowId,
       restricted: deps.isRestrictedAutomationUrl(tab.url),
       ...(state.requestedAccessWindowId === tab.windowId && state.requestedAccessContext
@@ -163,7 +174,7 @@ export function createWindowSessionController(
       try {
         if (access) {
           deps.cancelNavigationWaitsForWindow(access.windowId);
-          await deps.clearWindowBridgeState(access.windowId);
+          await deps.clearWindowBridgeState(access.windowId, access);
         }
       } finally {
         await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
@@ -178,8 +189,20 @@ export function createWindowSessionController(
       return;
     }
 
-    await deps.injectContentScriptsForWindow(state.enabledWindow.windowId);
-    await deps.primeWindowConsoleCapture(state.enabledWindow.windowId, chrome, true);
+    if (state.enabledWindow.tabId !== undefined) {
+      const tabs = await chrome.tabs.query({ windowId: state.enabledWindow.windowId });
+      await Promise.all(
+        tabs
+          .filter((tab) => tab.id !== undefined && isGrantedTab(state, tab.id, tab.windowId))
+          .map(async (tab) => {
+            await deps.ensureContentScript?.(tab.id as number);
+            await deps.primeTabConsoleCapture(tab.id as number, chrome);
+          })
+      );
+    } else {
+      await deps.injectContentScriptsForWindow(state.enabledWindow.windowId);
+      await deps.primeWindowConsoleCapture(state.enabledWindow.windowId, chrome, true);
+    }
   }
 
   async function clearEnabledWindowIfGone(): Promise<boolean> {
@@ -214,13 +237,14 @@ export function createWindowSessionController(
       return false;
     }
 
-    const goneWindowId = state.enabledWindow.windowId;
+    const goneAccess = state.enabledWindow;
+    const goneWindowId = goneAccess.windowId;
     state.enabledWindow = null;
     deps.cancelNavigationWaitsForWindow(goneWindowId);
     await clearStoredEnabledWindow();
     deps.sendAccessUpdate(false);
     try {
-      await deps.clearWindowBridgeState(goneWindowId);
+      await deps.clearWindowBridgeState(goneWindowId, goneAccess);
     } finally {
       await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
     }
@@ -263,7 +287,7 @@ export function createWindowSessionController(
     windowId: number,
     title: string,
     enabled: boolean,
-    context?: { tabId: number; url: string }
+    context?: { tabId: number; url: string; scope?: 'tab' }
   ): Promise<void> {
     const operation = windowTransitionTail.then(
       () => applyWindowEnabledState(windowId, title, enabled, context),
@@ -293,17 +317,22 @@ export function createWindowSessionController(
     windowId: number,
     title: string,
     enabled: boolean,
-    context: { tabId: number; url: string } | undefined
+    context: { tabId: number; url: string; scope?: 'tab' } | undefined
   ): Promise<void> {
     const confirmsAccessRequest = enabled && state.requestedAccessWindowId === windowId;
     if (enabled || state.requestedAccessWindowId === windowId) clearRequestedAccessWindow();
     const access = {
       windowId,
       title,
-      enabledAt: Date.now(),
+      enabledAt: Math.max(Date.now(), (state.enabledWindow?.enabledAt ?? 0) + 1),
+      ...(context?.scope === 'tab' ? { tabId: context.tabId } : {}),
     };
-    const previousWindowId = state.enabledWindow?.windowId ?? null;
-    const isSwitch = enabled && previousWindowId !== null && previousWindowId !== windowId;
+    const previousAccess = state.enabledWindow;
+    const previousWindowId = previousAccess?.windowId ?? null;
+    const isSwitch =
+      enabled &&
+      previousWindowId !== null &&
+      (previousWindowId !== windowId || state.enabledWindow?.tabId !== access.tabId);
     const isActiveDisable = !enabled && previousWindowId === windowId;
     const cleanupErrors: unknown[] = [];
 
@@ -313,17 +342,24 @@ export function createWindowSessionController(
       await clearStoredEnabledWindow();
       deps.sendAccessUpdate(false);
       try {
-        await deps.clearWindowBridgeState(previousWindowId as number);
+        await deps.clearWindowBridgeState(previousWindowId as number, previousAccess ?? undefined);
       } catch (error) {
         cleanupErrors.push(error);
       }
     }
 
     if (enabled && cleanupErrors.length === 0) {
-      await Promise.allSettled([
-        deps.injectContentScriptsForWindow(access.windowId),
-        deps.primeWindowConsoleCapture(access.windowId, chrome, true),
-      ]);
+      await Promise.allSettled(
+        access.tabId !== undefined
+          ? [
+              deps.ensureContentScript?.(access.tabId),
+              deps.primeTabConsoleCapture(access.tabId, chrome),
+            ]
+          : [
+              deps.injectContentScriptsForWindow(access.windowId),
+              deps.primeWindowConsoleCapture(access.windowId, chrome, true),
+            ]
+      );
       state.enabledWindow = access;
       await persistEnabledWindow();
       if (confirmsAccessRequest) {
@@ -333,7 +369,10 @@ export function createWindowSessionController(
             tabId: context?.tabId ?? null,
             url: context?.url ?? '',
             ok: true,
-            summary: 'Window access request confirmed.',
+            summary:
+              access.tabId !== undefined
+                ? 'Tab access request confirmed.'
+                : 'Window access request confirmed.',
           });
         } catch (error) {
           // Activity persistence must never prevent access from being enabled.
@@ -363,7 +402,12 @@ export function createWindowSessionController(
       reportAsyncError(error);
     }
     if (cleanupErrors.length) {
-      throw new AggregateError(cleanupErrors, `Window ${previousWindowId} cleanup failed`);
+      throw new AggregateError(
+        cleanupErrors,
+        enabled
+          ? 'Access remains off because cleanup of the previous session could not finish.'
+          : 'Access is disabled, but some cleanup could not finish.'
+      );
     }
   }
 
@@ -391,11 +435,7 @@ export function createWindowSessionController(
       typeof changeInfo.title === 'string' ||
       changeInfo.status === 'complete'
     ) {
-      if (
-        changeInfo.status === 'complete' &&
-        state.enabledWindow &&
-        tab.windowId === state.enabledWindow.windowId
-      ) {
+      if (changeInfo.status === 'complete' && isGrantedTab(state, tabId, tab.windowId)) {
         await deps.primeTabConsoleCapture(tabId, chrome);
       }
       await deps.updateActionIndicatorForTab(tabId);
@@ -409,14 +449,21 @@ export function createWindowSessionController(
   ): Promise<void> {
     if (
       state.enabledWindow &&
-      removeInfo.isWindowClosing &&
+      (removeInfo.isWindowClosing || state.enabledWindow.tabId === tabId) &&
       removeInfo.windowId === state.enabledWindow.windowId
     ) {
       await enqueueWindowTransition(async () => {
         if (state.enabledWindow?.windowId !== removeInfo.windowId) return;
+        if (!removeInfo.isWindowClosing && state.enabledWindow.tabId !== tabId) return;
+        const access = state.enabledWindow;
         state.enabledWindow = null;
         await clearStoredEnabledWindow();
         deps.sendAccessUpdate(false);
+        if (!removeInfo.isWindowClosing) {
+          deps.cancelNavigationWaitsForWindow(removeInfo.windowId);
+          await deps.clearWindowBridgeState(removeInfo.windowId, access);
+          await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
+        }
       });
     }
     if (removeInfo.isWindowClosing && removeInfo.windowId === state.requestedAccessWindowId) {

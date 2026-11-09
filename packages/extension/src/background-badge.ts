@@ -1,4 +1,5 @@
 import { ERROR_CODES } from '../../../protocol/src/index.js';
+import { isGrantedTab } from './background-access.js';
 import {
   ACCESS_REQUEST_BADGE_TEXT,
   ENABLED_BADGE_TEXT,
@@ -83,7 +84,7 @@ export async function isTabEnabled(
   }
   try {
     const tab = await chromeObj.tabs.get(tabId);
-    return tab.windowId === state.enabledWindow.windowId;
+    return isGrantedTab(state, tabId, tab.windowId);
   } catch {
     return false;
   }

@@ -145,6 +145,20 @@ In MCP mode, pass `destinationId` on any browser tool call instead; `browser_sta
 
 Browser Bridge access is window-scoped. The user turns it on once for the current browser window in the popup or side panel.
 
+### Live access settings
+
+The side panel can grant access to just one tab and control tab creation, user-tab closing, direct cross-domain navigation, and closing AI-created tabs when access ends. These settings take effect on new Bridge commands without reconnecting. Work already dispatched may finish. They are Bridge-command policies, not a browser-wide firewall for page scripts, link clicks, or redirects.
+
+`health.ping` returns `accessSettings.settings` and an opaque `accessSettings.settingsRevision`. Active sessions also receive updated settings on their next ordinary response. A denied policy operation returns `ACCESS_DENIED` with `details.reason=policy_setting_disabled`, `details.setting`, `details.settingsRevision`, the current settings, and `dispatched:false`. This is not a request to re-enable window access. Do not retry repeatedly or bypass the setting through another method.
+
+Ask the user to enable the needed setting. After their confirmation, read health again, or issue one bounded read-only wait on the same destination and extensionId:
+
+```bash
+bbx call --extension '<extensionId>' access.wait_for_change '{"revision":"revision-from-error","timeoutMs":25000}'
+```
+
+In MCP, use `browser_call` with method `access.wait_for_change`, those params, and the same `extensionId`. The result returns as soon as the settings revision changes, or after the timeout with `changed:false`. Check the relevant setting, then deliberately retry only the operation rejected before dispatch and only while tab/window access remains granted. The wait never grants access, replays a request, or wakes an idle conversation. Stop rather than looping waits indefinitely.
+
 ### Multiple windows and profiles
 
 Do not disable other windows or profiles to make routing work. `health.ping` returns `connectedExtensions`; its `access` status describes only the profile that answered. A restricted active tab there does not mean the requested page in another profile is unavailable.

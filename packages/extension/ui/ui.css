@@ -1195,6 +1195,112 @@ button:hover {
   border-radius: 6px;
 }
 
+.access-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.access-actions .power-button {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.access-options {
+  position: relative;
+  flex: 0 0 40px;
+}
+
+.access-options > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--stroke);
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.access-options > summary::-webkit-details-marker {
+  display: none;
+}
+
+.access-options > summary:hover,
+.access-options[open] > summary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.access-options-dropdown {
+  position: absolute;
+  z-index: 12;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(270px, calc(100vw - 64px));
+  padding: 10px;
+  border: 1px solid var(--dropdown-stroke);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px var(--dropdown-shadow);
+}
+
+.access-tab-button {
+  width: 100%;
+  margin: 0;
+  padding: 8px;
+  font-size: 12px;
+  background: #777;
+  border: 1px solid #777;
+  color: #fff;
+}
+
+.access-tab-button:hover:not(:disabled) {
+  background: #666;
+  border-color: #666;
+}
+
+.access-tab-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.access-settings-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.access-settings-heading::before,
+.access-settings-heading::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--stroke);
+}
+
+.access-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 2px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.access-setting input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .power-button[data-enabled="true"]:not(:disabled),
 .popup-power-button[data-enabled="true"]:not(:disabled) {
   background: transparent;
@@ -1819,8 +1925,11 @@ button:hover {
 
   .panel-wide .power-button {
     min-height: 36px;
-    margin-top: 8px;
     font-size: 13px;
+  }
+
+  .panel-wide .access-actions {
+    margin-top: 8px;
   }
 
   .panel-wide .agent-tabs-card {
