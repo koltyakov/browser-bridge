@@ -163,11 +163,11 @@ export function createAccessSettingsController(
             normalizeRuntimeErrorMessage(message) !== ERROR_CODES.TAB_MISMATCH &&
             !isUnavailableDocumentError(message)
           ) {
-            errors.push(new Error(`Could not close AI tab ${id}`, { cause: error }));
+            errors.push(new Error(`Could not close BBX tab ${id}`, { cause: error }));
           }
         }
       }
-      if (errors.length) throw new AggregateError(errors, 'Some AI tabs could not be closed.');
+      if (errors.length) throw new AggregateError(errors, 'Some BBX tabs could not be closed.');
     },
   };
 }

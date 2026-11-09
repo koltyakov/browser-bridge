@@ -176,8 +176,8 @@ test('adjacent active tabs share an AI group and separated tabs get separate gro
   assert.deepEqual(
     [...h.groups.values()].map((group) => [group.title, group.color]),
     [
-      ['AI', 'blue'],
-      ['AI', 'blue'],
+      ['BBX', 'blue'],
+      ['BBX', 'blue'],
     ]
   );
   assert.deepEqual(h.order(), before);
@@ -233,6 +233,48 @@ test('manually recoloring an orange AI group relinquishes ownership even when th
   assert.deepEqual(h.storage.snapshot()[AGENT_GROUP_STORAGE_KEY], []);
 });
 
+test('owned legacy AI groups migrate to BBX without moving tabs or overriding later user renames', async () => {
+  const h = harness();
+  h.tabs[0].active = true;
+  h.setActive([1]);
+  await h.controller.sync();
+  const groupId = h.tabs[0].groupId;
+  const group = h.groups.get(groupId)!;
+  group.title = 'AI';
+  await h.storage.set({
+    [AGENT_GROUP_STORAGE_KEY]: [{ groupId, windowId: 7, tabIds: [1], color: 'orange' }],
+  });
+  const restored = h.create();
+  await restored.sync();
+  assert.equal(group.title, 'BBX');
+  assert.equal(group.color, 'orange');
+  assert.equal(h.tabs[0].groupId, groupId);
+  assert.equal(h.calls.length, 1);
+  assert.deepEqual(h.storage.snapshot()[AGENT_GROUP_STORAGE_KEY], [
+    { groupId, windowId: 7, tabIds: [1], color: 'orange', title: 'BBX' },
+  ]);
+  group.title = 'AI';
+  await restored.sync();
+  assert.equal(group.title, 'AI', 'a later manual rename is not treated as another migration');
+  assert.deepEqual(h.storage.snapshot()[AGENT_GROUP_STORAGE_KEY], []);
+});
+
+test('revocation still cleans up untracked legacy AI groups', async () => {
+  const h = harness();
+  h.tabs[0].groupId = 50;
+  h.groups.set(50, {
+    id: 50,
+    windowId: 7,
+    title: 'AI',
+    color: 'blue',
+    collapsed: false,
+    shared: false,
+  });
+  await h.controller.clearWindow(7);
+  assert.equal(h.groups.size, 0);
+  assert.equal(h.tabs[0].groupId, -1);
+});
+
 test('all 20 tabs used by one agent stay in the AI group without moving', async () => {
   const ids = Array.from({ length: 20 }, (_, index) => index + 1);
   const h = harness(ids);
@@ -251,7 +293,7 @@ test('all 20 tabs used by one agent stay in the AI group without moving', async 
   }
   assert.equal(h.groups.size, 1);
   const group = [...h.groups.values()][0];
-  assert.equal(group.title, 'AI');
+  assert.equal(group.title, 'BBX');
   assert.ok(h.tabs.every((tab) => tab.groupId === group.id));
   assert.deepEqual(h.order(), ids);
 });
@@ -302,7 +344,7 @@ test('new agent tabs join an adjacent untracked AI group without taking it over'
   h.groups.set(50, {
     id: 50,
     windowId: 7,
-    title: 'AI',
+    title: 'BBX',
     color: 'blue',
     collapsed: false,
     shared: false,
@@ -337,7 +379,7 @@ test('a new tab next to an owned AI group joins it instead of regrouping', async
     [groupId, groupId, groupId, groupId, -1]
   );
   assert.deepEqual(h.storage.snapshot()[AGENT_GROUP_STORAGE_KEY], [
-    { groupId, windowId: 7, tabIds: [2, 3, 1, 4], color: 'blue' },
+    { groupId, windowId: 7, tabIds: [2, 3, 1, 4], color: 'blue', title: 'BBX' },
   ]);
   await h.controller.sync();
   assert.equal(h.calls.length, 3, 'the extended group stays owned');
@@ -353,7 +395,7 @@ test('a new tab next to a renamed or recolored group starts its own AI group', a
   h.groups.set(50, {
     id: 50,
     windowId: 7,
-    title: 'AI',
+    title: 'BBX',
     color: 'red',
     collapsed: false,
     shared: false,
@@ -434,7 +476,7 @@ test('explicit window cleanup removes every AI group in that window without regr
   h.groups.set(50, {
     id: 50,
     windowId: 7,
-    title: 'AI',
+    title: 'BBX',
     color: 'blue',
     collapsed: false,
     shared: false,
@@ -603,7 +645,7 @@ test('enabling tab-only access groups the tab before any agent request', async (
   for (let i = 0; i < 30 && h.groups.size === 0; i++)
     await new Promise((resolve) => setImmediate(resolve));
   assert.equal(h.groups.size, 1);
-  assert.equal([...h.groups.values()][0].title, 'AI');
+  assert.equal([...h.groups.values()][0].title, 'BBX');
   assert.equal([...h.groups.values()][0].color, 'orange');
   assert.equal(h.tabs[0].groupId, [...h.groups.keys()][0]);
   assert.equal(h.tabs[1].groupId, -1);

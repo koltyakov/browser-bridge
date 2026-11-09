@@ -1,5 +1,6 @@
 export const AGENT_GROUP_STORAGE_KEY = 'bbxAgentTabGroups';
-export const AGENT_GROUP_TITLE = 'AI';
+export const AGENT_GROUP_TITLE = 'BBX';
+const LEGACY_AGENT_GROUP_TITLE = 'AI';
 export const AGENT_GROUP_COLOR = 'blue';
 export const ACTIVE_AGENT_GROUP_COLOR = 'orange';
 
@@ -8,13 +9,14 @@ export type OwnedGroup = {
   windowId: number;
   tabIds: number[];
   color?: 'blue' | 'orange';
+  title?: 'AI' | 'BBX';
 };
 export type AgentActivity = { windowId: number | null; tabIds: Set<number> };
 
 /** Highlight contiguous runs without moving tabs or taking over user groups.
-New agent tabs join an adjacent AI group instead of starting a second one.
+New agent tabs join an adjacent BBX group instead of starting a second one.
 Routine synchronization manages only IDs recorded in session storage.
-Explicit window revocation removes every group still titled AI in that window. */
+Explicit window revocation removes current and legacy agent groups in that window. */
 export function createAgentTabGroupController(
   chromeObj: typeof globalThis.chrome,
   deps: { getActivity: () => Promise<AgentActivity> }
@@ -48,6 +50,9 @@ export function createAgentTabGroupController(
           record.windowId < 0 ||
           !Array.isArray(record.tabIds) ||
           !record.tabIds.length ||
+          (record.title !== undefined &&
+            record.title !== AGENT_GROUP_TITLE &&
+            record.title !== LEGACY_AGENT_GROUP_TITLE) ||
           (record.color !== undefined &&
             record.color !== AGENT_GROUP_COLOR &&
             record.color !== ACTIVE_AGENT_GROUP_COLOR) ||
@@ -58,6 +63,7 @@ export function createAgentTabGroupController(
           groupId: record.groupId,
           windowId: record.windowId,
           tabIds: [...record.tabIds],
+          title: record.title === AGENT_GROUP_TITLE ? AGENT_GROUP_TITLE : LEGACY_AGENT_GROUP_TITLE,
           color:
             record.color === ACTIVE_AGENT_GROUP_COLOR
               ? ACTIVE_AGENT_GROUP_COLOR
@@ -75,7 +81,7 @@ export function createAgentTabGroupController(
   ): boolean {
     return (
       group.windowId === record.windowId &&
-      group.title === AGENT_GROUP_TITLE &&
+      group.title === (record.title ?? AGENT_GROUP_TITLE) &&
       group.color === (record.color ?? AGENT_GROUP_COLOR) &&
       !group.shared &&
       members.every((tab) => typeof tab.id === 'number' && record.tabIds.includes(tab.id))
@@ -102,7 +108,7 @@ Recheck ownership because the user may edit groups while a sync is pending. */
     await persist();
   }
 
-  /** Remove whole AI groups, including groups no longer tracked after user edits. */
+  /** Remove whole BBX/legacy AI groups, including groups no longer tracked after user edits. */
   async function clearAiGroups(windowId: number): Promise<void> {
     const tabs = await chromeObj.tabs.query({ windowId });
     const groupIds = new Set(tabs.map((tab) => tab.groupId).filter((id) => id >= 0));
@@ -110,7 +116,12 @@ Recheck ownership because the user may edit groups while a sync is pending. */
       [...groupIds].map(async (groupId) => {
         const members = await chromeObj.tabs.query({ groupId });
         const group = await chromeObj.tabGroups.get(groupId).catch(() => null);
-        if (!group || group.windowId !== windowId || group.title !== AGENT_GROUP_TITLE) return;
+        if (
+          !group ||
+          group.windowId !== windowId ||
+          (group.title !== AGENT_GROUP_TITLE && group.title !== LEGACY_AGENT_GROUP_TITLE)
+        )
+          return;
         if (!members.every((tab) => tab.windowId === windowId && typeof tab.id === 'number'))
           return;
         const [first, ...rest] = members.flatMap((tab) =>
@@ -158,6 +169,11 @@ Recheck ownership because the user may edit groups while a sync is pending. */
         // A renamed, recolored, shared, moved, or expanded-by-user group is
         // now user-owned. Never change it or its members again.
         owned.delete(record.groupId);
+        await persist();
+      } else if (group.title === LEGACY_AGENT_GROUP_TITLE) {
+        // Migrate only groups still owned by BBX, never a renamed user group.
+        await chromeObj.tabGroups.update(record.groupId, { title: AGENT_GROUP_TITLE });
+        record.title = AGENT_GROUP_TITLE;
         await persist();
       }
     }
@@ -246,7 +262,7 @@ Recheck ownership because the user may edit groups while a sync is pending. */
   }
 
   /** Whether a neighboring group can absorb new agent tabs: a group this
-controller owns, or one that still looks like an AI group (for example after
+controller owns, or one that still looks like a BBX group (for example after
 the extension reloaded and lost its ownership records). */
   async function isJoinable(groupId: number, windowId: number): Promise<boolean> {
     if (groupId === chromeObj.tabGroups.TAB_GROUP_ID_NONE) return false;
@@ -261,7 +277,7 @@ the extension reloaded and lost its ownership records). */
     );
   }
 
-  /** Add a contiguous run of ungrouped agent tabs to an adjacent AI group, or
+  /** Add a contiguous run of ungrouped agent tabs to an adjacent BBX group, or
 start a new one. Joining never takes ownership of a group this controller did
 not create. */
   async function attach(windowId: number, tabIds: [number, ...number[]]): Promise<void> {
@@ -313,7 +329,7 @@ not create. */
     )
       ? ACTIVE_AGENT_GROUP_COLOR
       : AGENT_GROUP_COLOR;
-    const record: OwnedGroup = { groupId, windowId, tabIds, color };
+    const record: OwnedGroup = { groupId, windowId, tabIds, color, title: AGENT_GROUP_TITLE };
     owned.set(groupId, record);
     try {
       await chromeObj.tabGroups.update(groupId, {

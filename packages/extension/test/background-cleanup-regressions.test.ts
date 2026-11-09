@@ -138,7 +138,7 @@ test('AI tab closing continues after a failure and tolerates a tab closing concu
     assert.equal(error.errors.length, 1);
     assert.match(
       getErrorMessageWithCauses(error),
-      /Could not close AI tab 43: Unexpected tab removal failure/
+      /Could not close BBX tab 43: Unexpected tab removal failure/
     );
     return true;
   });

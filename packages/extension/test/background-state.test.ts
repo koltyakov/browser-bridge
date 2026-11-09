@@ -1201,7 +1201,7 @@ test('background state persists enabled-window title updates and refreshes actio
     () =>
       titleCalls.some(
         (call) => call.tabId === 41 && call.title === 'Browser Bridge is enabled for this window.'
-      ) && badgeTextCalls.some((call) => call.tabId === 41 && call.text === 'AI')
+      ) && badgeTextCalls.some((call) => call.tabId === 41 && call.text === 'BBX')
   );
 
   assert.deepEqual(state.enabledWindow, {
@@ -1224,7 +1224,7 @@ test('background state persists enabled-window title updates and refreshes actio
     true
   );
   assert.equal(
-    badgeTextCalls.some((call) => call.tabId === 41 && call.text === 'AI'),
+    badgeTextCalls.some((call) => call.tabId === 41 && call.text === 'BBX'),
     true
   );
 });
@@ -1550,7 +1550,7 @@ test('background state updateActionIndicatorForTab marks enabled tabs', async ()
       title: 'Browser Bridge is enabled for this window.',
     },
   ]);
-  assert.deepEqual(badgeTextCalls, [{ tabId: 17, text: 'AI' }]);
+  assert.deepEqual(badgeTextCalls, [{ tabId: 17, text: 'BBX' }]);
 });
 
 test('background state updateActionIndicatorForTab marks requested restricted tabs and swallows tab mismatch', async () => {

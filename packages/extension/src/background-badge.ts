@@ -27,7 +27,8 @@ function getActionIndicatorState(
   enabled: boolean,
   accessRequested: boolean,
   restricted: boolean,
-  working: boolean = false
+  working: boolean = false,
+  agentCreated: boolean = false
 ): ActionIndicatorState {
   if (enabled && restricted) {
     return {
@@ -41,7 +42,7 @@ function getActionIndicatorState(
   if (enabled && working) {
     return {
       badgeText: WORKING_BADGE_TEXT,
-      backgroundColor: '#1a73e8',
+      backgroundColor: agentCreated ? '#787878' : '#1a73e8',
       textColor: '#ffffff',
       title: 'Browser Bridge agent is working in this tab. Switching tabs does not move the agent.',
     };
@@ -124,7 +125,13 @@ export async function updateActionIndicatorForTab(
   }
 
   const working = enabled && Boolean(state.workingTabIds?.has(tabId));
-  const indicator = getActionIndicatorState(enabled, accessRequested, restricted, working);
+  const indicator = getActionIndicatorState(
+    enabled,
+    accessRequested,
+    restricted,
+    working,
+    Boolean(state.aiCreatedTabs[String(tabId)])
+  );
 
   try {
     await chromeObj.action.setBadgeBackgroundColor({
@@ -179,7 +186,13 @@ export async function syncGlobalBadgeToActiveTab(
       !enabled && (await isAccessRequestedTab(activeTab.id, state, chromeObj));
     const restricted = enabled && dependencies.isRestrictedAutomationUrl(activeTab.url ?? '');
     const working = enabled && Boolean(state.workingTabIds?.has(activeTab.id));
-    const indicator = getActionIndicatorState(enabled, accessRequested, restricted, working);
+    const indicator = getActionIndicatorState(
+      enabled,
+      accessRequested,
+      restricted,
+      working,
+      Boolean(state.aiCreatedTabs[String(activeTab.id)])
+    );
 
     await chromeObj.action.setBadgeText({ text: indicator.badgeText });
     try {

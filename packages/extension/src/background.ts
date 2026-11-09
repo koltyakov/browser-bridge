@@ -495,7 +495,7 @@ const clearWindowBridgeState = async (
   try {
     await accessSettings.closeWhenDone(windowId);
   } catch (error) {
-    errors.push(new Error('Could not close AI-created tabs', { cause: error }));
+    errors.push(new Error('Could not close BBX-created tabs', { cause: error }));
   }
   if (errors.length) throw new AggregateError(errors, `Window ${windowId} cleanup failed`);
 };
