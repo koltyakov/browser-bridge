@@ -1353,6 +1353,7 @@ button:hover {
   border: 2px solid var(--stroke);
   border-top-color: var(--accent);
   border-radius: 50%;
+  /* Keep connection progress visible even when reduced motion is requested. */
   animation: native-loading-spin 0.8s linear infinite;
 }
 
@@ -1363,12 +1364,6 @@ button:hover {
 @keyframes native-loading-spin {
   to {
     transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .native-loading-spinner {
-    animation: none;
   }
 }
 

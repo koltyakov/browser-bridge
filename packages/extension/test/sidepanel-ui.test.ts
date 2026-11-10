@@ -1489,6 +1489,17 @@ test('sidepanel UI groups consecutive pings with a light counter and combined to
   assert.match(css, /\.activity-repeat-count\s*\{[^}]*font-weight:\s*400/u);
 });
 
+test('native connection spinner stays animated with reduced motion', async () => {
+  const css = await readFile(extensionFile('ui/ui.css'), 'utf8');
+  const rules = [...css.matchAll(/\.native-loading-spinner\s*\{([^}]*)\}/gu)];
+  assert.equal(rules.length, 1, 'the spinner must not have a reduced-motion override');
+  assert.match(rules[0][1], /animation:\s*native-loading-spin\s+0\.8s\s+linear\s+infinite/u);
+  assert.match(
+    css,
+    /@keyframes native-loading-spin\s*\{\s*to\s*\{\s*transform:\s*rotate\(360deg\)/u
+  );
+});
+
 test('section headings use uppercase', async () => {
   const css = await readFile(extensionFile('ui/ui.css'), 'utf8');
   assert.match(css, /\.eyebrow\s*\{[^}]*text-transform:\s*uppercase/u);
