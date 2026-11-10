@@ -201,6 +201,7 @@ const agentGroups = createAgentTabGroupController(chrome, {
       .filter((tabId) => windowId !== null && isGrantedTab(state, tabId, windowId));
     return {
       windowId,
+      sharedTabId: state.enabledWindow?.tabId ?? null,
       tabIds: new Set([
         ...tabs.filter((tab) => tab.windowId === windowId).map((tab) => tab.tabId),
         ...inherited,

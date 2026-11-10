@@ -1,6 +1,6 @@
 {
   "name": "@browserbridge/bbx",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "private": false,
   "keywords": [
     "agent-tools",
@@ -63,15 +63,15 @@
     "esbuild": "^0.28.2",
     "har-schema": "^2.0.0",
     "linkedom": "^0.18.15",
-    "oxfmt": "^0.77.0",
-    "oxlint": "^1.92.0",
+    "oxfmt": "^0.78.0",
+    "oxlint": "^1.93.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   },
   "overrides": {
     "c8": {
       "glob": "^14.0.4",
-      "minimatch": "^11.0.5"
+      "minimatch": "^11.0.6"
     }
   },
   "engines": {

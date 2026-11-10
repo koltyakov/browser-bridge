@@ -11,7 +11,11 @@ export type OwnedGroup = {
   color?: 'blue' | 'orange';
   title?: 'AI' | 'BBX';
 };
-export type AgentActivity = { windowId: number | null; tabIds: Set<number> };
+export type AgentActivity = {
+  windowId: number | null;
+  sharedTabId: number | null;
+  tabIds: Set<number>;
+};
 
 /** Highlight contiguous runs without moving tabs or taking over user groups.
 New agent tabs join an adjacent BBX group instead of starting a second one.
@@ -286,11 +290,11 @@ Recheck ownership because the user may edit groups while a sync is pending. */
       if (!group || !isUnchanged(record, group, members)) continue;
       const latest = await deps.getActivity();
       if (latest.windowId !== record.windowId) continue;
-      const color = members.some(
-        (tab) => tab.active && typeof tab.id === 'number' && latest.tabIds.has(tab.id)
-      )
-        ? ACTIVE_AGENT_GROUP_COLOR
-        : AGENT_GROUP_COLOR;
+      const color =
+        latest.sharedTabId !== null &&
+        members.some((tab) => tab.active && typeof tab.id === 'number' && latest.tabIds.has(tab.id))
+          ? ACTIVE_AGENT_GROUP_COLOR
+          : AGENT_GROUP_COLOR;
       if (group.color === color) continue;
       await chromeObj.tabGroups.update(record.groupId, { color });
       record.color = color;
@@ -361,11 +365,11 @@ not create. */
       tabIds,
       createProperties: { windowId },
     });
-    const color = current.some(
-      (tab) => typeof tab.id === 'number' && tabIds.includes(tab.id) && tab.active
-    )
-      ? ACTIVE_AGENT_GROUP_COLOR
-      : AGENT_GROUP_COLOR;
+    const color =
+      latest.sharedTabId !== null &&
+      current.some((tab) => typeof tab.id === 'number' && tabIds.includes(tab.id) && tab.active)
+        ? ACTIVE_AGENT_GROUP_COLOR
+        : AGENT_GROUP_COLOR;
     const record: OwnedGroup = { groupId, windowId, tabIds, color, title: AGENT_GROUP_TITLE };
     owned.set(groupId, record);
     try {
