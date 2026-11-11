@@ -116,7 +116,7 @@ export async function generateInstallTargets(
   await block(
     'scripts/install.sh',
     'BROWSERS',
-    `case "$browser" in ${source.browsers.map((entry) => entry.key).join('|')}) ;; *) echo 'Unsupported browser' >&2; exit 1;; esac`
+    `case "$browser" in ''|${source.browsers.map((entry) => entry.key).join('|')}) ;; *) echo 'Unsupported browser' >&2; exit 1;; esac`
   );
   await block(
     'scripts/install.sh',
@@ -129,7 +129,7 @@ export async function generateInstallTargets(
   await block(
     'scripts/install.ps1',
     'PARAMETERS',
-    `  [string]$ExtensionId = '${source.extensionId}',\n  [ValidateSet(${source.browsers.map((entry) => `'${entry.key}'`).join(', ')})]`
+    `  [string]$ExtensionId = '${source.extensionId}',\n  [ValidateSet('', ${source.browsers.map((entry) => `'${entry.key}'`).join(', ')})]`
   );
   await block(
     'scripts/install.ps1',

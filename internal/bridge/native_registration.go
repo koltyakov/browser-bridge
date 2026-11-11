@@ -16,13 +16,22 @@ type nativeRegistrationSystem struct {
 	platform      string
 	home          string
 	env           func(string) string
+	lookupEnv     func(string) (string, bool)
 	readRegistry  func(context.Context, string) (string, error)
 	writeRegistry func(context.Context, ...string) error
 }
 
 func nativeRegistrationHostSystem() (nativeRegistrationSystem, error) {
 	home, err := installUserHome()
-	return nativeRegistrationSystem{runtime.GOOS, home, os.Getenv, readNativeRegistrationRegistry, installRegistry}, err
+	return nativeRegistrationSystem{runtime.GOOS, home, os.Getenv, os.LookupEnv, readNativeRegistrationRegistry, installRegistry}, err
+}
+
+func (s nativeRegistrationSystem) lookup(key string) (string, bool) {
+	if s.lookupEnv != nil {
+		return s.lookupEnv(key)
+	}
+	value := s.env(key)
+	return value, value != ""
 }
 
 func (s nativeRegistrationSystem) candidates(c config, browser string) []string {

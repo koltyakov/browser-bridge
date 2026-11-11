@@ -21,6 +21,7 @@ func installTestScope(t *testing.T) (config, installScope) {
 	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
 	t.Setenv("CODEX_HOME", "")
 	t.Setenv("CHROME_CONFIG_HOME", "")
+	t.Setenv("BBX_BROWSER", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
 	for _, key := range []string{"GEMINI_CLI_HOME", "CLINE_DIR", "CLINE_DATA_DIR", "CLINE_MCP_SETTINGS_PATH", "AMP_HOME", "FLATPAK_XDG_CONFIG_HOME", "PI_CODING_AGENT_DIR", "QWEN_HOME", "GOOSE_PATH_ROOT", "GOOSE_BIN_DIR", "OPENHANDS_PERSISTENCE_DIR", "MUSE_INSTALL_DIR", "GROK_HOME", "GROK_BIN_DIR"} {
 		t.Setenv(key, "")
@@ -166,7 +167,7 @@ func TestInstallNativePreservesManifestAndUsesNativeRoles(t *testing.T) {
 func TestInstallNativeRejectsInvalidConfiguration(t *testing.T) {
 	c, scope := installTestScope(t)
 	system := nativeRegistrationSystem{
-		platform: runtime.GOOS, home: scope.home, env: os.Getenv,
+		platform: runtime.GOOS, home: scope.home, env: os.Getenv, lookupEnv: os.LookupEnv,
 		readRegistry: func(context.Context, string) (string, error) { return "", nil },
 		writeRegistry: func(context.Context, ...string) error {
 			t.Fatal("invalid configuration attempted registry mutation")

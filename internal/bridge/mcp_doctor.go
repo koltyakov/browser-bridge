@@ -338,7 +338,7 @@ func (s *mcpSession) doctor(ctx context.Context) (object, error) {
 
 func mcpDoctorLocal(c config) (object, []string) {
 	home, _ := os.UserHomeDir()
-	return mcpDoctorLocalWithSystem(c, nativeRegistrationSystem{runtime.GOOS, home, os.Getenv, readNativeRegistrationRegistry, installRegistry})
+	return mcpDoctorLocalWithSystem(c, nativeRegistrationSystem{runtime.GOOS, home, os.Getenv, os.LookupEnv, readNativeRegistrationRegistry, installRegistry})
 }
 
 func mcpDoctorLocalWithSystem(c config, system nativeRegistrationSystem) (object, []string) {

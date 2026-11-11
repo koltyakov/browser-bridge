@@ -4,9 +4,9 @@ param(
   [string]$Version = '',
   # BEGIN GENERATED PARAMETERS
   [string]$ExtensionId = 'jjjkmmcdkpcgamlopogicbnnhdgebhie',
-  [ValidateSet('chrome', 'edge', 'brave', 'chromium', 'arc')]
+  [ValidateSet('', 'chrome', 'edge', 'brave', 'chromium', 'arc')]
   # END GENERATED PARAMETERS
-  [string]$Browser = 'chrome',
+  [string]$Browser = '',
   [string]$InstallDir = (Join-Path $HOME '.local\bin'),
   [switch]$Help
 )
@@ -14,7 +14,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ($Help) {
-  Write-Host 'Install Browser Bridge from GitHub Releases. -Version accepts a major-minor release line such as 2.0, or an exact version. Options: -ExtensionId, -Browser, -InstallDir.'
+  Write-Host 'Install Browser Bridge from GitHub Releases. Detects supported browsers with the extension installed. -Version accepts a major-minor release line such as 2.0, or an exact version. Options: -ExtensionId, -Browser (one browser override), -InstallDir.'
   return
 }
 if ($ExtensionId -cnotmatch '^[a-z]{32}$') { throw 'Invalid extension ID' }
@@ -56,6 +56,8 @@ $InstallDir = [IO.Path]::GetFullPath($InstallDir)
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Path $tmp | Out-Null
 $previousAutoUpdate = $env:BBX_AUTO_UPDATE
+$previousBrowser = $env:BBX_BROWSER
+$previousExtensionId = $env:BROWSER_BRIDGE_EXTENSION_ID
 try {
   $checksumsFile = Join-Path $tmp 'checksums.txt'
   Invoke-WebRequest -UseBasicParsing -Uri "$base/checksums.txt" -OutFile $checksumsFile
@@ -84,10 +86,15 @@ try {
     }
   }
   $env:BBX_AUTO_UPDATE = 'off'
+  if ($Browser) { $env:BBX_BROWSER = $Browser }
+  if ($PSBoundParameters.ContainsKey('ExtensionId')) { $env:BROWSER_BRIDGE_EXTENSION_ID = $ExtensionId }
   & $exe install-self --bin-dir $InstallDir --no-restart
   if ($LASTEXITCODE -ne 0) { throw 'Installation failed' }
   $installed = Join-Path $InstallDir 'bbx.exe'
-  & $installed install $ExtensionId --browser $Browser
+  $registrationArgs = @('install')
+  if ($PSBoundParameters.ContainsKey('ExtensionId')) { $registrationArgs += $ExtensionId }
+  if ($Browser) { $registrationArgs += @('--browser', $Browser) }
+  & $installed @registrationArgs
   if ($LASTEXITCODE -ne 0) { throw 'Browser registration failed' }
   & $installed restart
   if ($LASTEXITCODE -ne 0) { throw 'Daemon restart failed' }
@@ -99,5 +106,7 @@ try {
   Write-Host "Installed Browser Bridge to $installed. Open a new terminal to use bbx."
 } finally {
   $env:BBX_AUTO_UPDATE = $previousAutoUpdate
+  $env:BBX_BROWSER = $previousBrowser
+  $env:BROWSER_BRIDGE_EXTENSION_ID = $previousExtensionId
   Remove-Item -LiteralPath $tmp -Recurse -Force
 }

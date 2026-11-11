@@ -128,13 +128,13 @@ Browser Bridge is optimized for the opposite starting point: **inspect the state
 4. Enable access for the browser window you want the agent to use.
 5. Ask your agent to use Browser Bridge.
 
-The installers download the latest stable executable from GitHub Releases, verify its SHA-256 against the release's `checksums.txt`, install to `~/.local/bin`, register Chrome, and restart the daemon. Supported platforms are macOS arm64/x64, Linux arm64/x64, and Windows x64. Keep `~/.local/bin` on your shell's `PATH` on macOS and Linux. Windows adds it to your user `PATH`; open a new terminal afterward.
+The installers download the latest stable executable from GitHub Releases, verify its SHA-256 against the release's `checksums.txt`, install to `~/.local/bin`, register every supported browser where Browser Bridge is detected, and restart the daemon. Existing native registrations are refreshed too. Supported platforms are macOS arm64/x64, Linux arm64/x64, and Windows x64. Keep `~/.local/bin` on your shell's `PATH` on macOS and Linux. Windows adds it to your user `PATH`; open a new terminal afterward.
 
 To match your extension's release line, use the install command shown in its setup panel. The scripts accept `BBX_VERSION=2.0` on macOS/Linux or `-Version '2.0'` in PowerShell to select the newest stable `2.0.x` patch, or an exact version. They also try to remove an existing global `@browserbridge/bbx` npm package so its launchers do not shadow the standalone CLI. See the [installer options](https://github.com/koltyakov/browser-bridge/blob/main/docs/native-cli.md#install-without-nodejs) for browser, version, and installation-directory overrides.
 
 Generated MCP configurations use the Go binary's absolute path, not npm, npx, Node, or a `bbx` shim. Native messaging launchers also execute the binary directly.
 
-If the extension does not connect, run `bbx install`. Register a specific browser with `bbx install --browser chrome|edge|brave|chromium|arc`.
+If the extension does not connect, run `bbx install` to detect and register its browsers. Register only a specific browser with `bbx install --browser chrome|edge|brave|chromium|arc`. See [browser detection](https://github.com/koltyakov/browser-bridge/blob/main/docs/native-cli.md#download-manually) for profile discovery and fallback behavior.
 
 On Ubuntu, Chromium is commonly installed as a strict snap, and Flatpak Chromium is similarly sandboxed. If native messaging stays disconnected there, use a non-sandboxed Chromium-based browser such as Google Chrome, Brave, or Edge.
 

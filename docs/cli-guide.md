@@ -25,9 +25,11 @@ bbx uninstall
 ```
 
 Use these first when Browser Bridge is not connected, the wrong tab is routed,
-or you want to see the available runtime presets. `bbx install` targets Chromium
-on Linux and Chrome on macOS/Windows; use `--browser` for Chrome, Edge, Brave,
-Chromium, or Arc, or `--all` for all supported browsers.
+or you want to see the available runtime presets. `bbx install` detects the
+extension in supported browsers and refreshes existing native registrations.
+If nothing is detected, it falls back to Chromium on Linux or Chrome on
+macOS/Windows. Use `--browser` to select only Chrome, Edge, Brave, Chromium,
+or Arc, or `--all` to register all supported browsers regardless of detection.
 
 Use `bbx tabs` to preview tabs in the enabled window, then
 `bbx tab-activate <tabId>` to bring one of them to the foreground when the

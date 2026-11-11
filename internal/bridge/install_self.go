@@ -227,24 +227,16 @@ func installSelfFinish(ctx context.Context, c config, restart bool) error {
 	if err != nil {
 		return err
 	}
-	browsers := []string{}
-	for _, browser := range installBrowsers {
-		path, _, lookupErr := system.resolve(ctx, c, browser)
-		if lookupErr != nil {
-			return lookupErr
-		}
-		if _, err := os.Lstat(path); err == nil {
-			browsers = append(browsers, browser)
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
+	browsers, warnings, err := installDetectBrowsers(ctx, c, "", system)
+	if err != nil {
+		return err
 	}
-	if len(browsers) == 0 {
-		browsers = append(browsers, installDefaultBrowser())
+	for _, warning := range warnings {
+		fmt.Fprintln(os.Stderr, "Warning:", warning)
 	}
 	registrations := []object{}
 	for _, browser := range browsers {
-		result, err := installNativeRegistration(ctx, c, browser, "", true)
+		result, err := installDetectedBrowser(ctx, c, browser, "", system)
 		if err != nil {
 			return err
 		}

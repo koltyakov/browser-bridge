@@ -3,7 +3,7 @@ set -eu
 umask 077
 
 if [ "${1:-}" = '--help' ]; then
-  echo 'Install Browser Bridge from GitHub Releases. BBX_VERSION accepts a major-minor release line such as 2.0, or an exact version. Optional: BBX_EXTENSION_ID, BBX_BROWSER, BBX_INSTALL_DIR.'
+  echo 'Install Browser Bridge from GitHub Releases. Detects supported browsers with the extension installed. BBX_VERSION accepts a major-minor release line such as 2.0, or an exact version. Optional: BBX_EXTENSION_ID, BBX_BROWSER (one browser override), BBX_INSTALL_DIR.'
   exit 0
 fi
 if [ "$#" -ne 0 ]; then
@@ -15,14 +15,14 @@ version="${BBX_VERSION:-}"
 # BEGIN GENERATED EXTENSION_ID
 extension_id="${BBX_EXTENSION_ID:-jjjkmmcdkpcgamlopogicbnnhdgebhie}"
 # END GENERATED EXTENSION_ID
-browser="${BBX_BROWSER:-chrome}"
+browser="${BBX_BROWSER:-}"
 install_dir="${BBX_INSTALL_DIR:-$HOME/.local/bin}"
 if ! printf '%s\n' "$extension_id" | grep -Eq '^[a-z]{32}$'; then
   echo 'Invalid extension ID' >&2
   exit 1
 fi
 # BEGIN GENERATED BROWSERS
-case "$browser" in chrome|edge|brave|chromium|arc) ;; *) echo 'Unsupported browser' >&2; exit 1;; esac
+case "$browser" in ''|chrome|edge|brave|chromium|arc) ;; *) echo 'Unsupported browser' >&2; exit 1;; esac
 # END GENERATED BROWSERS
 # BEGIN GENERATED PLATFORMS
 case "$(uname -s):$(uname -m)" in
@@ -157,8 +157,18 @@ if command -v npm >/dev/null 2>&1; then
     echo 'Warning: could not check for the legacy global npm package. Continuing with standalone installation.' >&2
   fi
 fi
-BBX_AUTO_UPDATE=off "$tmp/bbx" install-self --bin-dir "$install_dir" --no-restart
-BBX_AUTO_UPDATE=off "$install_dir/bbx" install "$extension_id" --browser "$browser"
+if [ -n "${BBX_EXTENSION_ID:-}" ]; then
+  export BROWSER_BRIDGE_EXTENSION_ID="$extension_id"
+fi
+BBX_AUTO_UPDATE=off BBX_BROWSER="$browser" "$tmp/bbx" install-self --bin-dir "$install_dir" --no-restart
+set -- install
+if [ -n "${BBX_EXTENSION_ID:-}" ]; then
+  set -- "$@" "$extension_id"
+fi
+if [ -n "$browser" ]; then
+  set -- "$@" --browser "$browser"
+fi
+BBX_AUTO_UPDATE=off "$install_dir/bbx" "$@"
 BBX_AUTO_UPDATE=off "$install_dir/bbx" restart
 echo "Installed Browser Bridge to $install_dir/bbx"
 case ":$PATH:" in

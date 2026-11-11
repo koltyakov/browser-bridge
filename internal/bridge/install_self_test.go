@@ -213,6 +213,9 @@ func TestInstallSelfCLI(t *testing.T) {
 	t.Setenv("BBX_AUTH_TOKEN", "")
 	t.Setenv("BBX_AUTO_UPDATE", "off")
 	t.Setenv("BROWSER_BRIDGE_EXTENSION_ID", publishedExtensionID)
+	if err := os.Unsetenv("BROWSER_BRIDGE_EXTENSION_ID"); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("BBX_NPM_VERSION", version)
 	t.Setenv("BBX_REMOTE", "ignored-ambient-remote")
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -265,6 +268,11 @@ func TestInstallSelfCLI(t *testing.T) {
 		path := filepath.Join(installManifestDir(runtime.GOOS, scope.home, browser, os.Getenv), hostName+".json")
 		installTestWrite(t, path, string(value(object{"allowed_origins": value(origins), "custom": value("keep")})))
 	}
+	system, err := nativeRegistrationHostSystem()
+	if err != nil {
+		t.Fatal(err)
+	}
+	installTestBrowserExtension(t, system, "brave", "Profile 2", publishedExtensionID)
 	// Exercise real argv0 aliases and keep native/MCP clients alive across install.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -342,6 +350,9 @@ func TestInstallSelfCLI(t *testing.T) {
 	second := runInstall("--bin-dir", bin)
 	if !second.boolean("previouslyRunning") || second.number("pid") == int64(oldPID) || second.object("mcpProcesses").number("restartRequested") != 1 {
 		t.Fatalf("restart evidence: %s", value(second))
+	}
+	if !installExists(system.candidates(c, "brave")[0]) {
+		t.Fatal("install-self did not register Brave's installed extension")
 	}
 	for role, done := range map[string]<-chan error{"MCP": mcpDone, "native": nativeDone} {
 		select {

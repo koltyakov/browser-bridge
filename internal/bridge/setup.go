@@ -535,8 +535,41 @@ func installNativeCommand(ctx context.Context, c config, args []string) error {
 	if all {
 		browsers = installBrowsers
 	}
+	var explicitExtensionID bool
+	if !remove {
+		system, err := nativeRegistrationHostSystem()
+		if err != nil {
+			return err
+		}
+		_, explicitExtensionID, err = installRequestedExtensionID(extensionID, system)
+		if err != nil {
+			return err
+		}
+	}
 	if len(browsers) == 0 {
-		browsers = []string{installDefaultBrowser()}
+		if remove {
+			browser := os.Getenv("BBX_BROWSER")
+			if browser == "" {
+				browser = installDefaultBrowser()
+			}
+			if !installContains(installBrowsers, browser) {
+				return fmt.Errorf("unsupported browser %q in BBX_BROWSER", browser)
+			}
+			browsers = []string{browser}
+		} else {
+			system, err := nativeRegistrationHostSystem()
+			if err != nil {
+				return err
+			}
+			var warnings []string
+			browsers, warnings, err = installDetectBrowsers(ctx, c, extensionID, system)
+			if err != nil {
+				return err
+			}
+			for _, warning := range warnings {
+				fmt.Fprintln(os.Stderr, "Warning:", warning)
+			}
+		}
 	}
 	for _, browser := range browsers {
 		if err := ctx.Err(); err != nil {
@@ -551,7 +584,17 @@ func installNativeCommand(ctx context.Context, c config, args []string) error {
 				fmt.Println("Removed", path)
 			}
 		} else {
-			result, err := installNativeRegistration(ctx, c, browser, extensionID, preserve)
+			var result object
+			var err error
+			if !explicitExtensionID {
+				var system nativeRegistrationSystem
+				system, err = nativeRegistrationHostSystem()
+				if err == nil {
+					result, err = installDetectedBrowser(ctx, c, browser, extensionID, system)
+				}
+			} else {
+				result, err = installNativeRegistration(ctx, c, browser, extensionID, preserve)
+			}
 			if err != nil {
 				return err
 			}

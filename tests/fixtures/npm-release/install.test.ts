@@ -19,6 +19,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.CALLS, JSON.stringify({ args, autoUpdate: process.env.BBX_AUTO_UPDATE }) + '\\n');
+fs.appendFileSync(process.env.CALL_ENV, JSON.stringify({ browser: process.env.BBX_BROWSER, extensionId: process.env.BROWSER_BRIDGE_EXTENSION_ID }) + '\\n');
 fs.appendFileSync(process.env.EVENTS, 'bbx ' + args[0] + '\\n');
 if (args[0] === process.env.FAIL_COMMAND) process.exit(1);
 if (args[0] === 'install-self') {
@@ -77,12 +78,14 @@ if (url.startsWith('https://api.github.com/')) {
     BBX_INSTALL_DIR: path.join(directory, 'install with spaces'),
     BBX_VERSION: '2.3.4',
     BBX_EXTENSION_ID: 'a'.repeat(32),
+    BROWSER_BRIDGE_EXTENSION_ID: undefined,
     BBX_BROWSER: 'chrome',
     FAKE_OS: 'Linux',
     FAKE_ARCH: 'x86_64',
     BINARY: path.join(directory, 'binary'),
     CHECKSUMS: path.join(directory, 'checksums.txt'),
     CALLS: path.join(directory, 'calls.jsonl'),
+    CALL_ENV: path.join(directory, 'call-env.jsonl'),
     URLS: path.join(directory, 'urls.txt'),
     NPM_ROOT: path.join(directory, 'global npm/node_modules'),
     NPM_CALLS: path.join(directory, 'npm-calls.jsonl'),
@@ -138,6 +141,45 @@ test(
         `https://github.com/koltyakov/browser-bridge/releases/download/v2.3.4/checksums.txt\nhttps://github.com/koltyakov/browser-bridge/releases/download/v2.3.4/${asset}\n`
       );
       assert.ok((await fs.stat(path.join(directory, 'install with spaces/bbx'))).isFile());
+    }
+  }
+);
+
+test(
+  'Unix installer leaves browser selection to shared detection unless explicitly overridden',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    for (const [browser, extensionId] of [
+      ['', ''],
+      ['brave', ''],
+      ['', 'a'.repeat(32)],
+      ['brave', 'a'.repeat(32)],
+    ]) {
+      const { env, checksum, run } = await fixture(t);
+      if (browser) env.BBX_BROWSER = browser;
+      else delete env.BBX_BROWSER;
+      if (extensionId) env.BBX_EXTENSION_ID = extensionId;
+      else delete env.BBX_EXTENSION_ID;
+      await fs.writeFile(env.CHECKSUMS!, `${checksum}  bbx-linux-x64\n`);
+      const result = run();
+      assert.equal(result.status, 0, result.stderr);
+      const calls = (await fs.readFile(env.CALLS!, 'utf8'))
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as { args: string[] });
+      assert.deepEqual(calls[1].args, [
+        'install',
+        ...(extensionId ? [extensionId] : []),
+        ...(browser ? ['--browser', browser] : []),
+      ]);
+      const environments = (await fs.readFile(env.CALL_ENV!, 'utf8'))
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as { browser?: string; extensionId?: string });
+      assert.deepEqual(environments[0], {
+        browser,
+        ...(extensionId ? { extensionId } : {}),
+      });
     }
   }
 );
@@ -249,7 +291,7 @@ test(
     let result = run();
     assert.equal(result.status, 0, result.stderr);
     assert.match(await fs.readFile(env.URLS!, 'utf8'), /releases\/latest\/download/);
-    assert.match(await fs.readFile(env.CALLS!, 'utf8'), /jjjkmmcdkpcgamlopogicbnnhdgebhie/);
+    assert.doesNotMatch(await fs.readFile(env.CALLS!, 'utf8'), /jjjkmmcdkpcgamlopogicbnnhdgebhie/);
     assert.match(await fs.readFile(env.CALLS!, 'utf8'), /brave/);
     env.BBX_VERSION = 'v2.3.4';
     result = run();

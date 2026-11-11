@@ -27,7 +27,11 @@ func installContains(values []string, value string) bool {
 func installExists(path string) bool { _, err := os.Stat(path); return err == nil }
 
 func installDefaultBrowser() string {
-	if runtime.GOOS == "linux" {
+	return installDefaultBrowserForPlatform(runtime.GOOS)
+}
+
+func installDefaultBrowserForPlatform(platform string) string {
+	if platform == "linux" {
 		return "chromium"
 	}
 	return "chrome"
@@ -240,6 +244,23 @@ func installNativeRegistration(ctx context.Context, c config, browser, extension
 }
 
 func installNativeRegistrationWithSystem(ctx context.Context, c config, browser, extensionID string, preserveOrigins bool, system nativeRegistrationSystem) (object, error) {
+	return installNativeRegistrationWithOrigins(ctx, c, browser, extensionID, preserveOrigins, system, nil)
+}
+
+func installRequestedExtensionID(extensionID string, system nativeRegistrationSystem) (string, bool, error) {
+	explicit := extensionID != ""
+	if !explicit {
+		if fromEnv, exists := system.lookup("BROWSER_BRIDGE_EXTENSION_ID"); exists {
+			extensionID, explicit = fromEnv, true
+		} else {
+			extensionID = publishedExtensionID
+		}
+	}
+	id, err := installParseExtensionID(extensionID)
+	return id, explicit, err
+}
+
+func installNativeRegistrationWithOrigins(ctx context.Context, c config, browser, extensionID string, preserveOrigins bool, system nativeRegistrationSystem, additionalIDs []string) (object, error) {
 	if !installContains(installBrowsers, browser) {
 		return nil, fmt.Errorf("unsupported browser %q", browser)
 	}
@@ -260,18 +281,12 @@ func installNativeRegistrationWithSystem(ctx context.Context, c config, browser,
 	} else if !errors.Is(readErr, os.ErrNotExist) {
 		return nil, readErr
 	}
-	explicit := extensionID != ""
-	if !explicit {
-		if fromEnv, exists := os.LookupEnv("BROWSER_BRIDGE_EXTENSION_ID"); exists {
-			extensionID = fromEnv
-			explicit = true
-		} else {
-			extensionID = publishedExtensionID
-		}
-	}
-	extensionID, err = installParseExtensionID(extensionID)
+	extensionID, explicit, err := installRequestedExtensionID(extensionID, system)
 	if err != nil {
 		return nil, err
+	}
+	if explicit && preserveOrigins {
+		additionalIDs = append(additionalIDs, extensionID)
 	}
 	origins := []string{"chrome-extension://" + extensionID + "/"}
 	var existingOrigins []string
@@ -287,6 +302,16 @@ func installNativeRegistrationWithSystem(ctx context.Context, c config, browser,
 				extensionID = id
 				break
 			}
+		}
+	}
+	for _, additionalID := range additionalIDs {
+		id, err := installParseExtensionID(additionalID)
+		if err != nil {
+			return nil, err
+		}
+		origin := "chrome-extension://" + id + "/"
+		if !installContains(origins, origin) {
+			origins = append(origins, origin)
 		}
 	}
 	launcherPath, launcher := installLauncherForPlatform(c, executable, system.platform)

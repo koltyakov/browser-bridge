@@ -42,7 +42,10 @@ If the extension does not connect itself during setup, run:
 bbx install
 ```
 
-`bbx install` targets Chromium on Linux and Chrome on macOS/Windows. To install the native messaging manifest for a different browser, pass `--browser`:
+`bbx install` detects Browser Bridge across profiles in supported browsers and
+refreshes existing native registrations. If nothing is detected, it falls back
+to Chromium on Linux or Chrome on macOS/Windows. To register only one browser,
+pass `--browser`:
 
 ```bash
 bbx install --browser chrome    # Google Chrome
@@ -50,7 +53,8 @@ bbx install --browser edge      # Microsoft Edge
 bbx install --browser brave     # Brave
 bbx install --browser chromium  # Chromium
 bbx install --browser arc       # Arc
-bbx install --all               # All supported browsers
+bbx install                    # Detect browsers with Browser Bridge installed
+bbx install --all               # All supported browsers, regardless of detection
 ```
 
 On Windows, fresh installs keep separate browser manifests under

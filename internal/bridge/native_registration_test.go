@@ -26,7 +26,7 @@ func newNativeRegistrationFixture(t *testing.T) nativeRegistrationFixture {
 	}
 	entries := map[string]string{}
 	system := nativeRegistrationSystem{
-		platform: "windows", home: scope.home, env: os.Getenv,
+		platform: "windows", home: scope.home, env: os.Getenv, lookupEnv: os.LookupEnv,
 		readRegistry: func(_ context.Context, key string) (string, error) { return entries[key], nil },
 		writeRegistry: func(_ context.Context, args ...string) error {
 			switch args[0] {

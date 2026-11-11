@@ -21,8 +21,10 @@ bbx install
 the local host. Use `bbx install <extension-id>` only for unpacked or custom
 extension builds.
 
-By default, `bbx install` targets Chromium on Linux and Chrome on macOS/Windows.
-For another supported browser, pass `--browser`:
+By default, `bbx install` detects the extension across profiles in supported
+browsers and refreshes existing native registrations. If nothing is detected,
+it falls back to Chromium on Linux or Chrome on macOS/Windows.
+To register only one supported browser, pass `--browser`:
 
 ```bash
 bbx install --browser chrome    # Google Chrome

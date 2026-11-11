@@ -18,7 +18,8 @@ the local runtime. Updating only the npm package does not update the extension.
   Keep the existing bridge data directory, credentials, and browser registrations;
   migration does not require deleting them.
 - Note your browser and extension ID if you use an unpacked or custom build.
-  The default installers register the Chrome Web Store extension in Chrome.
+  The default installers detect the Chrome Web Store extension in supported
+  browsers and refresh existing native registrations.
 
 ## 1. Update the extension
 
@@ -55,7 +56,8 @@ On Windows, run in PowerShell:
 ```
 
 The installer verifies the release checksum, installs to `~/.local/bin`,
-registers Chrome, and restarts the daemon. It also tries to remove the old
+registers supported browsers where the extension is detected, and restarts the
+daemon. It also tries to remove the old
 global `@browserbridge/bbx` npm package so its launchers do not shadow the new
 CLI. If that fails, follow the installer's warning to remove the old package.
 Do not remove Node.js if other tools still need it.

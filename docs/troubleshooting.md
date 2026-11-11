@@ -22,7 +22,7 @@ error text, or internal method/tab groups.
 
 ## The extension is installed, but `bbx status` says it is disconnected
 
-- Run `bbx install` again. It targets Chromium on Linux and Chrome on macOS/Windows; for another browser, include `--browser <name>`.
+- Run `bbx install` again. It detects Browser Bridge in supported browsers and refreshes existing native registrations. Use `--browser <name>` for an explicit browser override or a nonstandard profile that detection cannot find.
 - Run `bbx restart` to reload the local daemon and ask running Browser Bridge MCP servers to restart after updates.
 - After upgrading from a version without coordinated MCP restart support, restart the agent once so its new MCP process can register for later `bbx restart` requests.
 - Confirm the extension is enabled in Chrome.
