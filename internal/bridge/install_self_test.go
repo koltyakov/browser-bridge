@@ -367,7 +367,12 @@ func TestInstallSelfCLI(t *testing.T) {
 		manifest, err := decodeObject(raw)
 		var got []string
 		_ = json.Unmarshal(manifest["allowed_origins"], &got)
-		if err != nil || manifest.text("custom") != "keep" || strings.Join(got, ",") != strings.Join(origins, ",") {
+		want := origins
+		if runtime.GOOS == "darwin" && browser == "chrome" {
+			// Brave's installed store extension uses this same native host.
+			want = append(append([]string{}, origins...), "chrome-extension://"+publishedExtensionID+"/")
+		}
+		if err != nil || manifest.text("custom") != "keep" || strings.Join(got, ",") != strings.Join(want, ",") {
 			t.Fatalf("manifest changed: %s, %v", raw, err)
 		}
 	}

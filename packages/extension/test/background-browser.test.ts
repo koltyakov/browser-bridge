@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { detectBrowserName } from '../src/background-browser.js';
+import { detectBrowserName, getBrowserName } from '../src/background-browser.js';
 
 test('detectBrowserName returns chrome, edge, brave, or unknown from UA strings', () => {
   assert.equal(
@@ -51,4 +51,28 @@ test('detectBrowserName falls back to global navigator userAgent when omitted', 
       value: priorNavigator,
     });
   }
+});
+
+test('worker Brave API distinguishes a Chrome-shaped UA without changing Chrome detection', async () => {
+  const userAgent = 'Mozilla/5.0 Chrome/157.0.0.0 Safari/537.36';
+  assert.equal(await getBrowserName({ userAgent, brave: { isBrave: async () => true } }), 'brave');
+  assert.equal(await getBrowserName({ userAgent }), 'chrome');
+  assert.equal(
+    await getBrowserName({ userAgent, brave: { isBrave: async () => false } }),
+    'chrome'
+  );
+  assert.equal(await getBrowserName({ userAgent, brave: {} }), 'chrome');
+  assert.equal(
+    await getBrowserName({
+      userAgent,
+      brave: {
+        isBrave: async () => {
+          throw new Error('unavailable');
+        },
+      },
+    }),
+    'chrome'
+  );
+  assert.equal(await getBrowserName({ userAgent: `${userAgent} Edg/157.0.0.0` }), 'edge');
+  assert.equal(await getBrowserName({}), 'unknown');
 });

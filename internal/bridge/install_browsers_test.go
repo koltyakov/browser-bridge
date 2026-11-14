@@ -302,14 +302,20 @@ func TestInstallLegacyUninstallHonorsBrowserOverride(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, browser := range []string{"chrome", "brave"} {
-				installTestWrite(t, system.candidates(c, browser)[0], `{}`)
+			independent := "chrome"
+			if runtime.GOOS == "darwin" {
+				independent = "edge" // Chrome and Brave now share a registration.
+			}
+			for _, browser := range []string{independent, "brave"} {
+				if _, err := installNativeRegistrationWithSystem(context.Background(), c, browser, publishedExtensionID, false, system); err != nil {
+					t.Fatal(err)
+				}
 			}
 			t.Setenv("BBX_BROWSER", "brave")
-			args, removed, kept := []string{"--uninstall"}, "brave", "chrome"
+			args, removed, kept := []string{"--uninstall"}, "brave", independent
 			if explicit {
-				args = append(args, "--browser", "chrome")
-				removed, kept = "chrome", "brave"
+				args = append(args, "--browser", independent)
+				removed, kept = independent, "brave"
 			}
 			if err := installNativeCommand(context.Background(), c, args); err != nil {
 				t.Fatal(err)

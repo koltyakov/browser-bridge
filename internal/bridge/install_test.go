@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -69,7 +70,8 @@ func TestInstallManifestPaths(t *testing.T) {
 			if platform == "windows" {
 				base = browser
 			}
-			if !strings.HasPrefix(path, home+string(filepath.Separator)) || filepath.Base(path) != base || seen[path] {
+			sharedBrave := platform == "darwin" && browser == "brave" && path == installManifestDir(platform, home, "chrome", env)
+			if !strings.HasPrefix(path, home+string(filepath.Separator)) || filepath.Base(path) != base || seen[path] && !sharedBrave {
 				t.Fatalf("invalid %s/%s path %s", platform, browser, path)
 			}
 			seen[path] = true
@@ -152,7 +154,13 @@ func TestInstallNativePreservesManifestAndUsesNativeRoles(t *testing.T) {
 	if err := json.Unmarshal(result["allowedOrigins"], &origins); err != nil {
 		t.Fatal(err)
 	}
-	if len(origins) != 1 || origins[0] != "chrome-extension://"+publishedExtensionID+"/" {
+	want := []string{"chrome-extension://" + publishedExtensionID + "/"}
+	if runtime.GOOS == "darwin" {
+		// Chrome and Brave share this registration, so a scoped install cannot
+		// revoke an origin that the other browser may still require.
+		want = append([]string{"chrome-extension://" + custom + "/"}, want...)
+	}
+	if !reflect.DeepEqual(origins, want) {
 		t.Fatal(origins)
 	}
 	removed, err := uninstallNativeRegistration(context.Background(), c, "chrome")

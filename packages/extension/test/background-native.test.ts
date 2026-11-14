@@ -21,7 +21,11 @@ import {
   createSuccess,
 } from '../../../protocol/src/index.js';
 import type { SetupStatus } from '../../../protocol/src/types.js';
-import { createNativeConnectionController, refreshSetupStatus } from '../src/background-native.js';
+import {
+  createNativeConnectionController,
+  refreshSetupStatus,
+  sendIdentity,
+} from '../src/background-native.js';
 import { createExtensionState, NATIVE_SETUP_RETRY_ALARM } from '../src/background-state.js';
 import type { ExtensionState } from '../src/background-state.js';
 import { DEFAULT_ACCESS_SETTINGS, getAccessSettingsSnapshot } from '../src/access-settings.js';
@@ -70,6 +74,57 @@ type NativeBackgroundModule = {
   clearTabBridgeState: (tabId: number) => Promise<void>;
 };
 type StateSyncMessage = { type: 'state.sync'; state: Record<string, unknown> };
+
+test('native identity waits for Brave detection and never advertises it as Chrome', async () => {
+  const priorNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  let resolveBrave: (value: boolean) => void = () => {};
+  const brave = {
+    isBrave() {
+      return new Promise<boolean>((resolve) => {
+        resolveBrave = resolve;
+      });
+    },
+  };
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { userAgent: 'Mozilla/5.0 Chrome/157.0.0.0 Safari/537.36', brave },
+  });
+  try {
+    const messages: unknown[] = [];
+    const port = createNativePort(messages);
+    const chromeObj = {
+      runtime: { id: 'store-extension' },
+      storage: {
+        local: createStorageArea({ bb_profile_label: 'profile_existing' }),
+        session: createStorageArea(),
+      },
+    };
+    sendIdentity(port, chromeObj);
+    await flushAsyncWork();
+    assert.equal(findMessage(messages, 'host.identity'), undefined);
+    resolveBrave(true);
+    await flushAsyncWork();
+    assert.deepEqual(findMessage(messages, 'host.identity'), {
+      type: 'host.identity',
+      browserName: 'brave',
+      profileLabel: 'profile_existing',
+      browserExtensionId: 'store-extension',
+      windowAccessUpdates: true,
+      windowActions: true,
+      mutationScheduling: true,
+    });
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: { userAgent: 'Mozilla/5.0 Chrome/157.0.0.0 Safari/537.36' },
+    });
+    sendIdentity(port, chromeObj);
+    await flushAsyncWork();
+    assert.equal((messages.at(-1) as { browserName?: string }).browserName, 'chrome');
+  } finally {
+    if (priorNavigator) Object.defineProperty(globalThis, 'navigator', priorNavigator);
+    else Reflect.deleteProperty(globalThis, 'navigator');
+  }
+});
 
 function createNativePort(
   messages: unknown[],

@@ -62,7 +62,20 @@ On Windows, fresh installs keep separate browser manifests under
 `BROWSER_BRIDGE_HOME` when set. Existing registered paths and legacy
 browser-directory manifests remain supported, including Node 1.15 installations.
 Reinstalling without an explicit extension ID preserves custom allowlists.
-Diagnostics and uninstall support both layouts. macOS and Linux paths are unchanged.
+Diagnostics and uninstall support both layouts.
+
+On macOS, [Brave uses Chrome's native-host lookup directory](https://github.com/brave/brave-core/blob/master/app/brave_main_delegate.cc),
+`~/Library/Application Support/Google/Chrome/NativeMessagingHosts`, independently
+of its own browser profile directory. `bbx install --browser brave` migrates a
+legacy Brave-only registration there. Chrome and Brave share one manifest, so
+scoped installs preserve existing origins and record both registered consumers.
+Uninstalling one preserves the host until the last registered consumer is removed.
+An existing shared host pointing to a different installation is not redirected by
+a Brave install. Use the same bridge home for both browsers.
+
+Reinstalling through npm or the standalone installer refreshes registrations.
+`bbx update repair` repairs the signed native binary selection, not browser
+registration; use `bbx install --browser brave` to repair native-host discovery.
 
 On Ubuntu, the default Chromium package is usually a strict snap, and Flatpak
 Chromium is similarly sandboxed. If Chromium still reports the extension as

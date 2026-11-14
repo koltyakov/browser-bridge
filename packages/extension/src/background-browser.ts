@@ -16,3 +16,20 @@ export function detectBrowserName(userAgent?: string): string {
   }
   return 'unknown';
 }
+
+type BrowserNavigator = {
+  userAgent?: string;
+  brave?: { isBrave?: () => Promise<boolean> };
+};
+
+/** Brave deliberately uses Chrome's UA. Its API is also exposed on WorkerNavigator. */
+export async function getBrowserName(
+  navigator: BrowserNavigator = globalThis.navigator
+): Promise<string> {
+  try {
+    if ((await navigator?.brave?.isBrave?.()) === true) return 'brave';
+  } catch {
+    // A failed optional signal must not prevent the native identity handshake.
+  }
+  return detectBrowserName(navigator?.userAgent ?? '');
+}

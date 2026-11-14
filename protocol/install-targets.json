@@ -72,6 +72,7 @@
     {
       "key": "brave",
       "macDir": "BraveSoftware/Brave-Browser",
+      "macNativeMessagingDir": "Google/Chrome",
       "windowsDir": "BraveSoftware/Brave-Browser/User Data",
       "windowsManifestDir": "NativeMessagingHosts/brave",
       "linuxDir": "BraveSoftware/Brave-Browser",

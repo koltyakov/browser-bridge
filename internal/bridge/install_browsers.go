@@ -53,7 +53,24 @@ func installDetectBrowsers(ctx context.Context, c config, extensionID string, sy
 		manifest, registered, lookupErr := system.resolve(ctx, c, browser)
 		if lookupErr == nil {
 			_, lookupErr = os.Lstat(manifest)
-			if !explicit && (lookupErr == nil || registered != "") {
+			if errors.Is(lookupErr, os.ErrNotExist) && system.macSharedBrowser(browser) && browser == "brave" {
+				_, lookupErr = os.Lstat(system.candidates(c, browser)[1])
+			}
+			existing := lookupErr == nil || registered != ""
+			if existing && system.macSharedBrowser(browser) {
+				raw, readErr := os.ReadFile(manifest)
+				entry, decodeErr := decodeObject(raw)
+				if readErr == nil && decodeErr == nil {
+					owners, ownerErr := system.macRegistrationOwners(c, browser, manifest, entry)
+					existing = ownerErr != nil || installContains(owners, browser)
+				} else if browser == "brave" {
+					existing = installExists(system.candidates(c, browser)[1])
+				}
+				if browser == "brave" && installExists(system.candidates(c, browser)[1]) {
+					existing = true
+				}
+			}
+			if !explicit && existing {
 				browsers = append(browsers, browser)
 				continue
 			}
@@ -80,6 +97,18 @@ func installDetectBrowsers(ctx context.Context, c config, extensionID string, sy
 }
 
 func installBrowserHasExtension(ctx context.Context, root, extensionID string) (bool, error) {
+	// Windows can report ReadDir(file) as PATH_NOT_FOUND. Distinguish a
+	// missing profile from a malformed existing root before interpreting it.
+	info, err := os.Stat(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.IsDir() {
+		return false, fmt.Errorf("browser profile root is not a directory: %s", root)
+	}
 	profiles, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil

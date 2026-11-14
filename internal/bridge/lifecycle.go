@@ -206,6 +206,9 @@ func doctorCLI(ctx context.Context, c config, args []string) error {
 	if system, err := nativeRegistrationHostSystem(); err == nil {
 		for _, browser := range installBrowsers {
 			path, _, lookupErr := system.resolve(ctx, c, browser)
+			if message := system.macLegacyRegistrationIssue(c, browser); message != "" {
+				issues = append(issues, message)
+			}
 			if lookupErr != nil {
 				manifests = append(manifests, object{"browser": value(browser), "path": value(path), "error": value(lookupErr.Error())})
 				issues = append(issues, fmt.Sprintf("%s native registration lookup failed: %s", browser, lookupErr))

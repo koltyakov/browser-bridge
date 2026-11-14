@@ -1,6 +1,6 @@
 import { BridgeError, ERROR_CODES, createRequest } from '../../../protocol/src/index.js';
 import { createNativePortMessageListener } from './background-bridge.js';
-import { detectBrowserName } from './background-browser.js';
+import { getBrowserName } from './background-browser.js';
 import { getErrorMessage } from './background-helpers.js';
 import {
   isNativeConnectionUnstable,
@@ -159,29 +159,30 @@ async function loadProfileLabel(chromeObj: {
 
 /** Send browser/profile identity to the daemon via the native host. */
 export function sendIdentity(
-  port: chrome.runtime.Port,
+  port: Pick<chrome.runtime.Port, 'postMessage'>,
   chromeObj: {
     runtime?: { id?: string };
     storage: { local: ProfileStorage; session: ProfileStorage };
   }
 ): void {
-  const browserName = detectBrowserName();
-  void getProfileLabel(chromeObj).then((profileLabel) => {
-    try {
-      port.postMessage({
-        type: 'host.identity',
-        browserName,
-        profileLabel,
-        windowAccessUpdates: true,
-        windowActions: true,
-        mutationScheduling: true,
-        browserExtensionId:
-          typeof chromeObj.runtime?.id === 'string' ? chromeObj.runtime.id : undefined,
-      });
-    } catch {
-      /* port may have disconnected */
+  void Promise.all([getBrowserName(), getProfileLabel(chromeObj)]).then(
+    ([browserName, profileLabel]) => {
+      try {
+        port.postMessage({
+          type: 'host.identity',
+          browserName,
+          profileLabel,
+          windowAccessUpdates: true,
+          windowActions: true,
+          mutationScheduling: true,
+          browserExtensionId:
+            typeof chromeObj.runtime?.id === 'string' ? chromeObj.runtime.id : undefined,
+        });
+      } catch {
+        /* port may have disconnected */
+      }
     }
-  });
+  );
 }
 
 /** Notify the daemon that this browser/profile was recently active so untargeted

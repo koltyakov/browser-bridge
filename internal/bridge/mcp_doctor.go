@@ -360,6 +360,9 @@ func mcpDoctorLocalWithSystem(c config, system nativeRegistrationSystem) (object
 		data, err := os.ReadFile(path)
 		exists := err == nil
 		browsers = append(browsers, object{"browser": value(browser), "manifestPath": value(path), "installed": value(exists)})
+		if message := system.macLegacyRegistrationIssue(c, browser); message != "" {
+			manifestIssues = append(manifestIssues, object{"browser": value(browser), "manifestPath": value(path), "code": value("manifest_lookup_mismatch"), "message": value(message)})
+		}
 		if !exists {
 			continue
 		}

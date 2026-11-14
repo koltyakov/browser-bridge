@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -40,10 +41,57 @@ func (s nativeRegistrationSystem) candidates(c config, browser string) []string 
 		return nil
 	}
 	legacy := filepath.Join(installLegacyManifestDir(s.platform, s.home, browser, s.env), hostName+".json")
+	if s.platform == "darwin" && definition.macNativeMessagingDir != "" {
+		return []string{filepath.Join(installManifestDir(s.platform, s.home, browser, s.env), hostName+".json"), legacy}
+	}
 	if s.platform != "windows" {
 		return []string{legacy}
 	}
 	return []string{filepath.Join(c.home, filepath.FromSlash(definition.windowsManifestDir), hostName+".json"), legacy}
+}
+
+const macRegistrationOwnersKey = "x_browser_bridge_browsers"
+
+func (s nativeRegistrationSystem) macSharedBrowser(browser string) bool {
+	return s.platform == "darwin" && (browser == "chrome" || browser == "brave")
+}
+
+// Ownership is stored with the shared manifest, not in a per-install sidecar.
+// Unmarked existing files conservatively belong to Chrome. A legacy Brave
+// registration is also evidence of a consumer that uninstall must preserve.
+func (s nativeRegistrationSystem) macRegistrationOwners(c config, browser, path string, manifest object) ([]string, error) {
+	if !s.macSharedBrowser(browser) {
+		return nil, nil
+	}
+	owners := []string{}
+	if raw, exists := manifest[macRegistrationOwnersKey]; exists {
+		if err := json.Unmarshal(raw, &owners); err != nil || len(owners) == 0 {
+			return nil, fmt.Errorf("invalid shared native host ownership in %s", path)
+		}
+		for _, owner := range owners {
+			if owner != "chrome" && owner != "brave" {
+				return nil, fmt.Errorf("invalid shared native host owner in %s", path)
+			}
+		}
+		return owners, nil
+	}
+	if installExists(path) {
+		owners = append(owners, "chrome")
+	}
+	if installExists(s.candidates(c, "brave")[1]) {
+		owners = append(owners, "brave")
+	}
+	return owners, nil
+}
+
+func (s nativeRegistrationSystem) macLegacyRegistrationIssue(c config, browser string) string {
+	if s.macSharedBrowser(browser) && browser == "brave" {
+		paths := s.candidates(c, browser)
+		if !installExists(paths[0]) && installExists(paths[1]) {
+			return "Brave's macOS native-host lookup uses the shared Chrome directory, not the legacy Brave-only manifest; run bbx install --browser brave"
+		}
+	}
+	return ""
 }
 
 // A registered path wins even if it is missing, so diagnostics do not hide a
@@ -147,6 +195,58 @@ func uninstallNativeRegistrationWithSystem(ctx context.Context, c config, browse
 		return nil, err
 	}
 	candidates := system.candidates(c, browser)
+	if system.macSharedBrowser(browser) {
+		if data, readErr := os.ReadFile(path); readErr == nil {
+			manifest, decodeErr := decodeObject(data)
+			if decodeErr != nil {
+				return nil, decodeErr
+			}
+			owners, ownerErr := system.macRegistrationOwners(c, browser, path, manifest)
+			if ownerErr != nil {
+				return nil, ownerErr
+			}
+			launcher, _ := installLauncherForPlatform(c, "", system.platform)
+			if manifest.text("name") != hostName || manifest.text("path") != launcher {
+				return nil, fmt.Errorf("refusing to remove shared native host owned by another installation: %s", path)
+			}
+			remaining := []string{}
+			for _, owner := range owners {
+				if owner != browser {
+					remaining = append(remaining, owner)
+				}
+			}
+			if len(remaining) > 0 {
+				manifest[macRegistrationOwnersKey] = value(remaining)
+				data, err := json.MarshalIndent(manifest, "", "  ")
+				if err != nil {
+					return nil, err
+				}
+				if err := installAtomicWrite(path, append(data, '\n'), 0644); err != nil {
+					return nil, err
+				}
+				candidates = candidates[1:]
+				// A dotfile-managed shared symlink can point at the old Brave
+				// file. Do not delete its target while Chrome still uses it.
+				sharedTarget, err := installResolveFile(path)
+				if err != nil {
+					return nil, err
+				}
+				retained := []string{}
+				for _, candidate := range candidates {
+					target, err := installResolveFile(candidate)
+					if err != nil {
+						return nil, err
+					}
+					if target != sharedTarget {
+						retained = append(retained, candidate)
+					}
+				}
+				candidates = retained
+			}
+		} else if !errors.Is(readErr, os.ErrNotExist) {
+			return nil, readErr
+		}
+	}
 	otherRegistrations := []string{}
 	if system.platform == "windows" {
 		key := installRegistryKey(browser)

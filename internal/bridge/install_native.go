@@ -46,6 +46,9 @@ func installManifestDir(platform, home, browser string, env func(string) string)
 	if definition == nil {
 		return ""
 	}
+	if platform == "darwin" && definition.macNativeMessagingDir != "" {
+		return filepath.Join(home, "Library", "Application Support", filepath.FromSlash(definition.macNativeMessagingDir), "NativeMessagingHosts")
+	}
 	if platform == "windows" {
 		bridgeHome := env("BROWSER_BRIDGE_HOME")
 		if bridgeHome == "" {
@@ -273,10 +276,19 @@ func installNativeRegistrationWithOrigins(ctx context.Context, c config, browser
 		return nil, err
 	}
 	manifest := object{}
-	if data, readErr := os.ReadFile(manifestPath); readErr == nil {
+	// Migration reads the obsolete Brave-only registration, but never resolves
+	// diagnostics to it: Brave's upstream path override uses Chrome's directory.
+	sourcePath := manifestPath
+	if system.macSharedBrowser(browser) && browser == "brave" && !installExists(manifestPath) {
+		legacy := system.candidates(c, browser)[1]
+		if installExists(legacy) {
+			sourcePath = legacy
+		}
+	}
+	if data, readErr := os.ReadFile(sourcePath); readErr == nil {
 		manifest, err = decodeObject(data)
 		if err != nil {
-			return nil, fmt.Errorf("cannot update invalid manifest %s: %w", manifestPath, err)
+			return nil, fmt.Errorf("cannot update invalid manifest %s: %w", sourcePath, err)
 		}
 	} else if !errors.Is(readErr, os.ErrNotExist) {
 		return nil, readErr
@@ -284,6 +296,45 @@ func installNativeRegistrationWithOrigins(ctx context.Context, c config, browser
 	extensionID, explicit, err := installRequestedExtensionID(extensionID, system)
 	if err != nil {
 		return nil, err
+	}
+	launcherPath, launcher := installLauncherForPlatform(c, executable, system.platform)
+	owners, err := system.macRegistrationOwners(c, browser, manifestPath, manifest)
+	if err != nil {
+		return nil, err
+	}
+	if system.macSharedBrowser(browser) {
+		// Never redirect a shared host belonging to a different bridge home.
+		// Ordinary unmarked Chrome upgrades retain the legacy migration path.
+		if sourcePath == manifestPath && len(manifest) > 0 && (browser == "brave" || installContains(owners, "brave") || manifest[macRegistrationOwnersKey] != nil) &&
+			(manifest.text("name") != hostName || manifest.text("type") != "stdio" || manifest.text("path") != launcherPath) {
+			return nil, fmt.Errorf("shared Chrome/Brave native host %s belongs to another installation; refusing to redirect it", manifestPath)
+		}
+		preserveOrigins = true
+		// Both browsers can authorize different BBX IDs at this shared path.
+		// Keep the existing origins even for an explicit single-browser install.
+		if !installContains(owners, browser) {
+			owners = append(owners, browser)
+		}
+		manifest[macRegistrationOwnersKey] = value(owners)
+		if sourcePath == manifestPath && browser == "brave" {
+			legacyPath := system.candidates(c, browser)[1]
+			if data, readErr := os.ReadFile(legacyPath); readErr == nil {
+				legacy, decodeErr := decodeObject(data)
+				var legacyOrigins []string
+				if decodeErr != nil || json.Unmarshal(legacy["allowed_origins"], &legacyOrigins) != nil {
+					return nil, fmt.Errorf("cannot migrate invalid Brave manifest %s", legacyPath)
+				}
+				for _, origin := range legacyOrigins {
+					id, parseErr := installParseExtensionID(origin)
+					if parseErr != nil {
+						return nil, parseErr
+					}
+					additionalIDs = append(additionalIDs, id)
+				}
+			} else if !errors.Is(readErr, os.ErrNotExist) {
+				return nil, readErr
+			}
+		}
 	}
 	if explicit && preserveOrigins {
 		additionalIDs = append(additionalIDs, extensionID)
@@ -314,18 +365,20 @@ func installNativeRegistrationWithOrigins(ctx context.Context, c config, browser
 			origins = append(origins, origin)
 		}
 	}
-	launcherPath, launcher := installLauncherForPlatform(c, executable, system.platform)
 	manifest["name"], manifest["description"] = value(hostName), value("Browser Bridge native host")
 	manifest["path"], manifest["type"], manifest["allowed_origins"] = value(launcherPath), value("stdio"), value(origins)
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return nil, err
 	}
-	if system.platform == "windows" {
+	if system.platform == "windows" || system.macSharedBrowser(browser) {
 		err = nativeRegistrationTransaction([]nativeRegistrationFile{
 			{launcherPath, launcher, 0755},
 			{manifestPath, append(data, '\n'), 0644},
 		}, func() error {
+			if system.platform != "windows" {
+				return os.Chmod(launcherPath, 0755)
+			}
 			return system.writeRegistry(ctx, "add", installRegistryKey(browser), "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f")
 		})
 		if err != nil {
