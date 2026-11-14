@@ -171,7 +171,30 @@ fi
 BBX_AUTO_UPDATE=off "$install_dir/bbx" "$@"
 BBX_AUTO_UPDATE=off "$install_dir/bbx" restart
 echo "Installed Browser Bridge to $install_dir/bbx"
+path_configured=false
+case "${SHELL:-}" in
+  */zsh|zsh)
+    if [ "$install_dir" = "$HOME/.local/bin" ]; then
+      zshrc="${ZDOTDIR:-$HOME}/.zshrc"
+      path_entry='case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac'
+      if [ -f "$zshrc" ] && grep -Fqx "$path_entry" "$zshrc"; then
+        path_configured=true
+      elif printf '\n# Browser Bridge\n%s\n' "$path_entry" >> "$zshrc"; then
+        path_configured=true
+        printf 'Added ~/.local/bin to the zsh PATH in %s for future terminals.\n' "$zshrc"
+      else
+        printf 'Warning: could not update %s.\n' "$zshrc" >&2
+      fi
+    fi
+    ;;
+esac
 case ":$PATH:" in
   *":$install_dir:"*) ;;
-  *) printf 'Add this directory to your shell profile PATH: %s\n' "$install_dir" ;;
+  *)
+    if [ "$path_configured" = true ]; then
+      printf '%s\n' 'For this terminal, run: export PATH="$HOME/.local/bin:$PATH"'
+    else
+      printf 'Add this directory to your shell profile PATH: %s\n' "$install_dir"
+    fi
+    ;;
 esac

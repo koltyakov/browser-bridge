@@ -75,6 +75,8 @@ if (url.startsWith('https://api.github.com/')) {
     ...process.env,
     PATH: `${bin}${path.delimiter}${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH ?? ''}`,
     HOME: path.join(directory, 'home with spaces'),
+    SHELL: '/bin/bash',
+    ZDOTDIR: undefined,
     BBX_INSTALL_DIR: path.join(directory, 'install with spaces'),
     BBX_VERSION: '2.3.4',
     BBX_EXTENSION_ID: 'a'.repeat(32),
@@ -105,6 +107,126 @@ if (url.startsWith('https://api.github.com/')) {
     run: () => spawnSync('/bin/sh', [installer], { env, encoding: 'utf8' }),
   };
 }
+
+async function zshFixture(t: TestContext) {
+  const setup = await fixture(t);
+  setup.env.SHELL = '/bin/zsh';
+  delete setup.env.BBX_INSTALL_DIR;
+  await fs.mkdir(setup.env.HOME!);
+  await fs.writeFile(setup.env.CHECKSUMS!, `${setup.checksum}  bbx-linux-x64\n`);
+  return setup;
+}
+
+test(
+  'Unix installer preserves zsh configuration and adds an idempotent PATH entry',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const { env, run } = await zshFixture(t);
+    const zshrc = path.join(env.HOME!, '.zshrc');
+    const existing = 'export EXISTING_SETTING=kept'; // No trailing newline.
+    await fs.writeFile(zshrc, existing);
+    const result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /for future terminals/);
+    assert.match(result.stdout, /For this terminal, run: export PATH=/);
+    const configured = await fs.readFile(zshrc, 'utf8');
+    assert.ok(configured.startsWith(`${existing}\n`));
+    assert.equal(configured.split('# Browser Bridge').length - 1, 1);
+    const repeated = run();
+    assert.equal(repeated.status, 0, repeated.stderr);
+    assert.equal(await fs.readFile(zshrc, 'utf8'), configured);
+
+    // The generated entry is POSIX-compatible, so this also runs on CI without zsh.
+    const startup = spawnSync(
+      '/bin/sh',
+      ['-c', '. "$ZSHRC"; . "$ZSHRC"; printf "%s\\n%s" "$EXISTING_SETTING" "$PATH"'],
+      { env: { ...env, ZSHRC: zshrc }, encoding: 'utf8' }
+    );
+    assert.equal(startup.status, 0, startup.stderr);
+    assert.equal(startup.stdout, `kept\n${env.HOME}/.local/bin:${env.PATH}`);
+  }
+);
+
+test(
+  'Unix installer creates the zsh config in HOME or ZDOTDIR even when PATH already contains the directory',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    for (const useZdotdir of [false, true]) {
+      const { directory, env, run } = await zshFixture(t);
+      const configDir = useZdotdir ? path.join(directory, 'zsh config') : env.HOME!;
+      if (useZdotdir) {
+        await fs.mkdir(configDir);
+        env.ZDOTDIR = configDir;
+      }
+      env.PATH = `${env.HOME}/.local/bin:${env.PATH}`;
+      const result = run();
+      assert.equal(result.status, 0, result.stderr);
+      assert.doesNotMatch(result.stdout, /For this terminal|shell profile PATH/);
+      const zshrc = path.join(configDir, '.zshrc');
+      const configured = await fs.readFile(zshrc, 'utf8');
+      assert.match(configured, /# Browser Bridge/);
+      if (useZdotdir) await assert.rejects(fs.access(path.join(env.HOME!, '.zshrc')));
+      const repeated = run();
+      assert.equal(repeated.status, 0, repeated.stderr);
+      assert.equal(await fs.readFile(zshrc, 'utf8'), configured);
+      const startup = spawnSync('/bin/sh', ['-c', '. "$ZSHRC"; . "$ZSHRC"; printf "%s" "$PATH"'], {
+        env: { ...env, ZSHRC: zshrc },
+        encoding: 'utf8',
+      });
+      assert.equal(startup.status, 0, startup.stderr);
+      assert.equal(startup.stdout, env.PATH);
+    }
+  }
+);
+
+test(
+  'Unix installer does not duplicate a PATH directory already configured by the user',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const { env, run } = await zshFixture(t);
+    const zshrc = path.join(env.HOME!, '.zshrc');
+    await fs.writeFile(zshrc, 'export PATH="$HOME/.local/bin:$PATH"\n');
+    const result = run();
+    assert.equal(result.status, 0, result.stderr);
+    const startup = spawnSync('/bin/sh', ['-c', '. "$ZSHRC"; printf "%s" "$PATH"'], {
+      env: { ...env, ZSHRC: zshrc },
+      encoding: 'utf8',
+    });
+    assert.equal(startup.status, 0, startup.stderr);
+    assert.equal(startup.stdout, `${env.HOME}/.local/bin:${env.PATH}`);
+  }
+);
+
+test(
+  'Unix installer keeps manual PATH guidance for other shells and custom install directories',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    for (const shell of ['/bin/bash', '', '/bin/zsh']) {
+      const { env, checksum, run } = await fixture(t);
+      env.SHELL = shell;
+      if (shell !== '/bin/zsh') delete env.BBX_INSTALL_DIR;
+      await fs.writeFile(env.CHECKSUMS!, `${checksum}  bbx-linux-x64\n`);
+      const result = run();
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /Add this directory to your shell profile PATH:/);
+      await assert.rejects(fs.access(path.join(env.HOME!, '.zshrc')));
+    }
+  }
+);
+
+test(
+  'Unix installer warns without failing installation when the zsh config cannot be updated',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const { env, run } = await zshFixture(t);
+    await fs.mkdir(path.join(env.HOME!, '.zshrc'));
+    const result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /Warning: could not update .*\.zshrc/);
+    assert.match(result.stdout, /Add this directory to your shell profile PATH:/);
+    assert.match(await fs.readFile(env.CALLS!, 'utf8'), /restart/);
+  }
+);
 
 test(
   'Unix installer downloads, verifies, installs, registers, and restarts on each platform',
