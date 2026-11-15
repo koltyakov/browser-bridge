@@ -956,15 +956,67 @@ test('getSidepanelNativeStatusView derives install commands and disconnected lab
 });
 
 test('getSidepanelNativeStatusView points daemon failures at bbx-daemon', () => {
-  assert.equal(
-    getSidepanelNativeStatusView({
+  for (const error of [
+    'connect ENOENT C:\\Users\\andrew\\AppData\\Local\\Browser Bridge\\bridge.sock',
+    'connect ECONNREFUSED 127.0.0.1:9223',
+    'daemon crashed',
+    'bridge.sock unavailable',
+    'Native host has exited: connect ENOENT /private/bridge.sock',
+  ]) {
+    assert.equal(
+      getSidepanelNativeStatusView({
+        connected: false,
+        error,
+        runtimeId: 'dev-extension-id',
+        publishedExtensionId: 'jjjkmmcdkpcgamlopogicbnnhdgebhie',
+      }).diagnosticMessage,
+      `Native host unreachable for 10s. Last error: ${error} Run: bbx-daemon or bbx doctor`
+    );
+  }
+});
+
+test('host-exit diagnostics explain uncertainty without prescribing a fix or altering the browser error', () => {
+  for (const error of [
+    'Native host has exited.',
+    'native host exited',
+    'Host exited',
+    'Error: HOST HAS EXITED (EACCES)',
+    '  Native host has exited.\n',
+  ]) {
+    const view = getSidepanelNativeStatusView({
       connected: false,
-      error: 'connect ENOENT C:\\Users\\andrew\\AppData\\Local\\Browser Bridge\\bridge.sock',
+      error,
       runtimeId: 'dev-extension-id',
       publishedExtensionId: 'jjjkmmcdkpcgamlopogicbnnhdgebhie',
-    }).diagnosticMessage,
-    'Native host unreachable for 10s. Last error: connect ENOENT C:\\Users\\andrew\\AppData\\Local\\Browser Bridge\\bridge.sock Run: bbx-daemon or bbx doctor'
-  );
+    });
+    assert.equal(view.label, error);
+    assert.equal(
+      view.diagnosticMessage,
+      `The native host exited or failed to start. Possible causes include launcher failures, permissions, or browser confinement. Browser error: ${error}`
+    );
+    assert.doesNotMatch(
+      view.diagnosticMessage,
+      /bbx-daemon|Run:|reinstall|disable|AppArmor|Snap|crash.loop/i
+    );
+  }
+});
+
+test('missing and forbidden native-host diagnostics still recommend browser registration', () => {
+  for (const error of [
+    'Specified native messaging host not found.',
+    'Access to the specified native messaging host is forbidden.',
+  ]) {
+    const view = getSidepanelNativeStatusView({
+      connected: false,
+      error,
+      runtimeId: 'dev-extension-id',
+      publishedExtensionId: 'jjjkmmcdkpcgamlopogicbnnhdgebhie',
+    });
+    assert.equal(
+      view.diagnosticMessage,
+      `Native host not connected. Run bbx install dev-extension-id to register this browser. Details: ${error}`
+    );
+  }
 });
 
 test('syncSetupStatusPolling cancels prior interval when polling should stop', () => {

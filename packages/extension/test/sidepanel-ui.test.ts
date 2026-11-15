@@ -1957,12 +1957,17 @@ test('sidepanel UI handles setup matrix actions, context menus, diagnostics, and
   const clearedIntervals: unknown[] = [];
   const clearedTimeouts: unknown[] = [];
   const clipboardWrites: string[] = [];
+  const firedTimeouts = new Set<object>();
 
   function runNextTimeout(delay: number): object {
     const timeoutCall = timeoutCalls.find(
-      (call) => call.delay === delay && !clearedTimeouts.includes(call.token)
+      (call) =>
+        call.delay === delay &&
+        !clearedTimeouts.includes(call.token) &&
+        !firedTimeouts.has(call.token)
     );
     assert.ok(timeoutCall, `expected pending timeout with delay ${delay}`);
+    firedTimeouts.add(timeoutCall.token);
     timeoutCall.callback();
     return timeoutCall.token;
   }
@@ -2190,8 +2195,16 @@ test('sidepanel UI handles setup matrix actions, context menus, diagnostics, and
     portPairs[0].left.dispatchMessage({
       type: 'native.status',
       connected: false,
-      error: 'native host has exited',
+      error: 'Native host has exited.',
     });
+    runNextTimeout(10_000);
+    const hostExitDiagnostic = document.getElementById('native-diagnostic');
+    assert.ok(hostExitDiagnostic instanceof HTMLElement);
+    assert.equal(
+      hostExitDiagnostic.textContent,
+      'The native host exited or failed to start. Possible causes include launcher failures, permissions, or browser confinement. Browser error: Native host has exited.'
+    );
+    assert.doesNotMatch(hostExitDiagnostic.textContent ?? '', /bbx-daemon/);
     portPairs[0].left.dispatchMessage({ type: 'native.status', connected: true });
     assert.equal(document.getElementById('native-diagnostic'), null);
     assert.equal(clearedTimeouts.length > 0, true);

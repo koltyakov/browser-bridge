@@ -561,7 +561,8 @@ export type SidepanelNativeStatusView = {
 };
 
 function getNativeDiagnosticMessage(error: string | undefined, installCommand: string): string {
-  const normalizedError = typeof error === 'string' ? error.trim() : '';
+  const originalError = typeof error === 'string' ? error : '';
+  const normalizedError = originalError.trim();
   if (!normalizedError) {
     return `Native host not connected. Install Browser Bridge with npm or a standalone binary, then run ${installCommand} to register this browser.`;
   }
@@ -574,12 +575,12 @@ function getNativeDiagnosticMessage(error: string | undefined, installCommand: s
     return `Native host not connected. Run ${installCommand} to register this browser. Details: ${normalizedError}`;
   }
 
-  if (
-    /bridge\.sock|ENOENT|ECONNREFUSED|daemon|native host has exited|host exited/i.test(
-      normalizedError
-    )
-  ) {
+  if (/bridge\.sock|ENOENT|ECONNREFUSED|daemon/i.test(normalizedError)) {
     return `Native host unreachable for 10s. Last error: ${normalizedError} Run: bbx-daemon or bbx doctor`;
+  }
+
+  if (/\b(?:native )?host (?:has )?exited\b/i.test(normalizedError)) {
+    return `The native host exited or failed to start. Possible causes include launcher failures, permissions, or browser confinement. Browser error: ${originalError}`;
   }
 
   return `Native host unreachable for 10s. Last error: ${normalizedError} Run: bbx doctor`;
