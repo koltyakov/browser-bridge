@@ -11,21 +11,49 @@ import (
 )
 
 func installDetectedBrowser(ctx context.Context, c config, browser, extensionID string, system nativeRegistrationSystem) (object, error) {
-	id, _, err := installRequestedExtensionID(extensionID, system)
+	return installNativeRegistrations(ctx, c, browser, extensionID, true, system, true)
+}
+
+func (s nativeRegistrationSystem) browserHasRegistration(ctx context.Context, c config, browser string) (bool, error) {
+	path, registered, err := s.resolve(ctx, c, browser)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-	additionalIDs := []string{}
-	root := system.browserProfileRoot(browser)
-	// Keep existing custom origins. Add the requested ID only when that
-	// extension is actually present in this browser, not every repaired host.
-	if installed, _ := installBrowserHasExtension(ctx, root, id); installed {
-		additionalIDs = append(additionalIDs, id)
+	paths := []string{path}
+	if s.platform == "linux" {
+		paths = s.candidates(c, browser)
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	var failures []error
+	for _, manifest := range paths {
+		_, lookupErr := os.Lstat(manifest)
+		if errors.Is(lookupErr, os.ErrNotExist) && s.macSharedConsumer(browser) {
+			_, lookupErr = os.Lstat(s.candidates(c, browser)[1])
+		}
+		existing := lookupErr == nil || registered != ""
+		if existing && s.sharedRegistration(browser) {
+			raw, readErr := os.ReadFile(manifest)
+			entry, decodeErr := decodeObject(raw)
+			if readErr == nil && decodeErr == nil {
+				owners, ownerErr := s.registrationOwners(c, browser, manifest, entry)
+				existing = ownerErr != nil || installContains(owners, browser)
+			} else if s.macSharedConsumer(browser) {
+				existing = installExists(s.candidates(c, browser)[1])
+			} else if s.platform == "windows" {
+				owners, ownerErr := s.registrationOwners(c, browser, manifest, nil)
+				existing = ownerErr != nil || installContains(owners, browser)
+			}
+			if s.macSharedConsumer(browser) && installExists(s.candidates(c, browser)[1]) {
+				existing = true
+			}
+		}
+		if existing {
+			return true, nil
+		}
+		if lookupErr != nil && !errors.Is(lookupErr, os.ErrNotExist) {
+			failures = append(failures, lookupErr)
+		}
 	}
-	return installNativeRegistrationWithOrigins(ctx, c, browser, extensionID, true, system, additionalIDs)
+	return false, errors.Join(failures...)
 }
 
 // Inspect only known browser profile locations and the requested extension ID.
@@ -50,42 +78,16 @@ func installDetectBrowsers(ctx context.Context, c config, extensionID string, sy
 		if err := ctx.Err(); err != nil {
 			return nil, warnings, err
 		}
-		manifest, registered, lookupErr := system.resolve(ctx, c, browser)
-		if lookupErr == nil {
-			_, lookupErr = os.Lstat(manifest)
-			if errors.Is(lookupErr, os.ErrNotExist) && system.macSharedConsumer(browser) {
-				_, lookupErr = os.Lstat(system.candidates(c, browser)[1])
-			}
-			existing := lookupErr == nil || registered != ""
-			if existing && system.sharedRegistration(browser) {
-				raw, readErr := os.ReadFile(manifest)
-				entry, decodeErr := decodeObject(raw)
-				if readErr == nil && decodeErr == nil {
-					owners, ownerErr := system.registrationOwners(c, browser, manifest, entry)
-					existing = ownerErr != nil || installContains(owners, browser)
-				} else if system.macSharedConsumer(browser) {
-					existing = installExists(system.candidates(c, browser)[1])
-				} else if system.platform == "windows" {
-					owners, ownerErr := system.registrationOwners(c, browser, manifest, nil)
-					existing = ownerErr != nil || installContains(owners, browser)
-				}
-				if system.macSharedConsumer(browser) && installExists(system.candidates(c, browser)[1]) {
-					existing = true
-				}
-			}
-			if !explicit && existing {
-				browsers = append(browsers, browser)
-				continue
-			}
-			if lookupErr == nil || errors.Is(lookupErr, os.ErrNotExist) {
-				root := system.browserProfileRoot(browser)
-				var installed bool
-				installed, lookupErr = installBrowserHasExtension(ctx, root, id)
-				if installed {
-					browsers = append(browsers, browser)
-				}
-			}
+		existing, lookupErr := system.browserHasRegistration(ctx, c, browser)
+		if !explicit && existing {
+			browsers = append(browsers, browser)
+			continue
 		}
+		installed, profileErr := system.browserHasExtension(ctx, browser, id)
+		if installed {
+			browsers = append(browsers, browser)
+		}
+		lookupErr = errors.Join(lookupErr, profileErr)
 		if lookupErr != nil {
 			warnings = append(warnings, fmt.Sprintf("could not inspect %s for Browser Bridge: %v; use bbx install --browser %s to register it explicitly", browser, lookupErr, browser))
 		}

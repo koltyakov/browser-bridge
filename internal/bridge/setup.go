@@ -615,7 +615,9 @@ func installNativeCommand(ctx context.Context, c config, args []string) error {
 			if err != nil {
 				return err
 			}
-			fmt.Println("Wrote", result.text("manifestPath"))
+			for _, path := range nativeRegistrationResultPaths(result) {
+				fmt.Println("Wrote", path)
+			}
 			fmt.Println("Wrote", result.text("launcherPath"))
 		}
 	}

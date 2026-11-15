@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { format } from 'oxfmt';
 
 /** @typedef {{key: string, goos: string, goarch: string, asset: string, runner: string, unixPatterns?: string[], windowsArch?: string}} NativePlatform */
-/** @typedef {{key: string, macDir: string, macNativeMessagingDir?: string, windowsDir: string, windowsRoaming?: boolean, windowsManifestDir: string, linuxDir: string, linuxNativeMessagingDir?: string, registry: string}} BrowserTarget */
+/** @typedef {{key: string, macDir: string, macNativeMessagingDir?: string, windowsDir: string, windowsRoaming?: boolean, windowsPackageFamily?: string, windowsManifestDir: string, linuxDir: string, linuxSnapDir?: string, linuxNativeMessagingDir?: string, registry: string}} BrowserTarget */
 /** @typedef {{hostName: string, extensionId: string, maxBinaryBytes: number, platforms: NativePlatform[], browsers: BrowserTarget[]}} InstallTargets */
 
 /** @param {unknown} input @returns {asserts input is InstallTargets} */
@@ -40,12 +40,15 @@ export function validateInstallTargets(input) {
   for (const entry of source.browsers) {
     assert.match(entry.key, /^[a-z]+(?:-[a-z]+)*$/u);
     assert(entry.windowsRoaming === undefined || typeof entry.windowsRoaming === 'boolean');
+    if (entry.windowsPackageFamily !== undefined)
+      assert.match(entry.windowsPackageFamily, /^[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*$/u);
     for (const value of [
       entry.macDir,
       ...(entry.macNativeMessagingDir === undefined ? [] : [entry.macNativeMessagingDir]),
       entry.windowsDir,
       entry.windowsManifestDir,
       entry.linuxDir,
+      ...(entry.linuxSnapDir === undefined ? [] : [entry.linuxSnapDir]),
       ...(entry.linuxNativeMessagingDir === undefined ? [] : [entry.linuxNativeMessagingDir]),
       entry.registry,
     ]) {
@@ -102,7 +105,7 @@ export async function generateInstallTargets(
   });
   assert.equal(formatted.errors.length, 0);
   await write('packages/npm/src/install-targets.js', formatted.code);
-  const go = `// Code generated from protocol/install-targets.json. DO NOT EDIT.\npackage bridge\nconst hostName = ${quote(source.hostName)}\nconst publishedExtensionID = ${quote(source.extensionId)}\nconst nativeMaxBytes = ${source.maxBinaryBytes}\nvar browserRegistry = []browserDefinition{${source.browsers.map((entry) => `{key:${quote(entry.key)}, macDir:${quote(entry.macDir)}, macNativeMessagingDir:${quote(entry.macNativeMessagingDir ?? '')}, windowsDir:${quote(entry.windowsDir)}, windowsRoaming:${entry.windowsRoaming ?? false}, windowsManifestDir:${quote(entry.windowsManifestDir)}, linuxDir:${quote(entry.linuxDir)}, linuxNativeMessagingDir:${quote(entry.linuxNativeMessagingDir ?? '')}, registry:${quote(entry.registry)}}`).join(',')},}\nvar nativePlatformRegistry = []nativePlatformDefinition{${source.platforms.map((entry) => `{key:${quote(entry.key)}, goos:${quote(entry.goos)}, goarch:${quote(entry.goarch)}, asset:${quote(entry.asset)}}`).join(',')},}\n`;
+  const go = `// Code generated from protocol/install-targets.json. DO NOT EDIT.\npackage bridge\nconst hostName = ${quote(source.hostName)}\nconst publishedExtensionID = ${quote(source.extensionId)}\nconst nativeMaxBytes = ${source.maxBinaryBytes}\nvar browserRegistry = []browserDefinition{${source.browsers.map((entry) => `{key:${quote(entry.key)}, macDir:${quote(entry.macDir)}, macNativeMessagingDir:${quote(entry.macNativeMessagingDir ?? '')}, windowsDir:${quote(entry.windowsDir)}, windowsRoaming:${entry.windowsRoaming ?? false}, windowsPackageFamily:${quote(entry.windowsPackageFamily ?? '')}, windowsManifestDir:${quote(entry.windowsManifestDir)}, linuxDir:${quote(entry.linuxDir)}, linuxSnapDir:${quote(entry.linuxSnapDir ?? '')}, linuxNativeMessagingDir:${quote(entry.linuxNativeMessagingDir ?? '')}, registry:${quote(entry.registry)}}`).join(',')},}\nvar nativePlatformRegistry = []nativePlatformDefinition{${source.platforms.map((entry) => `{key:${quote(entry.key)}, goos:${quote(entry.goos)}, goarch:${quote(entry.goarch)}, asset:${quote(entry.asset)}}`).join(',')},}\n`;
   await write(
     'internal/bridge/install_targets.gen.go',
     execFileSync('gofmt', [], { input: go, encoding: 'utf8' })

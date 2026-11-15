@@ -61,11 +61,29 @@ test('installation target validation rejects collisions and unsafe generated ide
     (input: InstallTargets) => {
       input.browsers[0].key = 'chrome--canary';
     },
+    (input: InstallTargets) => {
+      input.browsers[0].linuxSnapDir = '../escape';
+    },
+    (input: InstallTargets) => {
+      input.browsers[0].windowsPackageFamily = 'TheBrowserCompany.*';
+    },
   ]) {
     const input = await source();
     mutate(input);
     assert.throws(() => validateInstallTargets(input));
   }
+});
+
+test('alternate browser profiles are cataloged separately from native registration identities', async () => {
+  const input = await source();
+  const arc = input.browsers.find((entry) => entry.key === 'arc');
+  assert.equal(arc?.windowsPackageFamily, 'TheBrowserCompany.Arc');
+  assert.equal(arc?.registry, 'Chromium');
+  assert.equal(arc?.windowsManifestDir, 'NativeMessagingHosts/arc');
+  assert.equal(
+    input.browsers.find((entry) => entry.key === 'chromium')?.linuxSnapDir,
+    'snap/chromium/common/chromium'
+  );
 });
 
 test('Chrome channels and Opera installation metadata reach both standalone installers', async () => {

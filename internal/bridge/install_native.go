@@ -73,6 +73,18 @@ func installManifestDir(platform, home, browser string, env func(string) string)
 // The browser-owned directories remain valid discovery targets on Unix and
 // are retained for existing Windows installations instead of forcing a move.
 func installLegacyManifestDir(platform, home, browser string, env func(string) string) string {
+	if snap := installSnapProfileDir(platform, home, browser, env); snap != "" && installExists(snap) {
+		return filepath.Join(snap, "NativeMessagingHosts")
+	}
+	root := installBrowserProfileDir(platform, home, browser, env)
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, "NativeMessagingHosts")
+}
+
+// Profile locations are independent of fixed native-host lookup directories.
+func installBrowserProfileDir(platform, home, browser string, env func(string) string) string {
 	definition := installBrowserByKey(browser)
 	if definition == nil {
 		return ""
@@ -98,12 +110,17 @@ func installLegacyManifestDir(platform, home, browser string, env func(string) s
 			base = xdgDirectory(env, "XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 		}
 		sub = definition.linuxDir
-		snap := filepath.Join(home, "snap", "chromium", "common", "chromium")
-		if browser == "chromium" && env("CHROME_CONFIG_HOME") == "" && !filepath.IsAbs(env("XDG_CONFIG_HOME")) && installExists(snap) {
-			return filepath.Join(snap, "NativeMessagingHosts")
-		}
 	}
-	return filepath.Join(base, filepath.FromSlash(sub), "NativeMessagingHosts")
+	return filepath.Join(base, filepath.FromSlash(sub))
+}
+
+func installSnapProfileDir(platform, home, browser string, env func(string) string) string {
+	definition := installBrowserByKey(browser)
+	if platform != "linux" || definition == nil || definition.linuxSnapDir == "" ||
+		env("CHROME_CONFIG_HOME") != "" || filepath.IsAbs(env("XDG_CONFIG_HOME")) {
+		return ""
+	}
+	return filepath.Join(home, filepath.FromSlash(definition.linuxSnapDir))
 }
 
 func installRegistryKey(browser string) string {
@@ -258,7 +275,7 @@ func installNativeRegistration(ctx context.Context, c config, browser, extension
 }
 
 func installNativeRegistrationWithSystem(ctx context.Context, c config, browser, extensionID string, preserveOrigins bool, system nativeRegistrationSystem) (object, error) {
-	return installNativeRegistrationWithOrigins(ctx, c, browser, extensionID, preserveOrigins, system, nil)
+	return installNativeRegistrations(ctx, c, browser, extensionID, preserveOrigins, system, false)
 }
 
 func installRequestedExtensionID(extensionID string, system nativeRegistrationSystem) (string, bool, error) {
@@ -274,19 +291,89 @@ func installRequestedExtensionID(extensionID string, system nativeRegistrationSy
 	return id, explicit, err
 }
 
-func installNativeRegistrationWithOrigins(ctx context.Context, c config, browser, extensionID string, preserveOrigins bool, system nativeRegistrationSystem, additionalIDs []string) (object, error) {
+type nativeRegistrationPlan struct {
+	result object
+	file   nativeRegistrationFile
+}
+
+func installNativeRegistrations(ctx context.Context, c config, browser, extensionID string, preserveOrigins bool, system nativeRegistrationSystem, detected bool) (object, error) {
 	if !installContains(installBrowsers, browser) {
 		return nil, fmt.Errorf("unsupported browser %q", browser)
+	}
+	id, _, err := installRequestedExtensionID(extensionID, system)
+	if err != nil {
+		return nil, err
 	}
 	executable, err := installExecutablePath()
 	if err != nil {
 		return nil, err
 	}
-	manifestPath, _, err := system.resolve(ctx, c, browser)
+	paths, err := system.lookupPaths(ctx, c, browser)
 	if err != nil {
 		return nil, err
 	}
+	var roots []string
+	if detected {
+		// An unreadable profile must not block repair of an existing host.
+		// Discovery reports inspection errors separately.
+		roots, _ = system.browserProfileRoots(browser)
+	}
+	launcherPath, launcher := installLauncherForPlatform(c, executable, system.platform)
+	files := []nativeRegistrationFile{{launcherPath, launcher, 0755}}
+	results := []object{}
+	for _, path := range paths {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		additionalIDs := []string{}
+		// Preserve each root's allowlist independently. An ID installed only
+		// in Snap must not be added to a native-only custom registration.
+		if detected {
+			profiles := system.profileRootsForManifest(browser, path, roots)
+			if installed, _ := installProfileRootsHaveExtension(ctx, profiles, id); installed {
+				additionalIDs = append(additionalIDs, id)
+			}
+		}
+		plan, err := prepareNativeRegistration(c, browser, extensionID, preserveOrigins, system, path, launcherPath, additionalIDs)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, plan.file)
+		results = append(results, plan.result)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	err = nativeRegistrationTransaction(files, func() error {
+		if system.platform == "windows" {
+			return system.writeRegistry(ctx, "add", installRegistryKey(browser), "/ve", "/t", "REG_SZ", "/d", paths[0], "/f")
+		}
+		return os.Chmod(launcherPath, 0755)
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := object{}
+	for key, raw := range results[0] {
+		result[key] = raw
+	}
+	if len(paths) > 1 {
+		result["manifestPaths"], result["registrations"] = value(paths), value(results)
+	}
+	return result, nil
+}
+
+func nativeRegistrationResultPaths(result object) []string {
+	var paths []string
+	if json.Unmarshal(result["manifestPaths"], &paths) == nil && len(paths) > 0 {
+		return paths
+	}
+	return []string{result.text("manifestPath")}
+}
+
+func prepareNativeRegistration(c config, browser, extensionID string, preserveOrigins bool, system nativeRegistrationSystem, manifestPath, launcherPath string, additionalIDs []string) (*nativeRegistrationPlan, error) {
 	manifest := object{}
+	var err error
 	// Read a legacy browser-only registration for migration, but resolve
 	// diagnostics to the directory the browser actually queries.
 	sourcePath := manifestPath
@@ -308,7 +395,6 @@ func installNativeRegistrationWithOrigins(ctx context.Context, c config, browser
 	if err != nil {
 		return nil, err
 	}
-	launcherPath, launcher := installLauncherForPlatform(c, executable, system.platform)
 	owners, err := system.registrationOwners(c, browser, manifestPath, manifest)
 	if err != nil {
 		return nil, err
@@ -418,33 +504,10 @@ func installNativeRegistrationWithOrigins(ctx context.Context, c config, browser
 	if err != nil {
 		return nil, err
 	}
-	if system.platform == "windows" || system.macSharedBrowser(browser) {
-		err = nativeRegistrationTransaction([]nativeRegistrationFile{
-			{launcherPath, launcher, 0755},
-			{manifestPath, append(data, '\n'), 0644},
-		}, func() error {
-			if system.platform != "windows" {
-				return os.Chmod(launcherPath, 0755)
-			}
-			return system.writeRegistry(ctx, "add", installRegistryKey(browser), "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f")
-		})
-		if err != nil {
-			return nil, err
-		}
-		return object{"manifestPath": value(manifestPath), "launcherPath": value(launcherPath), "allowedOrigins": value(origins), "extensionId": value(extensionID)}, nil
-	}
-	if err := installAtomicWrite(launcherPath, launcher, 0755); err != nil {
-		return nil, err
-	}
-	if runtime.GOOS != "windows" {
-		if err := os.Chmod(launcherPath, 0755); err != nil {
-			return nil, err
-		}
-	}
-	if err := installAtomicWrite(manifestPath, append(data, '\n'), 0644); err != nil {
-		return nil, err
-	}
-	return object{"manifestPath": value(manifestPath), "launcherPath": value(launcherPath), "allowedOrigins": value(origins), "extensionId": value(extensionID)}, nil
+	return &nativeRegistrationPlan{
+		result: object{"manifestPath": value(manifestPath), "launcherPath": value(launcherPath), "allowedOrigins": value(origins), "extensionId": value(extensionID)},
+		file:   nativeRegistrationFile{manifestPath, append(data, '\n'), 0644},
+	}, nil
 }
 
 func uninstallNativeRegistration(ctx context.Context, c config, browser string) ([]string, error) {

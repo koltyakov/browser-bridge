@@ -179,41 +179,22 @@ func restartCLI(ctx context.Context, c config, args []string) error {
 	}
 	return nil
 }
-func doctorCLI(ctx context.Context, c config, args []string) error {
-	if len(args) != 0 {
-		return errors.New("usage: bbx doctor")
-	}
-	issues := []string{}
-	report := object{"runtime": value("go"), "version": value(version), "bridgeHome": value(c.home), "transport": value(c.address)}
-	setup, setupErr := setupStatus(c)
-	if setupErr != nil {
-		issues = append(issues, "Setup diagnostics: "+setupErr.Error())
-	} else {
-		report["setup"] = value(setup)
-	}
-	warnings := []string{}
-	if clients, ok := cliArray(setup["mcpClients"]); ok {
-		for _, raw := range clients {
-			client, _ := decodeObject(raw)
-			if client.boolean("stale") {
-				warnings = append(warnings, fmt.Sprintf("%s MCP config at %s launches a missing file; run `bbx install-mcp %s` to rewrite it.", client.text("label"), client.text("configPath"), client.text("key")))
-			}
-		}
-	}
-	report["warnings"] = value(warnings)
+func doctorNativeManifests(ctx context.Context, c config, system nativeRegistrationSystem) ([]object, bool, []string) {
 	manifests := []object{}
 	validManifest := false
-	if system, err := nativeRegistrationHostSystem(); err == nil {
-		for _, browser := range installBrowsers {
-			path, _, lookupErr := system.resolve(ctx, c, browser)
-			if message := system.macLegacyRegistrationIssue(c, browser); message != "" {
-				issues = append(issues, message)
-			}
-			if lookupErr != nil {
-				manifests = append(manifests, object{"browser": value(browser), "path": value(path), "error": value(lookupErr.Error())})
-				issues = append(issues, fmt.Sprintf("%s native registration lookup failed: %s", browser, lookupErr))
-				continue
-			}
+	issues := []string{}
+	for _, browser := range installBrowsers {
+		paths, lookupErr := system.lookupPaths(ctx, c, browser)
+		if message := system.macLegacyRegistrationIssue(c, browser); message != "" {
+			issues = append(issues, message)
+		}
+		if lookupErr != nil {
+			path := system.candidates(c, browser)[0]
+			manifests = append(manifests, object{"browser": value(browser), "path": value(path), "error": value(lookupErr.Error())})
+			issues = append(issues, fmt.Sprintf("%s native registration lookup failed: %s", browser, lookupErr))
+			continue
+		}
+		for _, path := range paths {
 			b, err := os.ReadFile(path)
 			if errors.Is(err, os.ErrNotExist) {
 				continue
@@ -239,6 +220,38 @@ func doctorCLI(ctx context.Context, c config, args []string) error {
 			}
 			manifests = append(manifests, entry)
 		}
+	}
+	return manifests, validManifest, issues
+}
+
+func doctorCLI(ctx context.Context, c config, args []string) error {
+	if len(args) != 0 {
+		return errors.New("usage: bbx doctor")
+	}
+	issues := []string{}
+	report := object{"runtime": value("go"), "version": value(version), "bridgeHome": value(c.home), "transport": value(c.address)}
+	setup, setupErr := setupStatus(c)
+	if setupErr != nil {
+		issues = append(issues, "Setup diagnostics: "+setupErr.Error())
+	} else {
+		report["setup"] = value(setup)
+	}
+	warnings := []string{}
+	if clients, ok := cliArray(setup["mcpClients"]); ok {
+		for _, raw := range clients {
+			client, _ := decodeObject(raw)
+			if client.boolean("stale") {
+				warnings = append(warnings, fmt.Sprintf("%s MCP config at %s launches a missing file; run `bbx install-mcp %s` to rewrite it.", client.text("label"), client.text("configPath"), client.text("key")))
+			}
+		}
+	}
+	report["warnings"] = value(warnings)
+	manifests := []object{}
+	validManifest := false
+	if system, err := nativeRegistrationHostSystem(); err == nil {
+		var manifestIssues []string
+		manifests, validManifest, manifestIssues = doctorNativeManifests(ctx, c, system)
+		issues = append(issues, manifestIssues...)
 	}
 	report["nativeManifests"] = value(manifests)
 	if !validManifest {

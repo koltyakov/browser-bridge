@@ -85,12 +85,14 @@
       "windowsDir": "Chromium/User Data",
       "windowsManifestDir": "NativeMessagingHosts/chromium",
       "linuxDir": "chromium",
+      "linuxSnapDir": "snap/chromium/common/chromium",
       "registry": "Chromium"
     },
     {
       "key": "arc",
       "macDir": "Arc/User Data",
       "windowsDir": "Arc/User Data",
+      "windowsPackageFamily": "TheBrowserCompany.Arc",
       "windowsManifestDir": "NativeMessagingHosts/arc",
       "linuxDir": "Arc/User Data",
       "registry": "Chromium"

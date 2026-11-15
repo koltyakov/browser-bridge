@@ -13,7 +13,7 @@ import (
 )
 
 func installTestBrowserProfile(system nativeRegistrationSystem, browser, profile string) string {
-	return filepath.Join(filepath.Dir(installLegacyManifestDir(system.platform, system.home, browser, system.env)), profile)
+	return filepath.Join(installBrowserProfileDir(system.platform, system.home, browser, system.env), profile)
 }
 
 func installTestBrowserExtension(t *testing.T, system nativeRegistrationSystem, browser, profile, id string) {

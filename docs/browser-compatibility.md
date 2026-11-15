@@ -25,7 +25,7 @@ browsers unless stated otherwise.
 | Vivaldi | Native lookup verified; fixture UI stalled | Full pass | Native lookup verified; fixture UI stalled |
 | Chrome for Testing | Native lookup verified; fixture navigation did not commit | Startup blocked by AppArmor user-namespace restrictions | Official archive failed bundle-signature verification; not run |
 | Chromium | Not separately installed | Strict Snap host exited before connecting | Homebrew cask disabled because of Gatekeeper failures |
-| Arc | Not tested | No installation attempted | Installed; startup did not expose the test endpoint |
+| Arc | Not tested | No installation attempted | Endpoint logged in default root; runner searched disposable root; native lookup and bridge unverified |
 
 There were 20 full browser/platform passes. Reinstallation and reconnection
 took 2.08–2.60 seconds in these single-fixture runs. These are recovery samples,
@@ -72,6 +72,57 @@ and CDP-click smoke test through Chrome's native-host fallback. There is no name
 Unique disposable native hosts identified actual lookup locations and fallback
 order. Those probes did not replace the Browser Bridge host and were removed
 after each check.
+
+### Multiple profile roots
+
+Discovery inspects both native and Snap Chromium profile roots when no explicit
+config-directory override is set. If both roots exist, installation, repair,
+diagnostics, and uninstallation handle both native-host manifests. Automatic
+repair preserves each manifest's origins independently. This does not fix the
+strict Snap launcher-execution limitation described below.
+
+Windows Arc discovery also checks matching `TheBrowserCompany.Arc_*` MSIX
+packages under `%LOCALAPPDATA%\Packages`, including their
+`LocalCache\Local\Arc\User Data` profiles. These are discovery locations only:
+Arc still uses one shared Chromium registry registration, not a registration per
+package or profile.
+
+An explicit `--user-data-dir` restricts profile discovery to that root. Fixed
+native-host lookup directories and Windows registry ownership remain unchanged.
+`CHROME_CONFIG_HOME` and absolute `XDG_CONFIG_HOME` overrides retain their scoped
+Linux behavior instead of also registering the default Snap location.
+
+### Arc endpoint finding corrected
+
+The original macOS Arc result was an endpoint-discovery failure, not evidence
+that Arc failed to expose DevTools. Arc 1.172.1 logged a loopback WebSocket
+endpoint. Its default
+`~/Library/Application Support/Arc/User Data/DevToolsActivePort` contains the
+same port and browser ID. The runner only checked
+`<disposable-profile>/DevToolsActivePort`; that requested profile stayed empty.
+It timed out before attempting a WebSocket connection or native-host probe.
+The supplied `--user-data-dir=<path>` did not redirect Arc's data root in this
+run.
+
+A follow-up with disposable `HOME` and `CFFIXED_USER_HOME` redirected Arc's
+application-support storage, but did not reach a DevTools endpoint within
+30 seconds. System logs recorded error `-25307`, "A default keychain could not
+be found", and a trust-settings timeout. These are observed startup limitations
+of that isolated environment, not a source-traced explanation of its stall.
+An additional per-process sandbox control also prevented Arc's own sandbox
+from initializing; this does not describe ordinary Arc startup.
+
+Manifest creation previously succeeded, but native-host lookup, native-host
+execution, and bridge connection remain separately unverified for Arc. No
+lookup result can be inferred from the manifest's presence. The follow-up
+preserved the existing default-root endpoint file, BBX manifests, and launcher,
+and did not change keychains or security settings.
+
+Future runner checks should consider fresh startup-log endpoints as well as the
+expected port file, verify the actual isolated data root before connecting, and
+report discovery, HTTP/WebSocket connection, native-host lookup, and bridge
+connection separately. They must not silently attach to a default profile when
+the requested disposable root is ignored.
 
 ## Limits and remaining checks
 

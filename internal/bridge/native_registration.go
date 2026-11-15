@@ -52,7 +52,17 @@ func (s nativeRegistrationSystem) candidates(c config, browser string) []string 
 		return []string{filepath.Join(installManifestDir(s.platform, s.home, browser, s.env), hostName+".json"), legacy}
 	}
 	if s.platform != "windows" {
-		return []string{filepath.Join(installManifestDir(s.platform, s.home, browser, s.env), hostName+".json")}
+		paths := []string{filepath.Join(installManifestDir(s.platform, s.home, browser, s.env), hostName+".json")}
+		// Native and Snap Chromium have independent lookup directories. Keep
+		// the historical primary path, but register both when both roots exist.
+		if snap := installSnapProfileDir(s.platform, s.home, browser, s.env); snap != "" && s.userDataDir == "" {
+			root := installBrowserProfileDir(s.platform, s.home, browser, s.env)
+			path := filepath.Join(root, "NativeMessagingHosts", hostName+".json")
+			if installExists(root) && !installContains(paths, path) {
+				paths = append(paths, path)
+			}
+		}
+		return paths
 	}
 	return []string{filepath.Join(c.home, filepath.FromSlash(definition.windowsManifestDir), hostName+".json"), legacy}
 }
@@ -94,13 +104,6 @@ func (s nativeRegistrationSystem) registrationPeers(browser string) []string {
 		}
 	}
 	return peers
-}
-
-func (s nativeRegistrationSystem) browserProfileRoot(browser string) string {
-	if s.userDataDir != "" {
-		return s.userDataDir
-	}
-	return filepath.Dir(installLegacyManifestDir(s.platform, s.home, browser, s.env))
 }
 
 func (s nativeRegistrationSystem) customNativeDirectory(browser string) bool {
@@ -207,6 +210,19 @@ func (s nativeRegistrationSystem) resolve(ctx context.Context, c config, browser
 		}
 	}
 	return candidates[0], "", nil
+}
+
+// Unlike migration candidates, these are live lookup destinations. Windows
+// still resolves exactly one shared registry value regardless of profile count.
+func (s nativeRegistrationSystem) lookupPaths(ctx context.Context, c config, browser string) ([]string, error) {
+	path, _, err := s.resolve(ctx, c, browser)
+	if err != nil {
+		return nil, err
+	}
+	if s.platform == "linux" {
+		return s.candidates(c, browser), nil
+	}
+	return []string{path}, nil
 }
 
 func nativeManifestPathsEqual(left, right string) bool {

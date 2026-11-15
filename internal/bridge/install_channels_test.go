@@ -180,7 +180,7 @@ func TestInstallCustomUserDataDirectoryIsIndependent(t *testing.T) {
 			if err != nil || custom.text("manifestPath") != want {
 				t.Fatalf("custom manifest: %s %v", custom, err)
 			}
-			if f.system.browserProfileRoot("chrome-canary") != f.system.userDataDir {
+			if roots, err := f.system.browserProfileRoots("chrome-canary"); err != nil || !reflect.DeepEqual(roots, []string{f.system.userDataDir}) {
 				t.Fatal("custom extension discovery ignored the requested user-data directory")
 			}
 			if _, err := uninstallNativeRegistrationWithSystem(context.Background(), f.config, "chrome-canary", f.system); err != nil {
@@ -256,7 +256,7 @@ func TestInstallFixedNativeLookupWithCustomProfile(t *testing.T) {
 			if got := f.system.candidates(f.config, entry.browser)[0]; got != standard {
 				t.Fatalf("fixed native lookup incorrectly followed --user-data-dir: %s", got)
 			}
-			if f.system.browserProfileRoot(entry.browser) != f.system.userDataDir {
+			if roots, err := f.system.browserProfileRoots(entry.browser); err != nil || !reflect.DeepEqual(roots, []string{f.system.userDataDir}) {
 				t.Fatal("extension discovery must still inspect the custom browser profile")
 			}
 		})

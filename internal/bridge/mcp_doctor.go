@@ -351,7 +351,11 @@ func mcpDoctorLocalWithSystem(c config, system nativeRegistrationSystem) (object
 	allowedOrigins := []string{}
 	installed := false
 	for _, browser := range installBrowsers {
-		path, _, lookupErr := system.resolve(context.Background(), c, browser)
+		paths, lookupErr := system.lookupPaths(context.Background(), c, browser)
+		path := system.candidates(c, browser)[0]
+		if len(paths) > 0 {
+			path = paths[0]
+		}
 		if browser == installDefaultBrowser() {
 			manifestPath = path
 		}
@@ -360,50 +364,52 @@ func mcpDoctorLocalWithSystem(c config, system nativeRegistrationSystem) (object
 			manifestIssues = append(manifestIssues, object{"browser": value(browser), "manifestPath": value(path), "code": value("registration_unavailable"), "message": value(lookupErr.Error())})
 			continue
 		}
-		data, err := os.ReadFile(path)
-		exists := err == nil
-		browsers = append(browsers, object{"browser": value(browser), "manifestPath": value(path), "installed": value(exists)})
-		if message := system.macLegacyRegistrationIssue(c, browser); message != "" {
-			manifestIssues = append(manifestIssues, object{"browser": value(browser), "manifestPath": value(path), "code": value("manifest_lookup_mismatch"), "message": value(message)})
-		}
-		if !exists {
-			continue
-		}
-		installed = true
-		manifest, err := decodeObject(data)
-		issue := func(code, message string) {
-			manifestIssues = append(manifestIssues, object{"browser": value(browser), "manifestPath": value(path), "code": value(code), "message": value(message)})
-		}
-		if err != nil {
-			issue("manifest_invalid", fmt.Sprintf("%s native host manifest is not valid JSON: %s", browser, path))
-			continue
-		}
-		var origins []string
-		_ = json.Unmarshal(manifest["allowed_origins"], &origins)
-		if path == manifestPath && origins != nil {
-			allowedOrigins = origins
-		}
-		for _, origin := range origins[:min(100, len(origins))] {
-			id := strings.TrimSuffix(strings.TrimPrefix(origin, "chrome-extension://"), "/")
-			if origin == "chrome-extension://"+id+"/" && mcpDoctorExtensionPattern.MatchString(id) && !stringIn(id, installedIDs) && len(installedIDs) < 100 {
-				installedIDs = append(installedIDs, id)
+		for _, path := range paths {
+			data, err := os.ReadFile(path)
+			exists := err == nil
+			browsers = append(browsers, object{"browser": value(browser), "manifestPath": value(path), "installed": value(exists)})
+			if message := system.macLegacyRegistrationIssue(c, browser); message != "" {
+				manifestIssues = append(manifestIssues, object{"browser": value(browser), "manifestPath": value(path), "code": value("manifest_lookup_mismatch"), "message": value(message)})
 			}
-		}
-		launcher := manifest.text("path")
-		if launcher == "" {
-			issue("launcher_missing", "Native host manifest does not point to a launcher.")
-			continue
-		}
-		if _, err := os.Stat(launcher); err != nil {
-			issue("launcher_missing", "Native host launcher is missing: "+launcher)
-			continue
-		}
-		// Native binaries are valid launchers. For legacy Node launchers, also
-		// inspect the two absolute exec targets without executing the script.
-		if script, err := os.ReadFile(launcher); err == nil && len(script) < 65536 {
-			for _, target := range mcpDoctorLauncherTargets(string(script)) {
-				if _, err := os.Stat(target.path); err != nil {
-					issue(target.code, "Native host launcher target is missing: "+target.path)
+			if !exists {
+				continue
+			}
+			installed = true
+			manifest, err := decodeObject(data)
+			issue := func(code, message string) {
+				manifestIssues = append(manifestIssues, object{"browser": value(browser), "manifestPath": value(path), "code": value(code), "message": value(message)})
+			}
+			if err != nil {
+				issue("manifest_invalid", fmt.Sprintf("%s native host manifest is not valid JSON: %s", browser, path))
+				continue
+			}
+			var origins []string
+			_ = json.Unmarshal(manifest["allowed_origins"], &origins)
+			if path == manifestPath && origins != nil {
+				allowedOrigins = origins
+			}
+			for _, origin := range origins[:min(100, len(origins))] {
+				id := strings.TrimSuffix(strings.TrimPrefix(origin, "chrome-extension://"), "/")
+				if origin == "chrome-extension://"+id+"/" && mcpDoctorExtensionPattern.MatchString(id) && !stringIn(id, installedIDs) && len(installedIDs) < 100 {
+					installedIDs = append(installedIDs, id)
+				}
+			}
+			launcher := manifest.text("path")
+			if launcher == "" {
+				issue("launcher_missing", "Native host manifest does not point to a launcher.")
+				continue
+			}
+			if _, err := os.Stat(launcher); err != nil {
+				issue("launcher_missing", "Native host launcher is missing: "+launcher)
+				continue
+			}
+			// Native binaries are valid launchers. For legacy Node launchers, also
+			// inspect the two absolute exec targets without executing the script.
+			if script, err := os.ReadFile(launcher); err == nil && len(script) < 65536 {
+				for _, target := range mcpDoctorLauncherTargets(string(script)) {
+					if _, err := os.Stat(target.path); err != nil {
+						issue(target.code, "Native host launcher target is missing: "+target.path)
+					}
 				}
 			}
 		}
