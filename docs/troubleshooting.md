@@ -28,6 +28,9 @@ error text, or internal method/tab groups.
 - Confirm the extension is enabled in Chrome.
 - Use `bbx install <extension-id>` only for unpacked or custom extension builds.
 - Restart Chrome after reinstalling the native messaging manifest if the host was missing when Chrome launched.
+- On macOS or Linux, Chrome Beta, Dev, and Canary need their own native-host registrations. Run `bbx install`, or select the channel explicitly with `bbx install --browser chrome-canary`.
+- If you start Chrome with `--user-data-dir`, register that directory with `bbx install --browser chrome --user-data-dir "/absolute/path/to/browser-data"`. Register the user-data root, not its `Default` subdirectory.
+- If macOS reports `operation not permitted` for a browser directory, review the terminal or agent's macOS privacy permissions and complete the browser's first launch. Retry after granting the required access. Do not use `sudo` to work around per-user browser-data protection.
 - On Ubuntu, the default Chromium package is usually a strict snap, and Flatpak Chromium is similarly sandboxed. If `bbx doctor` shows a sandboxed Chromium manifest and the extension still disconnects, use Google Chrome, Brave, or Edge from a non-sandboxed package and run `bbx install --browser <browser>`.
 
 ## The agent gets `ACCESS_DENIED`

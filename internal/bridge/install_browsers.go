@@ -16,7 +16,7 @@ func installDetectedBrowser(ctx context.Context, c config, browser, extensionID 
 		return nil, err
 	}
 	additionalIDs := []string{}
-	root := filepath.Dir(installLegacyManifestDir(system.platform, system.home, browser, system.env))
+	root := system.browserProfileRoot(browser)
 	// Keep existing custom origins. Add the requested ID only when that
 	// extension is actually present in this browser, not every repaired host.
 	if installed, _ := installBrowserHasExtension(ctx, root, id); installed {
@@ -53,20 +53,23 @@ func installDetectBrowsers(ctx context.Context, c config, extensionID string, sy
 		manifest, registered, lookupErr := system.resolve(ctx, c, browser)
 		if lookupErr == nil {
 			_, lookupErr = os.Lstat(manifest)
-			if errors.Is(lookupErr, os.ErrNotExist) && system.macSharedBrowser(browser) && browser == "brave" {
+			if errors.Is(lookupErr, os.ErrNotExist) && system.macSharedConsumer(browser) {
 				_, lookupErr = os.Lstat(system.candidates(c, browser)[1])
 			}
 			existing := lookupErr == nil || registered != ""
-			if existing && system.macSharedBrowser(browser) {
+			if existing && system.sharedRegistration(browser) {
 				raw, readErr := os.ReadFile(manifest)
 				entry, decodeErr := decodeObject(raw)
 				if readErr == nil && decodeErr == nil {
-					owners, ownerErr := system.macRegistrationOwners(c, browser, manifest, entry)
+					owners, ownerErr := system.registrationOwners(c, browser, manifest, entry)
 					existing = ownerErr != nil || installContains(owners, browser)
-				} else if browser == "brave" {
+				} else if system.macSharedConsumer(browser) {
 					existing = installExists(system.candidates(c, browser)[1])
+				} else if system.platform == "windows" {
+					owners, ownerErr := system.registrationOwners(c, browser, manifest, nil)
+					existing = ownerErr != nil || installContains(owners, browser)
 				}
-				if browser == "brave" && installExists(system.candidates(c, browser)[1]) {
+				if system.macSharedConsumer(browser) && installExists(system.candidates(c, browser)[1]) {
 					existing = true
 				}
 			}
@@ -75,7 +78,7 @@ func installDetectBrowsers(ctx context.Context, c config, extensionID string, sy
 				continue
 			}
 			if lookupErr == nil || errors.Is(lookupErr, os.ErrNotExist) {
-				root := filepath.Dir(installLegacyManifestDir(system.platform, system.home, browser, system.env))
+				root := system.browserProfileRoot(browser)
 				var installed bool
 				installed, lookupErr = installBrowserHasExtension(ctx, root, id)
 				if installed {
@@ -117,14 +120,18 @@ func installBrowserHasExtension(ctx context.Context, root, extensionID string) (
 		return false, err
 	}
 	var failures []error
+	// Some Chromium browsers, including Opera, keep extension metadata
+	// directly in the user-data directory instead of a Default subdirectory.
+	directories := []string{root}
 	for _, profile := range profiles {
+		if profile.IsDir() {
+			directories = append(directories, filepath.Join(root, profile.Name()))
+		}
+	}
+	for _, directory := range directories {
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
-		if !profile.IsDir() {
-			continue
-		}
-		directory := filepath.Join(root, profile.Name())
 		// Store installs have an extension directory. Preferences also identify
 		// unpacked installs, whose source may live outside the browser profile.
 		versions, readErr := os.ReadDir(filepath.Join(directory, "Extensions", extensionID))

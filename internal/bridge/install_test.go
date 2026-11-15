@@ -70,8 +70,8 @@ func TestInstallManifestPaths(t *testing.T) {
 			if platform == "windows" {
 				base = browser
 			}
-			sharedBrave := platform == "darwin" && browser == "brave" && path == installManifestDir(platform, home, "chrome", env)
-			if !strings.HasPrefix(path, home+string(filepath.Separator)) || filepath.Base(path) != base || seen[path] && !sharedBrave {
+			shared := platform == "darwin" && installBrowserByKey(browser).macNativeMessagingDir != "" && path == installManifestDir(platform, home, "chrome", env)
+			if !strings.HasPrefix(path, home+string(filepath.Separator)) || filepath.Base(path) != base || seen[path] && !shared {
 				t.Fatalf("invalid %s/%s path %s", platform, browser, path)
 			}
 			seen[path] = true

@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { format } from 'oxfmt';
 
 /** @typedef {{key: string, goos: string, goarch: string, asset: string, runner: string, unixPatterns?: string[], windowsArch?: string}} NativePlatform */
-/** @typedef {{key: string, macDir: string, macNativeMessagingDir?: string, windowsDir: string, windowsManifestDir: string, linuxDir: string, registry: string}} BrowserTarget */
+/** @typedef {{key: string, macDir: string, macNativeMessagingDir?: string, windowsDir: string, windowsRoaming?: boolean, windowsManifestDir: string, linuxDir: string, linuxNativeMessagingDir?: string, registry: string}} BrowserTarget */
 /** @typedef {{hostName: string, extensionId: string, maxBinaryBytes: number, platforms: NativePlatform[], browsers: BrowserTarget[]}} InstallTargets */
 
 /** @param {unknown} input @returns {asserts input is InstallTargets} */
@@ -38,13 +38,15 @@ export function validateInstallTargets(input) {
     assert(entry.goos === 'windows' ? entry.windowsArch : entry.unixPatterns?.length);
   }
   for (const entry of source.browsers) {
-    assert.match(entry.key, /^[a-z]+$/u);
+    assert.match(entry.key, /^[a-z]+(?:-[a-z]+)*$/u);
+    assert(entry.windowsRoaming === undefined || typeof entry.windowsRoaming === 'boolean');
     for (const value of [
       entry.macDir,
       ...(entry.macNativeMessagingDir === undefined ? [] : [entry.macNativeMessagingDir]),
       entry.windowsDir,
       entry.windowsManifestDir,
       entry.linuxDir,
+      ...(entry.linuxNativeMessagingDir === undefined ? [] : [entry.linuxNativeMessagingDir]),
       entry.registry,
     ]) {
       assert(
@@ -100,7 +102,7 @@ export async function generateInstallTargets(
   });
   assert.equal(formatted.errors.length, 0);
   await write('packages/npm/src/install-targets.js', formatted.code);
-  const go = `// Code generated from protocol/install-targets.json. DO NOT EDIT.\npackage bridge\nconst hostName = ${quote(source.hostName)}\nconst publishedExtensionID = ${quote(source.extensionId)}\nconst nativeMaxBytes = ${source.maxBinaryBytes}\nvar browserRegistry = []browserDefinition{${source.browsers.map((entry) => `{key:${quote(entry.key)}, macDir:${quote(entry.macDir)}, macNativeMessagingDir:${quote(entry.macNativeMessagingDir ?? '')}, windowsDir:${quote(entry.windowsDir)}, windowsManifestDir:${quote(entry.windowsManifestDir)}, linuxDir:${quote(entry.linuxDir)}, registry:${quote(entry.registry)}}`).join(',')},}\nvar nativePlatformRegistry = []nativePlatformDefinition{${source.platforms.map((entry) => `{key:${quote(entry.key)}, goos:${quote(entry.goos)}, goarch:${quote(entry.goarch)}, asset:${quote(entry.asset)}}`).join(',')},}\n`;
+  const go = `// Code generated from protocol/install-targets.json. DO NOT EDIT.\npackage bridge\nconst hostName = ${quote(source.hostName)}\nconst publishedExtensionID = ${quote(source.extensionId)}\nconst nativeMaxBytes = ${source.maxBinaryBytes}\nvar browserRegistry = []browserDefinition{${source.browsers.map((entry) => `{key:${quote(entry.key)}, macDir:${quote(entry.macDir)}, macNativeMessagingDir:${quote(entry.macNativeMessagingDir ?? '')}, windowsDir:${quote(entry.windowsDir)}, windowsRoaming:${entry.windowsRoaming ?? false}, windowsManifestDir:${quote(entry.windowsManifestDir)}, linuxDir:${quote(entry.linuxDir)}, linuxNativeMessagingDir:${quote(entry.linuxNativeMessagingDir ?? '')}, registry:${quote(entry.registry)}}`).join(',')},}\nvar nativePlatformRegistry = []nativePlatformDefinition{${source.platforms.map((entry) => `{key:${quote(entry.key)}, goos:${quote(entry.goos)}, goarch:${quote(entry.goarch)}, asset:${quote(entry.asset)}}`).join(',')},}\n`;
   await write(
     'internal/bridge/install_targets.gen.go',
     execFileSync('gofmt', [], { input: go, encoding: 'utf8' })

@@ -103,7 +103,7 @@ var cliCommands = []cliCommandDefinition{
 		a.put("key", 0)
 		a.put("code", 1)
 	}},
-	{name: "install", localOnly: true, category: "Setup", usage: "install [extension-id] [--browser <browser>|--all]"},
+	{name: "install", localOnly: true, category: "Setup", usage: "install [extension-id] [--browser <browser>|--all] [--user-data-dir <path>]"},
 	{name: "install-self", localOnly: true, category: "Setup", usage: "install-self [--bin-dir <directory>] [--no-restart]"},
 	{name: "uninstall", localOnly: true, category: "Setup", usage: "uninstall"},
 	{name: "install-skill", localOnly: true, category: "Setup", usage: "install-skill [targets] [--global|--local]"},

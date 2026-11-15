@@ -28,9 +28,15 @@ To register only one supported browser, pass `--browser`:
 
 ```bash
 bbx install --browser chrome    # Google Chrome
+bbx install --browser chrome-beta    # Chrome Beta
+bbx install --browser chrome-dev     # Chrome Dev
+bbx install --browser chrome-canary  # Chrome Canary
+bbx install --browser chrome-for-testing  # Chrome for Testing
 bbx install --browser edge      # Microsoft Edge
 bbx install --browser brave     # Brave
 bbx install --browser chromium  # Chromium
+bbx install --browser vivaldi   # Vivaldi
+bbx install --browser opera     # Opera
 bbx install --browser arc       # Arc
 bbx install --all               # All supported browsers
 ```

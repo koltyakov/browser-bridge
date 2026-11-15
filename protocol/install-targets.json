@@ -76,7 +76,8 @@
       "windowsDir": "BraveSoftware/Brave-Browser/User Data",
       "windowsManifestDir": "NativeMessagingHosts/brave",
       "linuxDir": "BraveSoftware/Brave-Browser",
-      "registry": "BraveSoftware\\Brave-Browser"
+      "linuxNativeMessagingDir": "BraveSoftware/Brave-Browser",
+      "registry": "Chromium"
     },
     {
       "key": "chromium",
@@ -92,6 +93,56 @@
       "windowsDir": "Arc/User Data",
       "windowsManifestDir": "NativeMessagingHosts/arc",
       "linuxDir": "Arc/User Data",
+      "registry": "Chromium"
+    },
+    {
+      "key": "chrome-beta",
+      "macDir": "Google/Chrome Beta",
+      "windowsDir": "Google/Chrome Beta/User Data",
+      "windowsManifestDir": "NativeMessagingHosts/chrome-beta",
+      "linuxDir": "google-chrome-beta",
+      "registry": "Google\\Chrome"
+    },
+    {
+      "key": "chrome-dev",
+      "macDir": "Google/Chrome Dev",
+      "windowsDir": "Google/Chrome Dev/User Data",
+      "windowsManifestDir": "NativeMessagingHosts/chrome-dev",
+      "linuxDir": "google-chrome-unstable",
+      "registry": "Google\\Chrome"
+    },
+    {
+      "key": "chrome-canary",
+      "macDir": "Google/Chrome Canary",
+      "windowsDir": "Google/Chrome SxS/User Data",
+      "windowsManifestDir": "NativeMessagingHosts/chrome-canary",
+      "linuxDir": "google-chrome-canary",
+      "registry": "Google\\Chrome"
+    },
+    {
+      "key": "chrome-for-testing",
+      "macDir": "Google/Chrome for Testing",
+      "windowsDir": "Google/Chrome for Testing/User Data",
+      "windowsManifestDir": "NativeMessagingHosts/chrome-for-testing",
+      "linuxDir": "google-chrome-for-testing",
+      "registry": "Chromium"
+    },
+    {
+      "key": "vivaldi",
+      "macDir": "Vivaldi",
+      "windowsDir": "Vivaldi/User Data",
+      "windowsManifestDir": "NativeMessagingHosts/vivaldi",
+      "linuxDir": "vivaldi",
+      "registry": "Chromium"
+    },
+    {
+      "key": "opera",
+      "macDir": "com.operasoftware.Opera",
+      "macNativeMessagingDir": "Google/Chrome",
+      "windowsDir": "Opera Software/Opera Stable",
+      "windowsRoaming": true,
+      "windowsManifestDir": "NativeMessagingHosts/opera",
+      "linuxDir": "opera",
       "registry": "Chromium"
     }
   ]

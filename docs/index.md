@@ -19,6 +19,7 @@ This index keeps those paths separate.
 - [CLI guide](./cli-guide.md): day-to-day `bbx` commands with practical examples
 - [Remote proxy](./remote-proxy.md): drive a browser on another machine (VM, private network) over an authenticated TCP proxy
 - [Troubleshooting](./troubleshooting.md): what to check when install, access, or routing fails
+- [Browser compatibility](./browser-compatibility.md): tested channels, native-host lookup differences, and current verification limits
 
 ## Reference
 

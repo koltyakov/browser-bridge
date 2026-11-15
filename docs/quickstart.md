@@ -49,10 +49,16 @@ pass `--browser`:
 
 ```bash
 bbx install --browser chrome    # Google Chrome
+bbx install --browser chrome-beta    # Chrome Beta
+bbx install --browser chrome-dev     # Chrome Dev
+bbx install --browser chrome-canary  # Chrome Canary
+bbx install --browser chrome-for-testing  # Chrome for Testing
 bbx install --browser edge      # Microsoft Edge
 bbx install --browser brave     # Brave
 bbx install --browser chromium  # Chromium
 bbx install --browser arc       # Arc
+bbx install --browser vivaldi   # Vivaldi
+bbx install --browser opera     # Opera
 bbx install                    # Detect browsers with Browser Bridge installed
 bbx install --all               # All supported browsers, regardless of detection
 ```
@@ -64,12 +70,37 @@ browser-directory manifests remain supported, including Node 1.15 installations.
 Reinstalling without an explicit extension ID preserves custom allowlists.
 Diagnostics and uninstall support both layouts.
 
+Chrome Stable, Beta, Dev, and Canary share Chrome's native-host registry key on
+Windows. Brave, Chromium, Arc, Chrome for Testing, Vivaldi, and Opera use the
+Chromium key, which they query before falling back to Chrome's key.
+BBX reuses the registered manifest, preserves other registered browsers'
+extension origins, and removes the host only after its last registered consumer
+is uninstalled. Opera profile discovery uses roaming application data.
+
+On macOS and Linux, Chrome channels have separate user-data directories.
+Installing only for stable Chrome does not register Canary or Beta on these
+platforms. Automatic detection includes each channel.
+
+If you launch a browser with a custom `--user-data-dir`, register that same
+directory explicitly:
+
+```bash
+bbx install --browser chrome-canary --user-data-dir "/absolute/path/to/browser-data"
+```
+
+Use the user-data root, not its `Default` or `Profile 1` subdirectory. This option
+requires one explicit `--browser`. Windows keeps using the shared registry.
+Browsers with fixed native-host locations, including Brave and macOS Opera,
+keep their normal host lookup even when their browser profile is elsewhere.
+Add `--uninstall` with the same options to remove that registration.
+
 On macOS, [Brave uses Chrome's native-host lookup directory](https://github.com/brave/brave-core/blob/master/app/brave_main_delegate.cc),
 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts`, independently
 of its own browser profile directory. `bbx install --browser brave` migrates a
 legacy Brave-only registration there. Chrome and Brave share one manifest, so
 scoped installs preserve existing origins and record both registered consumers.
-Uninstalling one preserves the host until the last registered consumer is removed.
+Opera also uses this shared macOS directory. Uninstalling one consumer preserves
+the host until the last registered consumer is removed.
 An existing shared host pointing to a different installation is not redirected by
 a Brave install. Use the same bridge home for both browsers.
 

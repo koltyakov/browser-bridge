@@ -20,11 +20,15 @@ type nativeRegistrationSystem struct {
 	lookupEnv     func(string) (string, bool)
 	readRegistry  func(context.Context, string) (string, error)
 	writeRegistry func(context.Context, ...string) error
+	userDataDir   string
 }
 
 func nativeRegistrationHostSystem() (nativeRegistrationSystem, error) {
 	home, err := installUserHome()
-	return nativeRegistrationSystem{runtime.GOOS, home, os.Getenv, os.LookupEnv, readNativeRegistrationRegistry, installRegistry}, err
+	return nativeRegistrationSystem{
+		platform: runtime.GOOS, home: home, env: os.Getenv, lookupEnv: os.LookupEnv,
+		readRegistry: readNativeRegistrationRegistry, writeRegistry: installRegistry,
+	}, err
 }
 
 func (s nativeRegistrationSystem) lookup(key string) (string, bool) {
@@ -40,55 +44,136 @@ func (s nativeRegistrationSystem) candidates(c config, browser string) []string 
 	if definition == nil {
 		return nil
 	}
+	if s.customNativeDirectory(browser) {
+		return []string{filepath.Join(s.userDataDir, "NativeMessagingHosts", hostName+".json")}
+	}
 	legacy := filepath.Join(installLegacyManifestDir(s.platform, s.home, browser, s.env), hostName+".json")
 	if s.platform == "darwin" && definition.macNativeMessagingDir != "" {
 		return []string{filepath.Join(installManifestDir(s.platform, s.home, browser, s.env), hostName+".json"), legacy}
 	}
 	if s.platform != "windows" {
-		return []string{legacy}
+		return []string{filepath.Join(installManifestDir(s.platform, s.home, browser, s.env), hostName+".json")}
 	}
 	return []string{filepath.Join(c.home, filepath.FromSlash(definition.windowsManifestDir), hostName+".json"), legacy}
 }
 
-const macRegistrationOwnersKey = "x_browser_bridge_browsers"
+const nativeRegistrationOwnersKey = "x_browser_bridge_browsers"
+
+// Browser channels share one Windows registry key even though their profiles
+// are separate. macOS browsers can explicitly share a native-host directory.
+func (s nativeRegistrationSystem) registrationPeers(browser string) []string {
+	if s.customNativeDirectory(browser) {
+		return []string{browser}
+	}
+	peers := []string{}
+	for _, other := range installBrowsers {
+		shared := other == browser
+		switch s.platform {
+		case "windows":
+			shared = installRegistryKey(other) == installRegistryKey(browser)
+		case "darwin":
+			shared = installManifestDir(s.platform, s.home, other, s.env) == installManifestDir(s.platform, s.home, browser, s.env)
+		}
+		if shared {
+			peers = append(peers, other)
+		}
+	}
+	if s.platform == "windows" {
+		// Prefer the registry's own product over aliases that happen to be
+		// earlier in the installation catalog, e.g. Chromium before Brave.
+		definition := installBrowserByKey(browser)
+		if definition != nil {
+			parts := strings.Split(definition.registry, `\`)
+			product := parts[len(parts)-1]
+			for i, peer := range peers {
+				if i > 0 && strings.EqualFold(peer, product) {
+					peers = append([]string{peer}, append(peers[:i], peers[i+1:]...)...)
+					break
+				}
+			}
+		}
+	}
+	return peers
+}
+
+func (s nativeRegistrationSystem) browserProfileRoot(browser string) string {
+	if s.userDataDir != "" {
+		return s.userDataDir
+	}
+	return filepath.Dir(installLegacyManifestDir(s.platform, s.home, browser, s.env))
+}
+
+func (s nativeRegistrationSystem) customNativeDirectory(browser string) bool {
+	definition := installBrowserByKey(browser)
+	return s.userDataDir != "" && definition != nil &&
+		(s.platform == "darwin" && definition.macNativeMessagingDir == "" ||
+			s.platform == "linux" && definition.linuxNativeMessagingDir == "")
+}
+
+func (s nativeRegistrationSystem) sharedRegistration(browser string) bool {
+	return len(s.registrationPeers(browser)) > 1
+}
 
 func (s nativeRegistrationSystem) macSharedBrowser(browser string) bool {
-	return s.platform == "darwin" && (browser == "chrome" || browser == "brave")
+	return s.platform == "darwin" && s.sharedRegistration(browser)
+}
+
+func (s nativeRegistrationSystem) macSharedConsumer(browser string) bool {
+	definition := installBrowserByKey(browser)
+	return s.macSharedBrowser(browser) && definition != nil && definition.macNativeMessagingDir != ""
 }
 
 // Ownership is stored with the shared manifest, not in a per-install sidecar.
-// Unmarked existing files conservatively belong to Chrome. A legacy Brave
-// registration is also evidence of a consumer that uninstall must preserve.
-func (s nativeRegistrationSystem) macRegistrationOwners(c config, browser, path string, manifest object) ([]string, error) {
-	if !s.macSharedBrowser(browser) {
+// An unmarked host belongs to the browser identified by its path, or the
+// canonical browser for a legacy custom path. Legacy macOS registrations also
+// identify consumers that uninstall must preserve.
+func (s nativeRegistrationSystem) registrationOwners(c config, browser, path string, manifest object) ([]string, error) {
+	if !s.sharedRegistration(browser) {
 		return nil, nil
 	}
+	peers := s.registrationPeers(browser)
 	owners := []string{}
-	if raw, exists := manifest[macRegistrationOwnersKey]; exists {
+	if raw, exists := manifest[nativeRegistrationOwnersKey]; exists {
 		if err := json.Unmarshal(raw, &owners); err != nil || len(owners) == 0 {
 			return nil, fmt.Errorf("invalid shared native host ownership in %s", path)
 		}
 		for _, owner := range owners {
-			if owner != "chrome" && owner != "brave" {
+			if !installContains(peers, owner) {
 				return nil, fmt.Errorf("invalid shared native host owner in %s", path)
 			}
 		}
 		return owners, nil
 	}
-	if installExists(path) {
-		owners = append(owners, "chrome")
+	if s.platform == "windows" {
+		for _, peer := range peers {
+			for _, candidate := range s.candidates(c, peer) {
+				if nativeManifestPathsEqual(candidate, path) {
+					return []string{peer}, nil
+				}
+			}
+		}
+		// A legacy custom path predates channel-specific registrations.
+		// Keep this inference for missing files so repair targets one owner.
+		return []string{peers[0]}, nil
 	}
-	if installExists(s.candidates(c, "brave")[1]) {
-		owners = append(owners, "brave")
+	if installExists(path) {
+		owners = append(owners, peers[0])
+	}
+	for _, peer := range peers {
+		candidates := s.candidates(c, peer)
+		if len(candidates) > 1 && installExists(candidates[1]) {
+			owners = append(owners, peer)
+		}
 	}
 	return owners, nil
 }
 
 func (s nativeRegistrationSystem) macLegacyRegistrationIssue(c config, browser string) string {
-	if s.macSharedBrowser(browser) && browser == "brave" {
+	if s.macSharedConsumer(browser) {
 		paths := s.candidates(c, browser)
 		if !installExists(paths[0]) && installExists(paths[1]) {
-			return "Brave's macOS native-host lookup uses the shared Chrome directory, not the legacy Brave-only manifest; run bbx install --browser brave"
+			label := strings.ToUpper(browser[:1]) + browser[1:]
+			return fmt.Sprintf("%s's macOS native-host lookup uses the shared Chrome directory, not the legacy %s-only manifest; run bbx install --browser %s", label, label, browser)
 		}
 	}
 	return ""
@@ -195,15 +280,20 @@ func uninstallNativeRegistrationWithSystem(ctx context.Context, c config, browse
 		return nil, err
 	}
 	candidates := system.candidates(c, browser)
-	if system.macSharedBrowser(browser) {
+	if system.sharedRegistration(browser) {
 		if data, readErr := os.ReadFile(path); readErr == nil {
 			manifest, decodeErr := decodeObject(data)
 			if decodeErr != nil {
 				return nil, decodeErr
 			}
-			owners, ownerErr := system.macRegistrationOwners(c, browser, path, manifest)
+			owners, ownerErr := system.registrationOwners(c, browser, path, manifest)
 			if ownerErr != nil {
 				return nil, ownerErr
+			}
+			// An alias that was never installed must not remove another
+			// browser's host merely because both resolve to the same registry.
+			if !installContains(owners, browser) {
+				return nil, nil
 			}
 			launcher, _ := installLauncherForPlatform(c, "", system.platform)
 			if manifest.text("name") != hostName || manifest.text("path") != launcher {
@@ -216,13 +306,16 @@ func uninstallNativeRegistrationWithSystem(ctx context.Context, c config, browse
 				}
 			}
 			if len(remaining) > 0 {
-				manifest[macRegistrationOwnersKey] = value(remaining)
+				manifest[nativeRegistrationOwnersKey] = value(remaining)
 				data, err := json.MarshalIndent(manifest, "", "  ")
 				if err != nil {
 					return nil, err
 				}
 				if err := installAtomicWrite(path, append(data, '\n'), 0644); err != nil {
 					return nil, err
+				}
+				if system.platform == "windows" {
+					return nil, nil
 				}
 				candidates = candidates[1:]
 				// A dotfile-managed shared symlink can point at the old Brave
@@ -265,22 +358,9 @@ func uninstallNativeRegistrationWithSystem(ctx context.Context, c config, browse
 				otherRegistrations = append(otherRegistrations, reference)
 			}
 		}
-		// Arc and Chromium share a registry key. Removing one browser's own
-		// files must not unregister the other browser's registered manifest.
-		belongsToOtherBrowser := false
-		for _, other := range installBrowsers {
-			if other == browser || installRegistryKey(other) != key {
-				continue
-			}
-			for _, candidate := range system.candidates(c, other) {
-				if nativeManifestPathsEqual(candidate, path) {
-					belongsToOtherBrowser = true
-				}
-			}
-		}
-		if belongsToOtherBrowser {
-			otherRegistrations = append(otherRegistrations, path)
-		} else if registered != "" {
+		// Shared-key owners were handled above, including aliases whose
+		// manifest lives in the original browser's directory.
+		if registered != "" {
 			// Unregister before touching files. A failed registry deletion must
 			// leave the still-registered native host usable.
 			if err := system.writeRegistry(ctx, "delete", key, "/f"); err != nil {

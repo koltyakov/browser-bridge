@@ -283,7 +283,11 @@ func TestInstallNativeCommandAutomaticAndExplicitBrowsers(t *testing.T) {
 			}
 			for _, browser := range installBrowsers {
 				file := system.candidates(c, browser)[0]
-				if installExists(file) != installContains(want, browser) {
+				registered := installContains(want, browser)
+				for _, owner := range want {
+					registered = registered || file == system.candidates(c, owner)[0]
+				}
+				if installExists(file) != registered {
 					t.Fatalf("unexpected registration for %s", browser)
 				}
 			}

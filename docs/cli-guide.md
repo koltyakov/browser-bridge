@@ -28,8 +28,17 @@ Use these first when Browser Bridge is not connected, the wrong tab is routed,
 or you want to see the available runtime presets. `bbx install` detects the
 extension in supported browsers and refreshes existing native registrations.
 If nothing is detected, it falls back to Chromium on Linux or Chrome on
-macOS/Windows. Use `--browser` to select only Chrome, Edge, Brave, Chromium,
-or Arc, or `--all` to register all supported browsers regardless of detection.
+macOS/Windows. Use `--browser` to select Chrome or a specific channel such as
+`chrome-beta`, `chrome-dev`, `chrome-canary`, or `chrome-for-testing`. Edge, Brave,
+Chromium, Arc, Vivaldi, and Opera also have targets. Use `--all` to register all
+targets regardless of detection. For a custom browser user-data directory, use
+`bbx install --browser chrome --user-data-dir "/absolute/path/to/browser-data"`.
+
+Installation target names and runtime browser selectors are different. Chrome
+channels normally identify as `chrome` at runtime. Give their BBX profiles
+distinct labels, then use `--profile` or `--extension` to select a connection
+when several channels are open. Do not assume `--browser chrome-canary` selects
+a live Canary connection.
 
 Use `bbx tabs` to preview tabs in the enabled window, then
 `bbx tab-activate <tabId>` to bring one of them to the foreground when the

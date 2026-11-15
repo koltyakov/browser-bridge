@@ -4,7 +4,7 @@ param(
   [string]$Version = '',
   # BEGIN GENERATED PARAMETERS
   [string]$ExtensionId = 'jjjkmmcdkpcgamlopogicbnnhdgebhie',
-  [ValidateSet('', 'chrome', 'edge', 'brave', 'chromium', 'arc')]
+  [ValidateSet('', 'chrome', 'edge', 'brave', 'chromium', 'arc', 'chrome-beta', 'chrome-dev', 'chrome-canary', 'chrome-for-testing', 'vivaldi', 'opera')]
   # END GENERATED PARAMETERS
   [string]$Browser = '',
   [string]$InstallDir = (Join-Path $HOME '.local\bin'),

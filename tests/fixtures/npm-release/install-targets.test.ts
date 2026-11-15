@@ -58,10 +58,31 @@ test('installation target validation rejects collisions and unsafe generated ide
     (input: InstallTargets) => {
       input.platforms[0].unixPatterns = [];
     },
+    (input: InstallTargets) => {
+      input.browsers[0].key = 'chrome--canary';
+    },
   ]) {
     const input = await source();
     mutate(input);
     assert.throws(() => validateInstallTargets(input));
+  }
+});
+
+test('Chrome channels and Opera installation metadata reach both standalone installers', async () => {
+  const input = await source();
+  assert.equal(input.browsers.find((entry) => entry.key === 'opera')?.windowsRoaming, true);
+  for (const file of ['scripts/install.sh', 'scripts/install.ps1']) {
+    const installer = await fs.readFile(new URL(`../../../${file}`, import.meta.url), 'utf8');
+    for (const key of [
+      'chrome-beta',
+      'chrome-dev',
+      'chrome-canary',
+      'chrome-for-testing',
+      'vivaldi',
+      'opera',
+    ]) {
+      assert(installer.includes(key), `${file} does not accept ${key}`);
+    }
   }
 });
 

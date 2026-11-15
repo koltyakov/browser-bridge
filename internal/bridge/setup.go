@@ -486,6 +486,7 @@ func handleSetupCommand(ctx context.Context, c config, args []string) (bool, err
 func installNativeCommand(ctx context.Context, c config, args []string) error {
 	browsers := []string{}
 	extensionID := ""
+	userDataDir := ""
 	remove, all, preserve := false, false, false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -496,6 +497,12 @@ func installNativeCommand(ctx context.Context, c config, args []string) error {
 			remove = true
 		case "--preserve-origins":
 			preserve = true
+		case "--user-data-dir":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return errors.New("--user-data-dir requires a value")
+			}
+			i++
+			userDataDir = args[i]
 		case "--browser":
 			if i+1 >= len(args) {
 				return errors.New("--browser requires a value")
@@ -509,6 +516,13 @@ func installNativeCommand(ctx context.Context, c config, args []string) error {
 				browsers = append(browsers, browser)
 			}
 		default:
+			if strings.HasPrefix(arg, "--user-data-dir=") {
+				userDataDir = strings.TrimPrefix(arg, "--user-data-dir=")
+				if userDataDir == "" {
+					return errors.New("--user-data-dir requires a value")
+				}
+				continue
+			}
 			if strings.HasPrefix(arg, "--browser=") {
 				browser := strings.TrimPrefix(arg, "--browser=")
 				if !installContains(installBrowsers, browser) {
@@ -532,15 +546,26 @@ func installNativeCommand(ctx context.Context, c config, args []string) error {
 	if remove && extensionID != "" {
 		return errors.New("extension ID cannot be combined with --uninstall")
 	}
-	if all {
-		browsers = installBrowsers
-	}
-	var explicitExtensionID bool
-	if !remove {
-		system, err := nativeRegistrationHostSystem()
+	if userDataDir != "" {
+		if all || len(browsers) != 1 {
+			return errors.New("--user-data-dir requires exactly one --browser and cannot be combined with --all")
+		}
+		var err error
+		userDataDir, err = filepath.Abs(userDataDir)
 		if err != nil {
 			return err
 		}
+	}
+	if all {
+		browsers = installBrowsers
+	}
+	system, err := nativeRegistrationHostSystem()
+	if err != nil {
+		return err
+	}
+	system.userDataDir = userDataDir
+	var explicitExtensionID bool
+	if !remove {
 		_, explicitExtensionID, err = installRequestedExtensionID(extensionID, system)
 		if err != nil {
 			return err
@@ -557,10 +582,6 @@ func installNativeCommand(ctx context.Context, c config, args []string) error {
 			}
 			browsers = []string{browser}
 		} else {
-			system, err := nativeRegistrationHostSystem()
-			if err != nil {
-				return err
-			}
 			var warnings []string
 			browsers, warnings, err = installDetectBrowsers(ctx, c, extensionID, system)
 			if err != nil {
@@ -576,7 +597,7 @@ func installNativeCommand(ctx context.Context, c config, args []string) error {
 			return err
 		}
 		if remove {
-			paths, err := uninstallNativeRegistration(ctx, c, browser)
+			paths, err := uninstallNativeRegistrationWithSystem(ctx, c, browser, system)
 			if err != nil {
 				return err
 			}
@@ -587,13 +608,9 @@ func installNativeCommand(ctx context.Context, c config, args []string) error {
 			var result object
 			var err error
 			if !explicitExtensionID {
-				var system nativeRegistrationSystem
-				system, err = nativeRegistrationHostSystem()
-				if err == nil {
-					result, err = installDetectedBrowser(ctx, c, browser, extensionID, system)
-				}
+				result, err = installDetectedBrowser(ctx, c, browser, extensionID, system)
 			} else {
-				result, err = installNativeRegistration(ctx, c, browser, extensionID, preserve)
+				result, err = installNativeRegistrationWithSystem(ctx, c, browser, extensionID, preserve, system)
 			}
 			if err != nil {
 				return err

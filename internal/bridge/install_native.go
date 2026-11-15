@@ -49,6 +49,13 @@ func installManifestDir(platform, home, browser string, env func(string) string)
 	if platform == "darwin" && definition.macNativeMessagingDir != "" {
 		return filepath.Join(home, "Library", "Application Support", filepath.FromSlash(definition.macNativeMessagingDir), "NativeMessagingHosts")
 	}
+	if platform == "linux" && definition.linuxNativeMessagingDir != "" {
+		base := env("CHROME_CONFIG_HOME")
+		if base == "" {
+			base = xdgDirectory(env, "XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+		}
+		return filepath.Join(base, filepath.FromSlash(definition.linuxNativeMessagingDir), "NativeMessagingHosts")
+	}
 	if platform == "windows" {
 		bridgeHome := env("BROWSER_BRIDGE_HOME")
 		if bridgeHome == "" {
@@ -77,8 +84,12 @@ func installLegacyManifestDir(platform, home, browser string, env func(string) s
 		sub = definition.macDir
 	case "windows":
 		base = env("LOCALAPPDATA")
+		fallback := "Local"
+		if definition.windowsRoaming {
+			base, fallback = env("APPDATA"), "Roaming"
+		}
 		if base == "" {
-			base = filepath.Join(home, "AppData", "Local")
+			base = filepath.Join(home, "AppData", fallback)
 		}
 		sub = definition.windowsDir
 	default:
@@ -276,10 +287,10 @@ func installNativeRegistrationWithOrigins(ctx context.Context, c config, browser
 		return nil, err
 	}
 	manifest := object{}
-	// Migration reads the obsolete Brave-only registration, but never resolves
-	// diagnostics to it: Brave's upstream path override uses Chrome's directory.
+	// Read a legacy browser-only registration for migration, but resolve
+	// diagnostics to the directory the browser actually queries.
 	sourcePath := manifestPath
-	if system.macSharedBrowser(browser) && browser == "brave" && !installExists(manifestPath) {
+	if system.macSharedConsumer(browser) && !installExists(manifestPath) {
 		legacy := system.candidates(c, browser)[1]
 		if installExists(legacy) {
 			sourcePath = legacy
@@ -298,31 +309,32 @@ func installNativeRegistrationWithOrigins(ctx context.Context, c config, browser
 		return nil, err
 	}
 	launcherPath, launcher := installLauncherForPlatform(c, executable, system.platform)
-	owners, err := system.macRegistrationOwners(c, browser, manifestPath, manifest)
+	owners, err := system.registrationOwners(c, browser, manifestPath, manifest)
 	if err != nil {
 		return nil, err
 	}
-	if system.macSharedBrowser(browser) {
+	if system.sharedRegistration(browser) {
 		// Never redirect a shared host belonging to a different bridge home.
 		// Ordinary unmarked Chrome upgrades retain the legacy migration path.
-		if sourcePath == manifestPath && len(manifest) > 0 && (browser == "brave" || installContains(owners, "brave") || manifest[macRegistrationOwnersKey] != nil) &&
+		sharedMacOwner := system.macSharedConsumer(browser) || system.macSharedBrowser(browser) && len(owners) > 1
+		if sourcePath == manifestPath && len(manifest) > 0 && (sharedMacOwner || manifest[nativeRegistrationOwnersKey] != nil) &&
 			(manifest.text("name") != hostName || manifest.text("type") != "stdio" || manifest.text("path") != launcherPath) {
-			return nil, fmt.Errorf("shared Chrome/Brave native host %s belongs to another installation; refusing to redirect it", manifestPath)
+			return nil, fmt.Errorf("shared native host %s belongs to another installation; refusing to redirect it", manifestPath)
 		}
-		preserveOrigins = true
-		// Both browsers can authorize different BBX IDs at this shared path.
-		// Keep the existing origins even for an explicit single-browser install.
+		preserveOrigins = preserveOrigins || system.macSharedBrowser(browser) || len(owners) > 1 || len(owners) == 1 && !installContains(owners, browser)
+		// Shared consumers can authorize different BBX IDs at this path.
+		// An explicit scoped install must not discard another owner's origins.
 		if !installContains(owners, browser) {
 			owners = append(owners, browser)
 		}
-		manifest[macRegistrationOwnersKey] = value(owners)
-		if sourcePath == manifestPath && browser == "brave" {
+		manifest[nativeRegistrationOwnersKey] = value(owners)
+		if sourcePath == manifestPath && system.macSharedConsumer(browser) {
 			legacyPath := system.candidates(c, browser)[1]
 			if data, readErr := os.ReadFile(legacyPath); readErr == nil {
 				legacy, decodeErr := decodeObject(data)
 				var legacyOrigins []string
 				if decodeErr != nil || json.Unmarshal(legacy["allowed_origins"], &legacyOrigins) != nil {
-					return nil, fmt.Errorf("cannot migrate invalid Brave manifest %s", legacyPath)
+					return nil, fmt.Errorf("cannot migrate invalid %s manifest %s", browser, legacyPath)
 				}
 				for _, origin := range legacyOrigins {
 					id, parseErr := installParseExtensionID(origin)
@@ -333,6 +345,41 @@ func installNativeRegistrationWithOrigins(ctx context.Context, c config, browser
 				}
 			} else if !errors.Is(readErr, os.ErrNotExist) {
 				return nil, readErr
+			}
+		}
+	}
+	if system.platform == "windows" && system.sharedRegistration(browser) && preserveOrigins {
+		// A browser may already have its own manifest from an older installer
+		// even though its primary registry is now shared with other browsers.
+		// Carry that allowlist into the shared host instead of silently losing it.
+		for _, candidate := range system.candidates(c, browser) {
+			if nativeManifestPathsEqual(candidate, manifestPath) {
+				continue
+			}
+			data, readErr := os.ReadFile(candidate)
+			if errors.Is(readErr, os.ErrNotExist) {
+				continue
+			}
+			if readErr != nil {
+				return nil, readErr
+			}
+			previous, decodeErr := decodeObject(data)
+			if decodeErr != nil {
+				return nil, fmt.Errorf("cannot migrate invalid native manifest %s: %w", candidate, decodeErr)
+			}
+			if previous.text("name") != hostName {
+				continue
+			}
+			var previousOrigins []string
+			if err := json.Unmarshal(previous["allowed_origins"], &previousOrigins); err != nil {
+				return nil, fmt.Errorf("invalid allowed_origins in %s: %w", candidate, err)
+			}
+			for _, origin := range previousOrigins {
+				id, parseErr := installParseExtensionID(origin)
+				if parseErr != nil {
+					return nil, parseErr
+				}
+				additionalIDs = append(additionalIDs, id)
 			}
 		}
 	}

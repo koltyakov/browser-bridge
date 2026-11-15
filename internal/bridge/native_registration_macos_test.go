@@ -171,7 +171,7 @@ func TestMacBraveRegistrationRefusesToClobberSharedHost(t *testing.T) {
 				installTestWrite(t, paths[0], string(original))
 			case "invalid-owners":
 				entry, _ := decodeObject(original)
-				entry[macRegistrationOwnersKey] = value([]string{"unknown"})
+				entry[nativeRegistrationOwnersKey] = value([]string{"unknown"})
 				original = value(entry)
 				installTestWrite(t, paths[0], string(original))
 			case "symlink":

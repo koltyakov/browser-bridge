@@ -134,7 +134,7 @@ To match your extension's release line, use the install command shown in its set
 
 Generated MCP configurations use the Go binary's absolute path, not npm, npx, Node, or a `bbx` shim. Native messaging launchers also execute the binary directly.
 
-If the extension does not connect, run `bbx install` to detect and register its browsers. Register only a specific browser with `bbx install --browser chrome|edge|brave|chromium|arc`. See [browser detection](https://github.com/koltyakov/browser-bridge/blob/main/docs/native-cli.md#download-manually) for profile discovery and fallback behavior.
+If the extension does not connect, run `bbx install` to detect and register its browsers, including Chrome Beta, Dev, Canary, and Chrome for Testing. Register one explicitly with, for example, `bbx install --browser chrome-canary`. Edge, Brave, Chromium, Arc, Vivaldi, and Opera also have installation targets. See [browser detection](https://github.com/koltyakov/browser-bridge/blob/main/docs/native-cli.md#download-manually) for profile discovery, custom user-data directories, and fallback behavior.
 
 On Ubuntu, Chromium is commonly installed as a strict snap, and Flatpak Chromium is similarly sandboxed. If native messaging stays disconnected there, use a non-sandboxed Chromium-based browser such as Google Chrome, Brave, or Edge.
 

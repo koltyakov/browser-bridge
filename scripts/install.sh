@@ -22,7 +22,7 @@ if ! printf '%s\n' "$extension_id" | grep -Eq '^[a-z]{32}$'; then
   exit 1
 fi
 # BEGIN GENERATED BROWSERS
-case "$browser" in ''|chrome|edge|brave|chromium|arc) ;; *) echo 'Unsupported browser' >&2; exit 1;; esac
+case "$browser" in ''|chrome|edge|brave|chromium|arc|chrome-beta|chrome-dev|chrome-canary|chrome-for-testing|vivaldi|opera) ;; *) echo 'Unsupported browser' >&2; exit 1;; esac
 # END GENERATED BROWSERS
 # BEGIN GENERATED PLATFORMS
 case "$(uname -s):$(uname -m)" in
