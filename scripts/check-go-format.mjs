@@ -1,7 +1,7 @@
 // @ts-check
 import { spawnSync } from 'node:child_process';
 
-const result = spawnSync('gofmt', ['-l', 'cmd', 'internal'], {
+const result = spawnSync('gofmt', ['-l', 'cmd', 'internal', 'tests'], {
   encoding: 'utf8',
   stdio: ['ignore', 'pipe', 'inherit'],
 });

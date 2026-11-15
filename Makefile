@@ -36,7 +36,7 @@ endif
 	check-release-version check check-extension-zip package-extension package-native \
 	package-native-all package-npm pack pack-dry-run release-check prepublish-check \
 	publish-native publish-release publish-npm fixture-browser fixture-interaction bench-interaction \
-	run status daemon install-manifest install sync-version bench-runtime bench-npm-launch test-visual-live test-inspection-live test-workflows-live test-chaos-live
+	run status daemon install-manifest install sync-version bench-runtime bench-npm-launch test-visual-live test-inspection-live test-workflows-live test-chaos-live test-arc-live
 
 help: ## Show available tasks; the default when running make
 	@"$(NODE)" -e "const fs = require('node:fs'); for (const m of fs.readFileSync('Makefile', 'utf8').matchAll(/^([a-z][a-z-]+):.*?## (.+)$$/gm)) console.log(m[1].padEnd(24) + m[2]);"
@@ -77,7 +77,7 @@ format-js: ## Format JavaScript, TypeScript, and project configuration
 	$(EXEC) oxfmt .
 
 format-go: ## Format Go source
-	gofmt -w cmd internal
+	gofmt -w cmd internal tests
 
 check-go-format: ## Check Go formatting without changing files
 	"$(NODE)" scripts/check-go-format.mjs
@@ -104,6 +104,9 @@ test-workflows-live: build-extension build-native ## Public demo forms and multi
 
 test-chaos-live: build-extension build-native ## Disposable Linux headed-Chrome recovery/leak tests; set BBX_CHAOS_CHROME
 	"$(NODE)" --import tsx --test --test-concurrency=1 tests/live/chaos.test.ts
+
+test-arc-live: build-extension build-native ## Isolated macOS Arc endpoint/native/bridge stages; set BBX_ARC_BROWSER
+	$(GO) run ./tests/live/arc-runner $(ARGS)
 
 test-go: ## Run Go tests with coverage and the race detector where supported
 	"$(NODE)" -e "require('node:fs').mkdirSync('dist/coverage', {recursive: true})"

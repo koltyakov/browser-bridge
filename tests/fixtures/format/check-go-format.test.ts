@@ -17,14 +17,15 @@ test(
     t.after(() => fs.rm(directory, { recursive: true, force: true }));
     await fs.mkdir(path.join(directory, 'cmd'));
     await fs.mkdir(path.join(directory, 'internal'));
-    const file = path.join(directory, 'cmd', 'main.go');
+    await fs.mkdir(path.join(directory, 'tests'));
+    const file = path.join(directory, 'tests', 'fixture.go');
     const unformatted = 'package main\nfunc main(){println("fixture")}\n';
     await fs.writeFile(file, unformatted);
 
     const failed = spawnSync(process.execPath, [script], { cwd: directory, encoding: 'utf8' });
     assert.equal(failed.status, 1);
     assert.match(failed.stderr, /Go files need formatting:/u);
-    assert(failed.stderr.includes(path.join('cmd', 'main.go')));
+    assert(failed.stderr.includes(path.join('tests', 'fixture.go')));
     assert.match(failed.stderr, /Run make format-go/u);
     assert.doesNotMatch(failed.stderr, /Error:|\bat .*:\d+:\d+/u);
     assert.equal(await fs.readFile(file, 'utf8'), unformatted);

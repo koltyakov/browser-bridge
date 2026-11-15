@@ -1,5 +1,46 @@
 # Live browser verification
 
+## Isolated macOS Arc verification
+
+The original browser-matrix runner was a disposable diagnostic. Its maintained
+Arc replacement is `tests/live/arc-runner`, invoked explicitly with:
+
+```sh
+BBX_ARC_BROWSER="/Applications/Arc.app/Contents/MacOS/Arc" make test-arc-live
+```
+
+The runner refuses to reuse an already-running Arc instance. It creates a fresh
+run directory under `dist/arc-live`, redirects both `HOME` and
+`CFFIXED_USER_HOME`, and sanitizes inherited BBX destinations and credentials.
+It does not install into the user's browser directories, use the real keychain
+as a fallback, disable security checks, or enable a browsing access grant.
+
+Endpoint discovery reads only newly appended, complete startup-log lines and
+port files that did not exist before launch. Before any HTTP or WebSocket
+connection, the endpoint must match a fresh `DevToolsActivePort` inside the
+disposable run. This permits Arc's isolated-home `Arc/User Data` root when it
+ignores the requested Chromium profile, but never scans or attaches to the real
+default profile. Symlink escapes, endpoint mismatches, non-loopback endpoints,
+HTTP redirects, and ambiguous startup endpoints fail closed.
+
+`result.json` reports `endpointDiscovery`, `profileIsolation`,
+`endpointConnection`, `manifestCreation`, `nativeHostLookup`, and
+`bridgeConnection` separately. Each stage is `passed`, `failed`, or `not_run`.
+A log announcement cannot establish a connection. Manifest creation cannot
+establish lookup: a private diagnostic extension must receive the per-run
+nonce and expected location from an executed native host. Only then does the
+runner copy the shipped extension with a private ID, start an isolated BBX
+daemon, and check its observed extension connection. This is not a full
+page-read, input, or reinstall-recovery pass.
+
+The owned process groups and temporary manifests are cleaned up; the disposable
+home and logs remain as evidence. Arc may stall before DevTools in a fresh home
+without a default keychain. That is a discovery failure with later stages
+`not_run`, not proof of a native-host failure. Optional deadlines can be passed
+with `ARGS='--startup-timeout=30s --stage-timeout=20s'`. Missing prerequisites or
+failed stages return a nonzero exit status. Focused Go tests run in `make test`
+without launching a browser.
+
 ## Disposable headed-Chrome fault tests
 
 `make test-chaos-live` is a separate, opt-in Linux suite. Use Chrome for Testing or non-sandboxed-package Chromium that supports `--load-extension`, as a non-root user, on a disposable machine or display. It never attaches to a running browser. Snap/Flatpak builds are unsuitable for the native host. macOS and Windows are deliberately unsupported here because native-host registration cannot yet be isolated by this harness on those platforms.

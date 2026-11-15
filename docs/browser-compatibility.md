@@ -118,11 +118,14 @@ lookup result can be inferred from the manifest's presence. The follow-up
 preserved the existing default-root endpoint file, BBX manifests, and launcher,
 and did not change keychains or security settings.
 
-Future runner checks should consider fresh startup-log endpoints as well as the
-expected port file, verify the actual isolated data root before connecting, and
-report discovery, HTTP/WebSocket connection, native-host lookup, and bridge
-connection separately. They must not silently attach to a default profile when
-the requested disposable root is ignored.
+The maintained opt-in Arc runner now checks fresh startup-log endpoints and
+new port files, verifies the actual isolated data root before connecting, and
+reports discovery, isolation, HTTP/WebSocket connection, manifest creation,
+native-host lookup, and bridge connection separately. It never silently
+attaches to a real default profile when the requested disposable root is
+ignored. See [live verification](../tests/live/README.md) for
+`make test-arc-live` and its focused, browser-free regression tests. This runner
+change does not upgrade Arc's live verification status above.
 
 ## Limits and remaining checks
 
