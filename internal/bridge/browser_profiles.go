@@ -32,10 +32,19 @@ func (s nativeRegistrationSystem) browserProfileRoots(browser string) ([]string,
 		local = filepath.Join(s.home, "AppData", "Local")
 	}
 	packages := filepath.Join(local, "Packages")
-	entries, err := os.ReadDir(packages)
+	// Windows reports ReadDir(file) as PATH_NOT_FOUND. Check the existing
+	// path's type before interpreting that error as an absent packages root.
+	info, err := os.Stat(packages)
 	if errors.Is(err, os.ErrNotExist) {
 		return roots, nil
 	}
+	if err != nil {
+		return roots, fmt.Errorf("inspect browser packages in %s: %w", packages, err)
+	}
+	if !info.IsDir() {
+		return roots, fmt.Errorf("browser packages path is not a directory: %s", packages)
+	}
+	entries, err := os.ReadDir(packages)
 	if err != nil {
 		return roots, fmt.Errorf("inspect browser packages in %s: %w", packages, err)
 	}

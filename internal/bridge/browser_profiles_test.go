@@ -336,10 +336,13 @@ func TestBrowserProfileDiscoveryErrorsAndCancellation(t *testing.T) {
 	if _, err := f.system.browserProfileRoots("unknown"); err == nil {
 		t.Fatal("unknown browser accepted")
 	}
+	if roots, err := f.system.browserProfileRoots("arc"); err != nil || len(roots) != 1 {
+		t.Fatalf("missing packages root rejected: roots=%v err=%v", roots, err)
+	}
 	packages := filepath.Join(f.system.env("LOCALAPPDATA"), "Packages")
 	installTestWrite(t, packages, "not a directory")
-	if _, err := f.system.browserProfileRoots("arc"); err == nil {
-		t.Fatal("package enumeration error hidden")
+	if roots, err := f.system.browserProfileRoots("arc"); err == nil || !strings.Contains(err.Error(), "not a directory") || len(roots) != 1 {
+		t.Fatalf("malformed packages root did not retain fallback roots and an error: roots=%v err=%v", roots, err)
 	}
 	writeProfileExtension(t, installBrowserProfileDir("windows", f.system.home, "arc", f.system.env), publishedExtensionID)
 	if installed, err := f.system.browserHasExtension(context.Background(), "arc", publishedExtensionID); err != nil || !installed {

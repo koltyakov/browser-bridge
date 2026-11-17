@@ -189,7 +189,9 @@ func TestArcRejectsReplacedTruncatedAndAmbiguousStartupLogs(t *testing.T) {
 				if err := os.Rename(sources.logPath, sources.logPath+".old"); err != nil {
 					t.Fatal(err)
 				}
-				writeTestFile(t, sources.logPath, "DevTools listening on "+testEndpoint+"\n")
+				// Keep a valid endpoint beyond the captured offset so a lazy
+				// identity check would actually select the replacement's URL.
+				writeTestFile(t, sources.logPath, "prelaunch data\nDevTools listening on "+testEndpoint+"\n")
 			case "truncated":
 				writeTestFile(t, sources.logPath, "")
 			case "ambiguous":

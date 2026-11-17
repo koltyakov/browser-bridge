@@ -10,6 +10,17 @@ const installer = fileURLToPath(new URL('../../../scripts/install.ps1', import.m
 const powershell = process.platform === 'win32' ? 'powershell.exe' : 'pwsh';
 const available = spawnSync(powershell, ['-NoProfile', '-Command', 'exit 0']).status === 0;
 
+// Restricted permits command text but rejects dot-sourcing .ps1 files. Load the
+// unchanged installer as command text, as the documented Windows installer does.
+// -Help defines the real helpers and returns before downloads or installation.
+const loadInstallerHelpers = `
+$policyBefore = Get-ExecutionPolicy -List | ConvertTo-Json -Compress
+. ([scriptblock]::Create([System.IO.File]::ReadAllText($env:INSTALLER))) -Help
+if ((Get-ExecutionPolicy -List | ConvertTo-Json -Compress) -ne $policyBefore) {
+  throw 'Loading installer helpers changed execution policy'
+}
+`;
+
 test(
   'PowerShell installer prepends its directory and removes duplicate PATH entries',
   { skip: !available && 'PowerShell is not installed' },
@@ -20,8 +31,7 @@ test(
         '-NoProfile',
         '-NonInteractive',
         '-Command',
-        `
-. $env:INSTALLER -Help
+        `${loadInstallerHelpers}
 $directory = 'C:\\Users\\Test User\\.local\\bin'
 foreach ($current in @('', 'C:\\Volta\\bin', "C:\\Volta\\bin;$directory;C:\\Other;$directory")) {
   $updated = Get-PathWithInstallDirectory $current $directory
@@ -53,8 +63,7 @@ test(
           '-NoProfile',
           '-NonInteractive',
           '-Command',
-          `
-. $env:INSTALLER -Help
+          `${loadInstallerHelpers}
 function Get-Command {
   param($Name, $CommandType, $ErrorAction)
   if ($Name -eq 'volta') {
@@ -96,10 +105,12 @@ Remove-LegacyNpmPackage
         }
       );
       assert.equal(result.status, 0, result.stderr || result.stdout);
+      // Windows PowerShell wraps warning text to its host's output width.
+      const output = result.stdout.replace(/\s+/gu, ' ');
       if (scenario === 'installed' || scenario === 'failed') {
-        assert.match(result.stdout, /volta uninstall @browserbridge\/bbx/);
+        assert.match(output, /volta uninstall @browserbridge\/bbx/);
         assert.match(
-          result.stdout,
+          output,
           scenario === 'installed'
             ? /has not been removed and may shadow/
             : /Skipping automatic npm/
@@ -107,7 +118,7 @@ Remove-LegacyNpmPackage
         assert.equal(await fs.readFile(path.join(legacy, 'package.json'), 'utf8'), '{}');
         await assert.rejects(fs.access(path.join(directory, 'npm-calls.txt')));
       } else {
-        assert.doesNotMatch(result.stdout, /volta uninstall/);
+        assert.doesNotMatch(output, /volta uninstall/);
         await assert.rejects(fs.access(legacy));
         assert.deepEqual(
           (await fs.readFile(path.join(directory, 'npm-calls.txt'), 'utf8')).trim().split(/\r?\n/u),

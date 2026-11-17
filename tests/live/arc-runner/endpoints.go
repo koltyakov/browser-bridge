@@ -33,10 +33,17 @@ type launchSources struct {
 	oldPortFile map[string]bool
 }
 
-// Capture before launching. Only appended bytes from this exact log inode and
+// Capture before launching. Only appended bytes from this exact log file and
 // newly created port files can identify the process launched by this runner.
 func captureSources(root, logPath string, profiles []string) (launchSources, error) {
-	info, err := os.Stat(logPath)
+	file, err := os.Open(logPath)
+	if err != nil {
+		return launchSources{}, err
+	}
+	defer func() { _ = file.Close() }()
+	// A handle captures file identity now. Windows path-based Stat defers
+	// resolving identity until SameFile, when this path may name a replacement.
+	info, err := file.Stat()
 	if err != nil {
 		return launchSources{}, err
 	}
