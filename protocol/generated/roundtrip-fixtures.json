@@ -5647,6 +5647,9 @@
       "interactiveOnly": false,
       "source": "cdp",
       "format": "tree",
+      "scope": "auto",
+      "find": "wire-✓",
+      "context": 1.25,
       "future_extension": {
         "arbitrary": [
           null,
@@ -5668,6 +5671,175 @@
       "interactiveOnly": false,
       "source": "dom",
       "format": "tree",
+      "scope": "auto",
+      "find": "wire-✓",
+      "context": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "DomOutlineNode",
+    "valid": true,
+    "input": {
+      "ref": "wire-✓",
+      "role": "wire-✓",
+      "name": "wire-✓",
+      "depth": 1.25,
+      "states": [
+        "wire-✓"
+      ],
+      "matched": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "DomOutlineScope",
+    "valid": true,
+    "input": {
+      "requested": "auto",
+      "resolved": "modal",
+      "boundary": "document",
+      "frameId": 1.25,
+      "selector": "wire-✓",
+      "rootRef": "wire-✓",
+      "scanned": 1.25,
+      "fallbackReason": "modal_missing",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "DomOutlineCompleteness",
+    "valid": true,
+    "input": {
+      "complete": false,
+      "reasons": [
+        "maxNodes"
+      ],
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "DomOutlineSearch",
+    "valid": true,
+    "input": {
+      "query": "wire-✓",
+      "context": 1.25,
+      "matchCount": 1.25,
+      "returnedMatches": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "DomOutlineResult",
+    "valid": true,
+    "input": {
+      "source": "dom",
+      "format": "tree",
+      "nodes": [
+        {
+          "ref": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "depth": 1.25,
+          "states": [
+            "wire-✓"
+          ],
+          "matched": false,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "outline": "wire-✓",
+      "count": 1.25,
+      "scanned": 1.25,
+      "truncated": false,
+      "scope": {
+        "requested": "auto",
+        "resolved": "modal",
+        "boundary": "document",
+        "frameId": 1.25,
+        "selector": "wire-✓",
+        "rootRef": "wire-✓",
+        "scanned": 1.25,
+        "fallbackReason": "modal_missing",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "search": {
+        "query": "wire-✓",
+        "context": 1.25,
+        "matchCount": 1.25,
+        "returnedMatches": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "completeness": {
+        "complete": false,
+        "reasons": [
+          "maxNodes"
+        ],
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
       "future_extension": {
         "arbitrary": [
           null,

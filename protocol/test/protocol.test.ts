@@ -1088,6 +1088,44 @@ test('normalizeAccessibilityTreeParams preserves explicit DOM tree format', () =
   assert.equal(normalizeAccessibilityTreeParams({ source: 'cdp' }).format, undefined);
 });
 
+test('DOM outline scope and literal search are opt-in, bounded, and source-specific', () => {
+  const normalized = normalizeAccessibilityTreeParams({
+    source: 'dom',
+    scope: 'auto',
+    find: ' Pay.* ',
+  });
+  assert.equal(normalized.scope, 'auto');
+  assert.equal(normalized.find, ' Pay.* ');
+  assert.equal(normalized.context, 1);
+  assert.equal(
+    normalizeAccessibilityTreeParams({ source: 'dom', find: 'Pay', context: 0 }).context,
+    0
+  );
+  for (const params of [
+    { scope: 'auto' },
+    { source: 'cdp', find: 'Pay' },
+    { source: 'dom', scope: 'invalid' },
+    { source: 'dom', find: '' },
+    { source: 'dom', find: '  ' },
+    { source: 'dom', find: 12 },
+    { source: 'dom', find: 'x'.repeat(201) },
+    { source: 'dom', context: 1 },
+    { source: 'dom', find: 'Pay', context: -1 },
+    { source: 'dom', find: 'Pay', context: 4 },
+    { source: 'dom', find: 'Pay', context: 1.5 },
+  ]) {
+    assert.throws(
+      () =>
+        normalizeAccessibilityTreeParams(
+          params as unknown as Parameters<typeof normalizeAccessibilityTreeParams>[0]
+        ),
+      { code: 'INVALID_REQUEST' }
+    );
+  }
+  assert.equal(normalizeAccessibilityTreeParams({}).scope, undefined);
+  assert.equal(normalizeAccessibilityTreeParams({ source: 'dom' }).find, undefined);
+});
+
 test('normalizeAccessibilityTreeParams makes CDP outlines compact unless opted out', () => {
   assert.equal(normalizeAccessibilityTreeParams({ format: 'outline' }).compact, true);
   assert.equal(

@@ -299,6 +299,23 @@
             "type": "string",
             "enum": ["outline", "tree"]
           },
+          "scope": {
+            "type": "string",
+            "enum": ["auto", "modal", "main", "document"],
+            "description": "DOM accessibility outlines only. Opt-in document-local scope; selector overrides it. Ambiguous/missing scopes explicitly fall back to document."
+          },
+          "find": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "DOM accessibility outlines only. Literal case-insensitive role/name substring; reads one resolved document, not other frames."
+          },
+          "context": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3,
+            "description": "Requires find. Include this many semantic siblings on either side and ancestors; default 1, 0 returns only matches."
+          },
           "textBudget": {
             "description": "Max chars of text content per node (default: 600)",
             "type": "integer",

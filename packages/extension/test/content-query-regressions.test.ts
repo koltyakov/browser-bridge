@@ -4,7 +4,7 @@ import { setImmediate } from 'node:timers/promises';
 import { withDocument, type DocumentContext } from '../../../tests/_helpers/dom.ts';
 import { extensionFile } from '../../../tests/_helpers/extensionBuild.ts';
 
-type OutlineNode = { ref: string; role: string; name: string; depth: number; states: string[] };
+type OutlineNode = import('../../../protocol/src/types.js').DomOutlineNode;
 type FindResult = {
   nodes: Array<{ elementRef: string; name: string; visible?: boolean }>;
   found: boolean;
@@ -15,15 +15,9 @@ type FindResult = {
   hiddenMatches?: number;
 };
 type QueryApi = {
-  getAccessibilityOutline: (params: Record<string, unknown>) => {
-    source: string;
-    format: string;
-    nodes?: OutlineNode[];
-    outline?: string;
-    count: number;
-    scanned: number;
-    truncated: boolean;
-  };
+  getAccessibilityOutline: (
+    params: Record<string, unknown>
+  ) => import('../../../protocol/src/types.js').DomOutlineResult;
   domQuery: (params: Record<string, unknown>) => {
     nodes: Array<{ tag: string }>;
     matchCount?: number;
@@ -540,6 +534,304 @@ test('an outline ending exactly at the scan limit remains complete', async () =>
     assert.equal(result.scanned, 20000);
     assert.equal(result.truncated, false);
   });
+});
+
+test('DOM autoscope chooses a unique modal before main and keeps explicit overrides', async () => {
+  await withQuery(
+    '<header><button>Global</button></header><main id="app" aria-label="App"><button>Save</button></main><div role="dialog" aria-modal="true" aria-label="Confirm"><button>Accept</button></div><div role="dialog" aria-label="Nonmodal"><button>Other</button></div><div role="dialog" aria-modal="true" style="display:none">Hidden</div>',
+    ({ query, registry, document }) => {
+      const modal = query.getAccessibilityOutline({ scope: 'auto', format: 'tree' });
+      assert.equal(modal.scope?.resolved, 'modal');
+      assert.equal(modal.scope?.boundary, 'document');
+      assert.equal(modal.scope?.fallbackReason, undefined);
+      assert.deepEqual(
+        modal.nodes?.map((node) => node.name),
+        ['Confirm', 'Accept']
+      );
+      assert.deepEqual(modal.completeness, { complete: true, reasons: [] });
+      assert.equal(
+        registry.getRequiredElement(modal.scope!.rootRef!),
+        document.querySelector('[aria-label="Confirm"]')
+      );
+      const main = query.getAccessibilityOutline({ scope: 'main' });
+      assert.equal(main.scope?.resolved, 'main');
+      assert.match(main.outline!, /Save/);
+      assert.doesNotMatch(main.outline!, /Global|Accept/);
+      const selected = query.getAccessibilityOutline({ scope: 'auto', selector: '#app' });
+      assert.equal(selected.scope?.requested, 'auto');
+      assert.equal(selected.scope?.resolved, 'selector');
+      assert.equal(selected.scope?.scanned, 0);
+      const whole = query.getAccessibilityOutline({ scope: 'document' });
+      assert.equal(whole.scope?.resolved, 'document');
+      assert.match(whole.outline!, /Global/);
+      const legacy = query.getAccessibilityOutline({});
+      assert.equal(legacy.scope, undefined);
+      assert.equal(legacy.completeness, undefined);
+      assert.equal(legacy.outline, whole.outline);
+    }
+  );
+});
+
+test('missing or ambiguous outline landmarks fall back explicitly instead of guessing', async () => {
+  for (const [body, scope, reason] of [
+    ['<button>Plain</button>', 'auto', 'main_missing'],
+    [
+      '<main><button>One</button></main><main><button>Two</button></main>',
+      'auto',
+      'main_ambiguous',
+    ],
+    ['<main><button>One</button></main>', 'modal', 'modal_missing'],
+    [
+      '<div role="dialog" aria-modal="true">One</div><div role="alertdialog" aria-modal="true">Two</div><main>App</main>',
+      'auto',
+      'modal_ambiguous',
+    ],
+    ['<button>Plain</button>', 'main', 'main_missing'],
+  ] as const) {
+    await withQuery(body, ({ query }) => {
+      const result = query.getAccessibilityOutline({ scope });
+      assert.equal(result.scope?.resolved, 'document');
+      assert.equal(result.scope?.fallbackReason, reason);
+      assert.equal(result.completeness?.complete, true);
+    });
+  }
+});
+
+test('nonmodal dialogs do not override main and native top-layer dialogs can scope outlines', async () => {
+  await withQuery(
+    '<main>App</main><dialog open aria-label="Details"><button>Done</button></dialog>',
+    ({ query, document }) => {
+      assert.equal(query.getAccessibilityOutline({ scope: 'auto' }).scope?.resolved, 'main');
+      const dialog = document.querySelector('dialog')!;
+      const matches = dialog.matches.bind(dialog);
+      Reflect.set(
+        dialog,
+        'matches',
+        (selector: string) => selector === ':modal' || matches(selector)
+      );
+      assert.equal(query.getAccessibilityOutline({ scope: 'auto' }).scope?.resolved, 'modal');
+    }
+  );
+});
+
+test('literal outline search retains bounded siblings and ancestors but no other sections', async () => {
+  await withQuery(
+    '<main aria-label="Account"><section aria-label="Billing"><button>Before</button><button>Pay.* [now]</button><button>After</button><button>Far</button></section><section aria-label="Other"><button>Unrelated</button></section></main>',
+    ({ query, registry, document }) => {
+      const result = query.getAccessibilityOutline({
+        scope: 'main',
+        find: 'PAY.* [now]',
+        format: 'tree',
+        context: 1,
+      });
+      assert.deepEqual(
+        result.nodes?.map((node) => node.name),
+        ['Account', 'Billing', 'Before', 'Pay.* [now]', 'After']
+      );
+      assert.equal(result.search?.matchCount, 1);
+      assert.equal(result.search?.returnedMatches, 1);
+      const match = result.nodes!.find((node) => node.matched)!;
+      assert.equal(registry.getRequiredElement(match.ref), document.querySelectorAll('button')[1]);
+      const none = query.getAccessibilityOutline({ find: 'Pay.+', context: 0 });
+      assert.equal(none.count, 0);
+      assert.equal(none.search?.matchCount, 0);
+      assert.equal(none.completeness?.complete, true);
+      const only = query.getAccessibilityOutline({ find: 'Pay.*', context: 0 });
+      assert.equal(only.count, 1);
+      assert.match(only.outline!, /\[match\]$/);
+      assert.equal(
+        query.getAccessibilityOutline({ find: 'BUTTON', context: 0 }).search?.matchCount,
+        5
+      );
+    }
+  );
+});
+
+test('outline search scans past nonmatches without evicting returned refs', async () => {
+  await withQuery(
+    '<main>' + '<button>Skip</button>'.repeat(5100) + '<button id="last">Needle</button></main>',
+    ({ query, registry, document }) => {
+      const result = query.getAccessibilityOutline({
+        find: 'Needle',
+        context: 1,
+        format: 'tree',
+        maxNodes: 10,
+      });
+      assert.equal(result.search?.matchCount, 1);
+      assert.equal(result.completeness?.complete, true);
+      for (const node of result.nodes!) assert(registry.getRequiredElement(node.ref));
+      const match = result.nodes!.find((node) => node.matched)!;
+      assert.equal(registry.getRequiredElement(match.ref), document.getElementById('last'));
+    }
+  );
+});
+
+test('scoped outline search reports node/depth/scan exhaustion without claiming absence', async () => {
+  await withQuery(
+    '<main>' +
+      '<button>Match</button>'.repeat(15) +
+      '<section aria-label="Deep"><nav><button>Hidden-depth</button></nav></section></main>',
+    ({ query }) => {
+      const bounded = query.getAccessibilityOutline({
+        find: 'Match',
+        context: 0,
+        maxNodes: 10,
+        format: 'tree',
+      });
+      assert.equal(bounded.count, 10);
+      assert.equal(bounded.search?.matchCount, 15);
+      assert.equal(bounded.search?.returnedMatches, 10);
+      assert.deepEqual(bounded.completeness, { complete: false, reasons: ['maxNodes'] });
+      const shallow = query.getAccessibilityOutline({
+        find: 'Hidden-depth',
+        maxDepth: 1,
+        context: 0,
+      });
+      assert.equal(shallow.search?.matchCount, 0);
+      assert.deepEqual(shallow.completeness, { complete: false, reasons: ['maxDepth'] });
+    }
+  );
+  await withQuery(
+    '<main>' + '<div></div>'.repeat(20001) + '<button>Beyond</button></main>',
+    ({ query }) => {
+      const result = query.getAccessibilityOutline({ scope: 'auto', find: 'Beyond', context: 0 });
+      assert.equal(result.scope?.fallbackReason, 'scope_scan_limit');
+      assert.equal(result.scope?.scanned, 20000);
+      assert.equal(result.scanned, 20000);
+      assert.deepEqual(result.completeness, {
+        complete: false,
+        reasons: ['scopeScanLimit', 'scanLimit'],
+      });
+    }
+  );
+});
+
+test('outline search preserves shadow-boundary context and hides password values', async () => {
+  await withQuery(
+    '<main aria-label="App"><div id="host" role="region" aria-label="Shadow"></div><input type="password" value="private-value"></main>',
+    ({ query, document, registry }) => {
+      const root = document.getElementById('host')!.attachShadow({ mode: 'open' });
+      root.innerHTML = '<button aria-label="Secret-free action">Run</button>';
+      const result = query.getAccessibilityOutline({
+        scope: 'auto',
+        find: 'Secret-free',
+        format: 'tree',
+      });
+      assert.deepEqual(
+        result.nodes?.map((node) => node.name),
+        ['App', 'Shadow', 'Secret-free action']
+      );
+      const match = result.nodes!.find((node) => node.matched)!;
+      assert.equal(registry.getRequiredElement(match.ref), root.querySelector('button'));
+      assert.equal(query.getAccessibilityOutline({ find: 'private-value', context: 0 }).count, 0);
+      assert.doesNotMatch(JSON.stringify(result), /private-value/);
+    }
+  );
+});
+
+test('bounded search context never crowds the matching target out of the response', async () => {
+  await withQuery(
+    '<main>' +
+      '<section aria-label="Ancestor">'.repeat(12) +
+      '<button>Needle</button>' +
+      '</section>'.repeat(12) +
+      '</main>',
+    ({ query }) => {
+      const result = query.getAccessibilityOutline({
+        find: 'Needle',
+        context: 3,
+        maxNodes: 10,
+        maxDepth: 20,
+        format: 'tree',
+      });
+      assert.equal(result.count, 10);
+      assert.equal(result.search?.returnedMatches, 1);
+      assert(result.nodes?.some((node) => node.name === 'Needle' && node.matched));
+      assert.deepEqual(result.completeness, { complete: false, reasons: ['maxNodes'] });
+    }
+  );
+});
+
+test('outline search reads beyond display names and reports bounded name inspection', async () => {
+  await withQuery(
+    `<main><button aria-label="${'x'.repeat(200)} Save">Other</button><button>${'y'.repeat(220)} Save</button><span id="label">${'z'.repeat(210)} Save</span><input aria-labelledby="label"></main>`,
+    ({ query }) => {
+      const result = query.getAccessibilityOutline({ find: 'Save', context: 0, format: 'tree' });
+      assert.equal(result.search?.matchCount, 3);
+      assert.equal(result.completeness?.complete, true);
+      assert(result.nodes?.every((node) => node.name.length <= 80));
+    }
+  );
+  for (const body of [
+    `<button aria-label="${'x'.repeat(2001)} Save">Other</button>`,
+    `<button>${' '.repeat(2001)}Save</button>`,
+    `<span id="label">${'x'.repeat(2001)} Save</span><input aria-labelledby="label">`,
+    `<button>${'<span>a</span>'.repeat(1499)}<span>Save</span></button>`,
+  ]) {
+    await withQuery(body, ({ query }) => {
+      const result = query.getAccessibilityOutline({ find: 'Save', context: 0 });
+      assert.equal(result.search?.matchCount, 0);
+      assert.deepEqual(result.completeness, { complete: false, reasons: ['nameLimit'] });
+    });
+  }
+});
+
+test('a capacity-sized scoped search retains every returned ref including the scope root', async () => {
+  await withQuery(
+    '<main id="app">' +
+      Array.from({ length: 5000 }, (_, index) => `<button>Needle ${index}</button>`).join('') +
+      '</main><aside>' +
+      '<button>Other</button>'.repeat(4998) +
+      '</aside>',
+    ({ query, registry, document }) => {
+      query.getAccessibilityOutline({ selector: '#app', find: 'Needle 0', context: 0 });
+      query.getAccessibilityOutline({ selector: 'aside', interactiveOnly: true, maxNodes: 5000 });
+      for (let repeat = 0; repeat < 2; repeat += 1) {
+        const result = query.getAccessibilityOutline({
+          scope: 'main',
+          find: 'button',
+          context: 0,
+          maxNodes: 5000,
+          format: 'tree',
+        });
+        assert.equal(result.count, 4999);
+        assert.equal(result.search?.returnedMatches, 4999);
+        assert.deepEqual(result.completeness, { complete: false, reasons: ['maxNodes'] });
+        assert.equal(
+          registry.getRequiredElement(result.scope!.rootRef!),
+          document.getElementById('app')
+        );
+        for (const node of result.nodes!)
+          assert.equal(registry.getRequiredElement(node.ref).tagName, 'BUTTON');
+      }
+    }
+  );
+});
+
+test('reserving the scope root discards context before a final matching node', async () => {
+  await withQuery(
+    '<main>' +
+      Array.from(
+        { length: 5000 },
+        (_, index) => `<button>${index % 4 === 3 ? 'Needle' : 'Context'}</button>`
+      ).join('') +
+      '</main>',
+    ({ query }) => {
+      const result = query.getAccessibilityOutline({
+        scope: 'main',
+        find: 'Needle',
+        context: 3,
+        interactiveOnly: true,
+        maxNodes: 5000,
+        format: 'tree',
+      });
+      assert.equal(result.count, 4999);
+      assert.equal(result.search?.matchCount, 1250);
+      assert.equal(result.search?.returnedMatches, 1250);
+      assert.equal(result.nodes?.at(-1)?.matched, true);
+      assert.deepEqual(result.completeness, { complete: false, reasons: ['maxNodes'] });
+    }
+  );
 });
 
 test('accessible names honor native labels, input defaults, images, and fieldset legends', async () => {

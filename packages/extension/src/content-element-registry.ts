@@ -146,9 +146,18 @@ crypto.randomUUID() is unavailable. */
 
   /** Reuse or create a stable element reference for later bridge calls.
 Uses a reverse WeakMap for O(1) lookup instead of scanning the registry. */
-  function rememberElement(element: Element): string {
+  function rememberElement(element: Element, retain = false): string {
     const existing = reverseRegistry.get(element);
     if (existing && elementRegistry.has(existing)) {
+      if (retain) {
+        elementRegistry.delete(existing);
+        elementRegistry.set(existing, element);
+        const descriptor = elementDescriptors.get(existing);
+        if (descriptor) {
+          elementDescriptors.delete(existing);
+          elementDescriptors.set(existing, descriptor);
+        }
+      }
       return existing;
     }
     if (elementRegistry.size >= MAX_REGISTRY_SIZE) {

@@ -60,7 +60,7 @@ var mcpActions = map[string]map[string]string{
 		"describe": "dom.describe!|", "text": "dom.get_text!|textBudget", "attributes": "dom.get_attributes!|attributes",
 		"wait": "dom.wait_for|selector text state timeoutMs", "find_text": "dom.find_by_text|text exact selector maxResults includeHidden",
 		"find_role": "dom.find_by_role|role name exact selector maxResults includeHidden", "html": "dom.get_html!|outer maxLength",
-		"accessibility_tree": "dom.get_accessibility_tree|selector maxNodes maxDepth compact interactiveOnly source format",
+		"accessibility_tree": "dom.get_accessibility_tree|selector maxNodes maxDepth compact interactiveOnly source format scope find context",
 		"baseline_create":    "dom.baseline.create|selector maxNodes maxDepth textBudget attributeAllowlist",
 		"baseline_compare":   "dom.baseline.compare|baselineId maxChanges", "baseline_describe": "dom.baseline.describe|baselineId", "baseline_release": "dom.baseline.release|baselineId",
 	},

@@ -345,6 +345,15 @@ export async function handleTabBoundRequest(
         dependencies
       );
     }
+    if (
+      response &&
+      typeof response === 'object' &&
+      'scope' in response &&
+      response.scope &&
+      typeof response.scope === 'object'
+    ) {
+      response = { ...response, scope: { ...response.scope, frameId } };
+    }
     if (response && typeof response === 'object' && 'error' in response && response.error) {
       const staleOutcome = getStaleRecoveryOutcome(response.error);
       if (staleOutcome) dependencies.recordStaleRecovery?.(staleOutcome, request.method);
@@ -502,7 +511,8 @@ async function mergeChildFrameResults(
   const isOutline = method === 'dom.get_accessibility_tree';
   const isPageText = method === 'page.get_text';
   const params = message.params as Record<string, unknown>;
-  if (isOutline && params.selector) return topResponse;
+  if (isOutline && (params.selector || params.scope !== undefined || params.find !== undefined))
+    return topResponse;
   const childFrames = (await frames.listFrames(tabId)).filter((frame) => frame.frameId !== 0);
   if (!childFrames.length) return topResponse;
   const childResults = await Promise.all(

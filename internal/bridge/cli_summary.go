@@ -359,7 +359,11 @@ func cliSummaryBody(response object, method string, now int64) object {
 		if r.text("source") == "dom" {
 			suffix += "; refs work as input targets"
 		}
-		return done(fmt.Sprintf("Accessibility outline: %g node(s)%s.", num("count", 0), suffix), r["outline"], true)
+		out := done(fmt.Sprintf("Accessibility outline: %g node(s)%s.", num("count", 0), suffix), r["outline"], true)
+		if meta := cliOutlineEvidenceMeta(r, r["outline"]); meta != nil {
+			out["evidenceMeta"] = value(meta)
+		}
+		return out
 	}
 	if nodes, ok := arr("nodes"); ok {
 		if r.text("source") == "dom" && r.text("format") == "tree" {
@@ -373,13 +377,23 @@ func cliSummaryBody(response object, method string, now int64) object {
 				if states, ok := cliArray(n["states"]); ok && len(states) > 0 {
 					item["states"] = n["states"]
 				}
+				if r["scope"] != nil {
+					item["depth"] = n["depth"]
+					if n["matched"] != nil {
+						item["matched"] = n["matched"]
+					}
+				}
 				e = append(e, item)
 			}
 			suffix := ""
 			if r.boolean("truncated") {
 				suffix = ", truncated"
 			}
-			return done(fmt.Sprintf("Accessibility tree (DOM): %g node(s)%s; refs work as input targets.", num("count", float64(len(nodes))), suffix), value(e), true)
+			out := done(fmt.Sprintf("Accessibility tree (DOM): %g node(s)%s; refs work as input targets.", num("count", float64(len(nodes))), suffix), value(e), true)
+			if meta := cliOutlineEvidenceMeta(r, value(e)); meta != nil {
+				out["evidenceMeta"] = value(meta)
+			}
+			return out
 		}
 		if number("total") && len(nodes) > 0 && cliRecord(nodes[0])["role"] != nil {
 			interactive := []json.RawMessage{}

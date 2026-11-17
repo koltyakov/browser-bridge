@@ -1708,6 +1708,41 @@ export function normalizeAccessibilityTreeParams(
   if (format !== 'tree' && format !== 'outline') {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'format must be tree or outline.');
   }
+  const scoped =
+    params.scope !== undefined || params.find !== undefined || params.context !== undefined;
+  if (scoped && source !== 'dom') {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'scope, find, and context require source=dom.'
+    );
+  }
+  if (params.scope !== undefined && !['auto', 'modal', 'main', 'document'].includes(params.scope)) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'scope must be auto, modal, main, or document.'
+    );
+  }
+  if (
+    params.find !== undefined &&
+    (typeof params.find !== 'string' || !params.find.trim() || params.find.length > 200)
+  ) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'find must be a nonblank literal string of at most 200 characters.'
+    );
+  }
+  if (
+    params.context !== undefined &&
+    (params.find === undefined ||
+      !Number.isInteger(params.context) ||
+      params.context < 0 ||
+      params.context > 3)
+  ) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'context requires find and must be an integer from 0 to 3.'
+    );
+  }
   return {
     selector:
       typeof params.selector === 'string' && params.selector.trim() ? params.selector.trim() : null,
@@ -1720,6 +1755,8 @@ export function normalizeAccessibilityTreeParams(
     // Omitted at defaults so existing CDP callers see an unchanged shape.
     ...(source === 'dom' ? { source } : {}),
     ...(source === 'dom' || format === 'outline' ? { format } : {}),
+    ...(params.scope !== undefined ? { scope: params.scope } : {}),
+    ...(params.find !== undefined ? { find: params.find, context: params.context ?? 1 } : {}),
   };
 }
 

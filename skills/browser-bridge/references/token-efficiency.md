@@ -36,6 +36,23 @@ Avoid debugger-backed methods until they are clearly necessary. In Browser Bridg
 16. **Visual ambiguity after structured reads?** → `screenshot.capture_element` first, or `screenshot.capture_region` with a tight crop when one element is not enough (debugger-backed)
 17. **Content-script blocked?** → `cdp.get_document` or `cdp.get_dom_snapshot` (debugger-backed fallback)
 
+### Scoped outline search
+
+For one actionable UI section, use `dom.get_accessibility_tree` with
+`source: "dom", scope: "auto"`. Auto selects one visible modal, otherwise one
+main. Ambiguous or missing landmarks explicitly fall back to the document.
+`scope: "document"` opts out of landmark selection; a `selector` overrides scope.
+
+Add literal `find` for a case-insensitive role/name substring and `context: 0..3`
+for bounded semantic siblings and ancestors, default 1. Keep `maxNodes` and
+`maxDepth` narrow. Scope/search stays in one resolved document, including when
+the selector routes to a child frame; it never merges other frames. Omit these
+options for the existing unscoped, frame-merged overview.
+
+Read `scope`, `search` and `completeness` in raw results or `evidenceMeta` in
+compact CLI/MCP output. Incomplete capture or delivery cannot prove absence from
+zero matches. These reads do not create baselines or deltas.
+
 ### Optional visual deltas
 
 Use `screenshot.baseline.create/compare/release` only for visual questions that semantic DOM diffs cannot answer, such as CSS regressions or canvas/chart updates. Create before the action with one complete component `selector` or viewport CSS `rect`. Compare afterward; no images are sent for exact equality. Useful local changes retain real pixels in a context-expanded union crop. Broad, scattered, context-heavy or oversized changes return `status: "diff_not_useful"`, exact counts and a reason, with no images by default. This saves image delivery and avoids encoding full before/after pairs. Inspect DOM/state or narrow scope rather than repeatedly comparing an unhelpful diff.

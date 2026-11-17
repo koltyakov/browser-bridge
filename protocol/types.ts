@@ -1508,6 +1508,12 @@ export interface AccessibilityTreeParams {
   source?: 'cdp' | 'dom';
   /** outline: one compact `- role "name" [ref]` line per node (default for source=dom). */
   format?: 'tree' | 'outline';
+  /** DOM only, opt-in document-local scoping. selector takes precedence. */
+  scope?: 'auto' | 'modal' | 'main' | 'document';
+  /** DOM only, literal case-insensitive substring of role or accessible name. */
+  find?: string;
+  /** Semantic siblings on either side plus ancestors; 0..3, default 1 with find. */
+  context?: number;
 }
 
 export interface NormalizedAccessibilityTreeParams extends BridgeParams {
@@ -1518,6 +1524,62 @@ export interface NormalizedAccessibilityTreeParams extends BridgeParams {
   interactiveOnly: boolean;
   source?: 'dom';
   format?: 'tree' | 'outline';
+  scope?: 'auto' | 'modal' | 'main' | 'document';
+  find?: string;
+  context?: number;
+}
+
+export interface DomOutlineNode {
+  ref: string;
+  role: string;
+  name: string;
+  depth: number;
+  states: string[];
+  matched?: boolean;
+}
+
+export interface DomOutlineScope {
+  requested: 'auto' | 'modal' | 'main' | 'document' | 'selector';
+  resolved: 'modal' | 'main' | 'document' | 'selector';
+  boundary: 'document';
+  frameId?: number;
+  selector?: string;
+  rootRef?: string;
+  scanned: number;
+  fallbackReason?:
+    | 'modal_missing'
+    | 'modal_ambiguous'
+    | 'main_missing'
+    | 'main_ambiguous'
+    | 'scope_scan_limit';
+}
+
+export interface DomOutlineCompleteness {
+  complete: boolean;
+  reasons: Array<
+    'maxNodes' | 'maxDepth' | 'scanLimit' | 'scopeScanLimit' | 'nameLimit' | 'deliveryLimit'
+  >;
+}
+
+export interface DomOutlineSearch {
+  query: string;
+  context: number;
+  /** Observed matches, not an exact page-wide total when capture is incomplete. */
+  matchCount: number;
+  returnedMatches: number;
+}
+
+export interface DomOutlineResult {
+  source: 'dom';
+  format: 'tree' | 'outline';
+  nodes?: DomOutlineNode[];
+  outline?: string;
+  count: number;
+  scanned: number;
+  truncated: boolean;
+  scope?: DomOutlineScope;
+  search?: DomOutlineSearch;
+  completeness?: DomOutlineCompleteness;
 }
 
 export interface AccessibilityTreeNode {

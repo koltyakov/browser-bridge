@@ -322,6 +322,32 @@ export function enforceTokenBudget(
   response: BridgeResponse,
   tokenBudget: number | null | undefined
 ): BridgeResponse {
+  if (
+    method === 'dom.get_accessibility_tree' &&
+    response.ok &&
+    response.result &&
+    typeof response.result === 'object' &&
+    'scope' in response.result &&
+    'completeness' in response.result
+  ) {
+    // Generic shrinking can cut refs and leave completeness=true beside missing
+    // nodes. Keep this read atomic; callers can narrow it without replaying input.
+    if (
+      typeof tokenBudget === 'number' &&
+      Number.isFinite(tokenBudget) &&
+      tokenBudget > 0 &&
+      estimateJsonPayloadCost(response.result).bytes > Math.max(128, Math.floor(tokenBudget * 4))
+    ) {
+      return createFailure(
+        response.id,
+        ERROR_CODES.RESULT_TOO_LARGE,
+        'Complete scoped DOM outline exceeds the token budget. Narrow scope, find, context, or maxNodes, or use a larger budget.',
+        { method, reason: 'scoped_outline_budget' },
+        { ...response.meta, method, budget_applied: true, budget_truncated: true }
+      );
+    }
+    return response;
+  }
   // Schemas and tool results are atomic JSON. Never shorten them or advise
   // repeating an execution that may already have committed a side effect.
   if (method.startsWith('webmcp.')) {

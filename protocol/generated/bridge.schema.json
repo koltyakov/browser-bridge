@@ -6133,6 +6133,21 @@
             "tree",
             "outline"
           ]
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "modal",
+            "main",
+            "document"
+          ]
+        },
+        "find": {
+          "type": "string"
+        },
+        "context": {
+          "type": "number"
         }
       },
       "required": [],
@@ -6175,6 +6190,21 @@
             "tree",
             "outline"
           ]
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "modal",
+            "main",
+            "document"
+          ]
+        },
+        "find": {
+          "type": "string"
+        },
+        "context": {
+          "type": "number"
         }
       },
       "required": [
@@ -6183,6 +6213,203 @@
         "maxNodes",
         "compact",
         "interactiveOnly"
+      ],
+      "additionalProperties": true
+    },
+    "DomOutlineNode": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "depth": {
+          "type": "number"
+        },
+        "states": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "matched": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ref",
+        "role",
+        "name",
+        "depth",
+        "states"
+      ],
+      "additionalProperties": true
+    },
+    "DomOutlineScope": {
+      "type": "object",
+      "properties": {
+        "requested": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "modal",
+            "main",
+            "document",
+            "selector"
+          ]
+        },
+        "resolved": {
+          "type": "string",
+          "enum": [
+            "modal",
+            "main",
+            "document",
+            "selector"
+          ]
+        },
+        "boundary": {
+          "type": "string",
+          "enum": [
+            "document"
+          ]
+        },
+        "frameId": {
+          "type": "number"
+        },
+        "selector": {
+          "type": "string"
+        },
+        "rootRef": {
+          "type": "string"
+        },
+        "scanned": {
+          "type": "number"
+        },
+        "fallbackReason": {
+          "type": "string",
+          "enum": [
+            "modal_missing",
+            "modal_ambiguous",
+            "main_missing",
+            "main_ambiguous",
+            "scope_scan_limit"
+          ]
+        }
+      },
+      "required": [
+        "requested",
+        "resolved",
+        "boundary",
+        "scanned"
+      ],
+      "additionalProperties": true
+    },
+    "DomOutlineCompleteness": {
+      "type": "object",
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "maxNodes",
+              "maxDepth",
+              "scanLimit",
+              "scopeScanLimit",
+              "nameLimit",
+              "deliveryLimit"
+            ]
+          }
+        }
+      },
+      "required": [
+        "complete",
+        "reasons"
+      ],
+      "additionalProperties": true
+    },
+    "DomOutlineSearch": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "context": {
+          "type": "number"
+        },
+        "matchCount": {
+          "type": "number"
+        },
+        "returnedMatches": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "query",
+        "context",
+        "matchCount",
+        "returnedMatches"
+      ],
+      "additionalProperties": true
+    },
+    "DomOutlineResult": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "dom"
+          ]
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "tree",
+            "outline"
+          ]
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DomOutlineNode"
+          }
+        },
+        "outline": {
+          "type": "string"
+        },
+        "count": {
+          "type": "number"
+        },
+        "scanned": {
+          "type": "number"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "scope": {
+          "$ref": "#/$defs/DomOutlineScope"
+        },
+        "search": {
+          "$ref": "#/$defs/DomOutlineSearch"
+        },
+        "completeness": {
+          "$ref": "#/$defs/DomOutlineCompleteness"
+        }
+      },
+      "required": [
+        "source",
+        "format",
+        "count",
+        "scanned",
+        "truncated"
       ],
       "additionalProperties": true
     },

@@ -213,6 +213,75 @@ test('selector-scoped DOM outlines route to the owning child frame', async () =>
   assert.equal((response.result as { frameId: number }).frameId, 7);
 });
 
+test('opt-in scope and search never merge or inspect unrelated frames', async () => {
+  for (const params of [{ scope: 'auto' }, { scope: 'document' }, { find: 'Pay now' }]) {
+    const { dependencies, sent } = createDependencies();
+    dependencies.frames.listFrames = async () => {
+      throw new Error('scoped read discovered unrelated frames');
+    };
+    const response = await handleTabBoundRequest(
+      request('dom.get_accessibility_tree', { source: 'dom', ...params }),
+      dependencies as never
+    );
+    assert.equal(response.ok, true);
+    assert.deepEqual(
+      sent.map((entry) => [entry.method, entry.frameId]),
+      [['dom.get_accessibility_tree', 0]]
+    );
+    assert.doesNotMatch(JSON.stringify(response), /Pay now/);
+  }
+});
+
+test('a selector overrides autoscope routing and pins search metadata to the owning frame', async () => {
+  const { dependencies, sent } = createDependencies(true, (frameId, method) =>
+    method === 'dom.get_accessibility_tree'
+      ? {
+          source: 'dom',
+          format: 'outline',
+          outline: '- button "Pay" [el_pay7_1] [match]',
+          count: 1,
+          scanned: 1,
+          truncated: false,
+          scope: {
+            requested: 'auto',
+            resolved: 'selector',
+            boundary: 'document',
+            selector: '#pay',
+            scanned: 0,
+          },
+          search: { query: 'Pay', context: 0, matchCount: 1, returnedMatches: 1 },
+          completeness: { complete: true, reasons: [] },
+          seen: frameId,
+        }
+      : undefined
+  );
+  const response = await handleTabBoundRequest(
+    request('dom.get_accessibility_tree', {
+      source: 'dom',
+      scope: 'auto',
+      selector: '#pay',
+      find: 'Pay',
+      context: 0,
+    }),
+    dependencies as never
+  );
+  assert.equal(response.ok, true);
+  const result = response.result as {
+    scope: { frameId: number };
+    frameId: number;
+    completeness: { complete: boolean };
+  };
+  assert.equal(result.scope.frameId, 7);
+  assert.equal(result.frameId, 7);
+  assert.equal(result.completeness.complete, true);
+  assert.deepEqual(
+    sent
+      .filter((entry) => entry.method === 'dom.get_accessibility_tree')
+      .map((entry) => entry.frameId),
+    [7]
+  );
+});
+
 test('DOM waits rediscover a child frame created after the wait starts', async () => {
   const { dependencies, sent } = createDependencies(true, (_frameId, method) =>
     method === 'dom.wait_for' ? { found: true, elementRef: 'el_pay7_1', duration: 0 } : undefined

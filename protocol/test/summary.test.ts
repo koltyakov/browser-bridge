@@ -359,6 +359,72 @@ test('summarizes DOM-source accessibility trees as actionable outlines, not DOM 
   ]);
 });
 
+test('scoped DOM summaries retain scope, search, and extraction versus delivery completeness', () => {
+  const scope = {
+    requested: 'auto',
+    resolved: 'document',
+    boundary: 'document',
+    frameId: 7,
+    scanned: 10,
+    fallbackReason: 'main_ambiguous',
+  };
+  const nodes = Array.from({ length: 25 }, (_, index) => ({
+    ref: `el_${index}`,
+    role: 'button',
+    name: `Save ${index}`,
+    depth: 1,
+    states: [],
+    matched: index % 2 === 0,
+  }));
+  const result = {
+    source: 'dom',
+    format: 'tree',
+    nodes,
+    count: 25,
+    scanned: 30,
+    truncated: false,
+    scope,
+    completeness: { complete: true, reasons: [] },
+    search: { query: 'Save', context: 1, matchCount: 13, returnedMatches: 13 },
+  };
+  const tree = summarizeBridgeResponse(ok(result), 'dom.get_accessibility_tree');
+  assert.deepEqual(tree.evidenceMeta?.scope, scope);
+  assert.equal(tree.evidenceMeta?.returnedCount, 20);
+  assert.deepEqual(tree.evidenceMeta?.completeness, {
+    complete: false,
+    reasons: ['deliveryLimit'],
+  });
+  assert.deepEqual(tree.evidenceMeta?.search, {
+    query: 'Save',
+    context: 1,
+    matchCount: 13,
+    returnedMatches: 10,
+  });
+  assert.deepEqual((tree.evidence as Array<Record<string, unknown>>)[0], {
+    ref: 'el_0',
+    role: 'button',
+    name: 'Save 0',
+    depth: 1,
+    matched: true,
+  });
+  const outline = summarizeBridgeResponse(
+    ok({
+      ...result,
+      format: 'outline',
+      nodes: undefined,
+      count: 1,
+      outline: '- button "Save" [el_1] [match]',
+      completeness: { complete: false, reasons: ['scanLimit'] },
+      truncated: true,
+      search: { query: 'Save', context: 0, matchCount: 1, returnedMatches: 1 },
+    }),
+    'dom.get_accessibility_tree'
+  );
+  assert.equal(outline.evidence, '- button "Save" [el_1] [match]');
+  assert.deepEqual(outline.evidenceMeta?.completeness, { complete: false, reasons: ['scanLimit'] });
+  assert.equal(outline.evidenceMeta?.returnedCount, 1);
+});
+
 // --- summarizeBridgeResponse: DOM query results ---
 
 test('summarizes DOM query result', () => {

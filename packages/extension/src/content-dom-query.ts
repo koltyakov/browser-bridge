@@ -35,7 +35,7 @@
         NON_RENDERED_TAGS: Set<string>;
         collapseText: (value: string | null | undefined, budget?: number) => string;
         escapeTailwindSelector: (selector: string) => string;
-        getAccessibleName: (element: Element) => string;
+        getAccessibleName: (element: Element, budget?: number, onTruncated?: () => void) => string;
         getElementRoles: (element: Element) => string[];
         getElementTextContent: (element: Element, budget?: number) => string;
         getShadowRoot: (element: Element) => ShadowRoot | null;
@@ -54,7 +54,7 @@
         getRegistrySize: () => number;
         getRequiredElement: (ref: string) => Element;
         normalizeDomQuery: (params?: Record<string, unknown>) => NormalizedDomQuery;
-        rememberElement: (element: Element) => string;
+        rememberElement: (element: Element, retain?: boolean) => string;
         resolveTarget: (target?: { elementRef?: string; selector?: string }) => Element;
       };
     }
@@ -887,46 +887,130 @@ locator target. Hidden matches count: the action decides actionability. */
     return 0;
   }
 
+  /** Scope discovery is bounded separately from outline traversal. An incomplete
+  scan cannot establish that a landmark is unique, so it falls back explicitly. */
+  function resolveOutlineScope(params: Record<string, unknown>): {
+    root: Element | null;
+    scope?: import('../../../protocol/src/types.js').DomOutlineScope;
+  } {
+    const enhanced = params.scope !== undefined || params.find !== undefined;
+    if (params.selector) {
+      const root = querySelectorDeep(escapeTailwindSelector(String(params.selector)));
+      if (!root) {
+        throw Object.assign(new Error('Accessibility outline selector matched no element.'), {
+          code: 'ELEMENT_NOT_FOUND',
+          details: { selector: String(params.selector).slice(0, 500) },
+        });
+      }
+      return {
+        root,
+        ...(enhanced
+          ? {
+              scope: {
+                requested: (params.scope ??
+                  'selector') as import('../../../protocol/src/types.js').DomOutlineScope['requested'],
+                resolved: 'selector' as const,
+                boundary: 'document' as const,
+                selector: String(params.selector).slice(0, 500),
+                scanned: 0,
+              },
+            }
+          : {}),
+      };
+    }
+    if (!enhanced) return { root: null };
+    const requested = (params.scope ?? 'document') as 'auto' | 'modal' | 'main' | 'document';
+    const scope: import('../../../protocol/src/types.js').DomOutlineScope = {
+      requested,
+      resolved: 'document',
+      boundary: 'document',
+      scanned: 0,
+    };
+    if (requested === 'document') return { root: null, scope };
+    const modals: Element[] = [];
+    const mains: Element[] = [];
+    for (const element of walkOutlineCandidates(null)) {
+      if (scope.scanned >= OUTLINE_SCAN_LIMIT) {
+        scope.fallbackReason = 'scope_scan_limit';
+        return { root: null, scope };
+      }
+      scope.scanned += 1;
+      const role = getElementRoles(element)[0];
+      if (!['dialog', 'alertdialog', 'main'].includes(role)) continue;
+      if (!isElementVisible(element)) continue;
+      if (role === 'main' && mains.length < 2) mains.push(element);
+      if (role === 'dialog' || role === 'alertdialog') {
+        let modal = element.getAttribute('aria-modal') === 'true';
+        if (!modal && element.tagName === 'DIALOG') {
+          try {
+            modal = element.matches(':modal');
+          } catch {
+            /* Older DOM implementations. */
+          }
+        }
+        if (modal && modals.length < 2) modals.push(element);
+      }
+    }
+    const kind = requested === 'auto' ? (modals.length ? 'modal' : 'main') : requested;
+    const candidates = kind === 'modal' ? modals : mains;
+    if (candidates.length !== 1) {
+      scope.fallbackReason =
+        kind === 'modal'
+          ? candidates.length
+            ? 'modal_ambiguous'
+            : 'modal_missing'
+          : candidates.length
+            ? 'main_ambiguous'
+            : 'main_missing';
+      return { root: null, scope };
+    }
+    scope.resolved = kind;
+    return { root: candidates[0], scope };
+  }
+
+  function outlineParent(element: Element, indices: Map<Element, number>): number {
+    let current: Node | null = element.parentNode;
+    for (let hops = 0; current && hops < 200; hops += 1) {
+      if (current.nodeType === 1) {
+        const index = indices.get(current as Element);
+        if (index !== undefined) return index;
+      }
+      current =
+        current.nodeType === 11 && (current as ShadowRoot).host
+          ? (current as ShadowRoot).host
+          : current.parentNode;
+    }
+    return -1;
+  }
+
   /** Build an actionable accessibility outline from the live DOM (including
 shadow roots) without the debugger. Every line carries an elementRef that
 input methods accept directly, so agents can go from overview to action in
 one step. Hidden elements are skipped. */
-  function getAccessibilityOutline(params: Record<string, unknown>): {
-    source: 'dom';
-    format: 'outline' | 'tree';
-    outline?: string;
-    nodes?: Array<Record<string, unknown>>;
-    count: number;
-    scanned: number;
-    truncated: boolean;
-  } {
+  function getAccessibilityOutline(
+    params: Record<string, unknown>
+  ): import('../../../protocol/src/types.js').DomOutlineResult {
     const maxNodes = clamp(params.maxNodes ?? 150, 10, 5000);
     const maxDepth = clamp(params.maxDepth ?? 6, 1, 20);
     const interactiveOnly = params.interactiveOnly === true;
-    const root = params.selector
-      ? querySelectorDeep(escapeTailwindSelector(String(params.selector)))
-      : null;
-    if (params.selector && !root) {
-      throw Object.assign(new Error('Accessibility outline selector matched no element.'), {
-        code: 'ELEMENT_NOT_FOUND',
-        details: { selector: String(params.selector).slice(0, 500) },
-      });
-    }
-
+    const { root, scope } = resolveOutlineScope(params);
+    const query = typeof params.find === 'string' ? params.find.toLowerCase() : null;
+    const context = clamp(params.context ?? 1, 0, 3);
     const depths: Map<Element, number> = new Map();
-
+    const indices: Map<Element, number> = new Map();
     const entries: Array<{
-      ref: string;
-      role: string;
-      name: string;
-      depth: number;
-      states: string[];
+      node: import('../../../protocol/src/types.js').DomOutlineNode;
+      parent: number;
+      element: Element;
     }> = [];
     let scanned = 0;
-    let truncated = false;
+    const reasons = new Set<
+      import('../../../protocol/src/types.js').DomOutlineCompleteness['reasons'][number]
+    >();
+    if (scope?.fallbackReason === 'scope_scan_limit') reasons.add('scopeScanLimit');
     for (const element of walkOutlineCandidates(root)) {
       if (scanned >= OUTLINE_SCAN_LIMIT) {
-        truncated = true;
+        reasons.add('scanLimit');
         break;
       }
       scanned += 1;
@@ -942,41 +1026,143 @@ one step. Hidden elements are skipped. */
       }
       const interactive = OUTLINE_INTERACTIVE_ROLES.has(role) || role === 'generic';
       if (!interactive && (interactiveOnly || !OUTLINE_CONTEXT_ROLES.has(role))) continue;
-      if (role === 'region' && !getAccessibleName(element)) continue;
       if (!isElementVisible(element)) continue;
+      const regionName =
+        role === 'region'
+          ? query === null
+            ? getAccessibleName(element)
+            : getAccessibleName(element, 2000, () => reasons.add('nameLimit'))
+          : undefined;
+      if (role === 'region' && !regionName) continue;
       const depth = getOutlineDepth(element, depths);
       // Retain omitted ancestors' depths so their descendants cannot reappear
       // at a shallower level. Later siblings still get their own depth check.
       depths.set(element, depth);
       if (depth > maxDepth) {
-        truncated = true;
+        reasons.add('maxDepth');
         continue;
       }
-      if (entries.length >= maxNodes) {
-        truncated = true;
+      if (query === null && entries.length >= maxNodes) {
+        reasons.add('maxNodes');
         break;
       }
+      const name =
+        regionName ??
+        (query === null
+          ? getAccessibleName(element)
+          : getAccessibleName(element, 2000, () => reasons.add('nameLimit')));
+      const parent = query === null ? -1 : outlineParent(element, indices);
+      if (query !== null) indices.set(element, entries.length);
       entries.push({
-        ref: rememberElement(element),
-        role,
-        name: collapseText(getAccessibleName(element), OUTLINE_NAME_BUDGET),
-        depth,
-        states: getOutlineStates(element, role),
+        parent,
+        element,
+        node: {
+          ref: query === null && !scope ? rememberElement(element) : '',
+          role,
+          name: collapseText(name, OUTLINE_NAME_BUDGET),
+          depth,
+          states: query === null ? getOutlineStates(element, role) : [],
+          ...(query !== null
+            ? { matched: role.toLowerCase().includes(query) || name.toLowerCase().includes(query) }
+            : {}),
+        },
       });
     }
+    let selected = entries;
+    let search: import('../../../protocol/src/types.js').DomOutlineSearch | undefined;
+    if (query !== null) {
+      const included = new Set<number>();
+      const siblings = new Map<number, number[]>();
+      const positions: number[] = [];
+      entries.forEach((entry, index) => {
+        const group = siblings.get(entry.parent) ?? [];
+        positions[index] = group.length;
+        group.push(index);
+        siblings.set(entry.parent, group);
+      });
+      let matchCount = 0;
+      entries.forEach((entry, index) => {
+        if (!entry.node.matched) return;
+        matchCount += 1;
+        included.add(index);
+        if (!context) return;
+        const group = siblings.get(entry.parent) ?? [];
+        for (const neighbor of group.slice(
+          Math.max(0, positions[index] - context),
+          positions[index] + context + 1
+        ))
+          included.add(neighbor);
+        let ancestor = entry.parent;
+        while (ancestor !== -1) {
+          included.add(ancestor);
+          ancestor = entries[ancestor].parent;
+        }
+      });
+      selected = entries.filter((_, index) => included.has(index));
+      if (selected.length > maxNodes) {
+        reasons.add('maxNodes');
+        // Context must not consume the result budget before the actual match.
+        const retained = new Set(selected.filter((entry) => entry.node.matched).slice(0, maxNodes));
+        for (const entry of selected) {
+          if (retained.size >= maxNodes) break;
+          retained.add(entry);
+        }
+        selected = selected.filter((entry) => retained.has(entry));
+      }
+      search = {
+        query: String(params.find),
+        context,
+        matchCount,
+        returnedMatches: selected.filter((entry) => entry.node.matched).length,
+      };
+    }
+    // A separately returned scope root also occupies one registry slot.
+    if (
+      scope &&
+      root &&
+      selected.length >= 5000 &&
+      !selected.some((entry) => entry.element === root)
+    ) {
+      reasons.add('maxNodes');
+      let omitted = selected.length - 1;
+      if (search) {
+        for (let index = selected.length - 1; index >= 0; index -= 1) {
+          if (!selected[index].node.matched) {
+            omitted = index;
+            break;
+          }
+        }
+      }
+      selected = selected.filter((_, index) => index !== omitted);
+    }
+    if (search) search.returnedMatches = selected.filter((entry) => entry.node.matched).length;
+    const nodes = selected.map((entry) =>
+      query === null && !scope
+        ? entry.node
+        : {
+            ...entry.node,
+            ref: rememberElement(entry.element, true),
+            states: getOutlineStates(entry.element, entry.node.role),
+          }
+    );
+    if (scope && root) scope.rootRef = rememberElement(root, true);
     const base = {
       source: 'dom' as 'dom',
-      count: entries.length,
+      count: nodes.length,
       scanned,
-      truncated,
+      truncated: reasons.size > 0,
+      ...(scope
+        ? { scope, completeness: { complete: reasons.size === 0, reasons: [...reasons] } }
+        : {}),
+      ...(search ? { search } : {}),
     };
     if (params.format === 'tree') {
-      return { ...base, format: 'tree', nodes: entries };
+      return { ...base, format: 'tree', nodes };
     }
-    const outline = entries
+    const outline = nodes
       .map(
         (entry) =>
-          `${'  '.repeat(Math.min(entry.depth, 12))}- ${entry.role}${entry.name ? ` ${JSON.stringify(entry.name)}` : ''} [${entry.ref}]${entry.states.length ? ` ${entry.states.join(' ')}` : ''}`
+          `${'  '.repeat(Math.min(entry.depth, 12))}- ${entry.role}${entry.name ? ` ${JSON.stringify(entry.name)}` : ''} [${entry.ref}]${entry.states.length ? ` ${entry.states.join(' ')}` : ''}${entry.matched ? ' [match]' : ''}`
       )
       .join('\n');
     return { ...base, format: 'outline', outline };

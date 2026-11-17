@@ -22,7 +22,49 @@ export type BridgeSummary = {
   evidence: unknown;
   recovery?: import('./types.js').BridgeRecovery | null;
   pagination?: import('./types.js').TabPagination;
+  evidenceMeta?: Record<string, unknown>;
 };
+
+/** Keep extraction scope and completeness beside compact evidence, including
+formatter-side clipping. Unscoped legacy results retain their existing shape. */
+function outlineEvidenceMeta(
+  result: Record<string, unknown>,
+  evidence: unknown
+): Record<string, unknown> {
+  if (result.source !== 'dom' || !result.scope || !result.completeness) return {};
+  const lines = typeof evidence === 'string' && evidence ? evidence.split('\n') : [];
+  const returnedCount = Array.isArray(evidence) ? evidence.length : lines.length;
+  const limited =
+    returnedCount < Number(result.count) ||
+    (typeof evidence === 'string' && evidence !== result.outline);
+  const completeness = result.completeness as import('./types.js').DomOutlineCompleteness;
+  const search = result.search as import('./types.js').DomOutlineSearch | undefined;
+  return {
+    evidenceMeta: {
+      source: result.source,
+      format: result.format,
+      count: result.count,
+      returnedCount,
+      scanned: result.scanned,
+      truncated: result.truncated === true || limited,
+      scope: result.scope,
+      completeness: {
+        complete: completeness.complete && !limited,
+        reasons: [...completeness.reasons, ...(limited ? ['deliveryLimit'] : [])],
+      },
+      ...(search
+        ? {
+            search: {
+              ...search,
+              returnedMatches: Array.isArray(evidence)
+                ? evidence.filter((node: Record<string, unknown>) => node.matched === true).length
+                : lines.filter((line) => line.endsWith(' [match]')).length,
+            },
+          }
+        : {}),
+    },
+  };
+}
 
 /** Evaluate values longer than this stay out of the summary; evidence holds them. */
 const MAX_EVALUATE_SUMMARY_CHARS = 160;
@@ -585,25 +627,32 @@ function summarizeBridgeResponseBody(response: BridgeResponse, method?: string):
         protocolWarning
       ),
       evidence: result.outline,
+      ...outlineEvidenceMeta(result, result.outline),
     };
   }
   if (Array.isArray(result.nodes) && result.source === 'dom' && result.format === 'tree') {
     const nodes = result.nodes as Array<Record<string, unknown>>;
     const count = typeof result.count === 'number' ? result.count : nodes.length;
+    const evidence = nodes.slice(0, 20).map((n) => {
+      const entry: Record<string, unknown> = {};
+      if ('ref' in n) entry.ref = n.ref;
+      if ('role' in n) entry.role = n.role;
+      if (n.name) entry.name = n.name;
+      if (Array.isArray(n.states) && n.states.length > 0) entry.states = n.states;
+      if (result.scope) {
+        entry.depth = n.depth;
+        if ('matched' in n) entry.matched = n.matched;
+      }
+      return entry;
+    });
     return {
       ok: true,
       summary: appendProtocolWarning(
         `Accessibility tree (DOM): ${count} node(s)${result.truncated === true ? ', truncated' : ''}; refs work as input targets.`,
         protocolWarning
       ),
-      evidence: nodes.slice(0, 20).map((n) => {
-        const entry: Record<string, unknown> = {};
-        if ('ref' in n) entry.ref = n.ref;
-        if ('role' in n) entry.role = n.role;
-        if (n.name) entry.name = n.name;
-        if (Array.isArray(n.states) && n.states.length > 0) entry.states = n.states;
-        return entry;
-      }),
+      evidence,
+      ...outlineEvidenceMeta(result, evidence),
     };
   }
   if (

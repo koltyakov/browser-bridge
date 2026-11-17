@@ -541,11 +541,18 @@ consumer has enough results. Complete scans still enforce the work limit. */
 
   /** Rendered-ish text of a subtree, skipping script/style content and
 descending into shadow roots. */
-  function getElementTextContent(element: Element, budget: number = 200): string {
+  function getElementTextContent(
+    element: Element,
+    budget: number = 200,
+    onTruncated?: () => void
+  ): string {
     if (NON_RENDERED_TAGS.has(element.tagName)) return '';
     const elementShadowRoot = getShadowRoot(element);
-    if (!elementShadowRoot && element.childNodes.length === 0)
-      return collapseText(element.textContent, budget);
+    if (!elementShadowRoot && element.childNodes.length === 0) {
+      const text = element.textContent || '';
+      if (onTruncated && text.length > budget) onTruncated();
+      return collapseText(onTruncated ? text.slice(0, budget) : text, budget);
+    }
     const parts: string[] = [];
     let length = 0;
     const stack: Array<{ children: NodeListOf<ChildNode>; index: number }> = [
@@ -560,7 +567,9 @@ descending into shadow roots. */
       }
       const node = current.children[current.index++];
       if (node.nodeType === 3) {
-        const text = (node.textContent || '').slice(0, budget - length);
+        const source = node.textContent || '';
+        if (onTruncated && source.length > budget - length) onTruncated();
+        const text = source.slice(0, budget - length);
         parts.push(text);
         length += text.length;
         continue;
@@ -570,16 +579,25 @@ descending into shadow roots. */
       const root = node.nodeType === 1 ? getShadowRoot(node as Element) : null;
       stack.push({ children: (root ?? node).childNodes, index: 0 });
     }
-    return collapseText(parts.join(' '), budget);
+    if (onTruncated && stack.length > 0) onTruncated();
+    const text = parts.join(' ');
+    if (onTruncated && text.length > budget) onTruncated();
+    return collapseText(text, budget);
   }
 
   /** Resolve ids from aria-labelledby within the element's own tree scope. */
-  function getTextForIdRefs(element: Element, ids: string): string {
+  function getTextForIdRefs(
+    element: Element,
+    ids: string,
+    budget = 200,
+    onTruncated?: () => void
+  ): string {
     const rootNode = typeof element.getRootNode === 'function' ? element.getRootNode() : document;
     const scope = rootNode as { getElementById?: (id: string) => Element | null };
-    return ids
-      .split(/\s+/u)
-      .filter(Boolean)
+    if (onTruncated && ids.length > 4096) onTruncated();
+    const references = (onTruncated ? ids.slice(0, 4096) : ids).split(/\s+/u).filter(Boolean);
+    if (onTruncated && references.length > 16) onTruncated();
+    return (onTruncated ? references.slice(0, 16) : references)
       .map((id) => {
         const target =
           (typeof scope.getElementById === 'function' ? scope.getElementById(id) : null) ||
@@ -589,7 +607,7 @@ descending into shadow roots. */
               ? `#${CSS.escape(id)}`
               : `[id="${escapeAttributeValue(id)}"]`
           );
-        return target ? getElementTextContent(target) : '';
+        return target ? getElementTextContent(target, budget, onTruncated) : '';
       })
       .filter(Boolean)
       .join(' ')
@@ -602,11 +620,21 @@ descending into shadow roots. */
   }
 
   /** Text of the `<label>` elements associated with a form control. */
-  function getAssociatedLabelText(element: Element): string {
+  function getAssociatedLabelText(
+    element: Element,
+    budget = 200,
+    onTruncated?: () => void
+  ): string {
     const labels: Element[] = [];
     const native = (element as { labels?: ArrayLike<Element> | null }).labels;
     if (native && typeof native.length === 'number' && native.length > 0) {
-      labels.push(...Array.from(native));
+      if (onTruncated && native.length > 16) onTruncated();
+      labels.push(
+        ...Array.from(
+          { length: onTruncated ? Math.min(native.length, 16) : native.length },
+          (_, index) => native[index]
+        )
+      );
     } else {
       const id = element.getAttribute('id');
       const rootNode = typeof element.getRootNode === 'function' ? element.getRootNode() : document;
@@ -617,8 +645,9 @@ descending into shadow roots. */
       const wrapping = typeof element.closest === 'function' ? element.closest('label') : null;
       if (wrapping && !labels.includes(wrapping)) labels.push(wrapping);
     }
-    return labels
-      .map((label) => getElementTextContent(label))
+    if (onTruncated && labels.length > 16) onTruncated();
+    return (onTruncated ? labels.slice(0, 16) : labels)
+      .map((label) => getElementTextContent(label, budget, onTruncated))
       .filter(Boolean)
       .join(' ')
       .trim();
@@ -661,43 +690,45 @@ but historically matched `listbox` here). */
   /** Practical accessible-name computation covering the common sources:
 aria-labelledby, aria-label, associated labels, alt, button values,
 content for name-from-content roles, title, and placeholder. */
-  function getAccessibleName(element: Element): string {
+  function getAccessibleName(element: Element, budget = 200, onTruncated?: () => void): string {
+    const bounded = (text: string | null) => {
+      if (onTruncated && text && text.length > budget) onTruncated();
+      return collapseText(onTruncated ? text?.slice(0, budget) : text, budget);
+    };
     const labelledBy = element.getAttribute('aria-labelledby');
     if (labelledBy) {
-      const text = getTextForIdRefs(element, labelledBy);
-      if (text) return text;
+      const text = getTextForIdRefs(element, labelledBy, budget, onTruncated);
+      if (text) return onTruncated ? bounded(text) : text;
     }
-    const ariaLabel = collapseText(element.getAttribute('aria-label'));
+    const ariaLabel = bounded(element.getAttribute('aria-label'));
     if (ariaLabel) return ariaLabel;
 
     const tag = element.tagName;
     const type = (element.getAttribute('type') || '').toLowerCase();
     if (tag === 'INPUT' && ['button', 'submit', 'reset'].includes(type)) {
-      const value = collapseText(element.getAttribute('value'));
+      const value = bounded(element.getAttribute('value'));
       if (value) return value;
       if (type !== 'button') return type === 'submit' ? 'Submit' : 'Reset';
     }
     if (LABELABLE_TAGS.has(tag) && !(tag === 'INPUT' && type === 'hidden')) {
-      const labelText = getAssociatedLabelText(element);
-      if (labelText) return labelText;
+      const labelText = getAssociatedLabelText(element, budget, onTruncated);
+      if (labelText) return onTruncated ? bounded(labelText) : labelText;
     }
     if (tag === 'IMG' || tag === 'AREA' || (tag === 'INPUT' && type === 'image')) {
-      const alt = collapseText(element.getAttribute('alt'));
+      const alt = bounded(element.getAttribute('alt'));
       if (alt) return alt;
     }
     if (tag === 'FIELDSET') {
       const legend = element.querySelector?.(':scope > legend');
-      if (legend) return getElementTextContent(legend);
+      if (legend) return getElementTextContent(legend, budget, onTruncated);
     }
     const roles = getElementRoles(element);
     if (roles.some((role) => NAME_FROM_CONTENT_ROLES.has(role)) || tag === 'LABEL') {
-      const content = getElementTextContent(element);
+      const content = getElementTextContent(element, budget, onTruncated);
       if (content) return content;
     }
     return (
-      collapseText(element.getAttribute('title')) ||
-      collapseText(element.getAttribute('placeholder')) ||
-      ''
+      bounded(element.getAttribute('title')) || bounded(element.getAttribute('placeholder')) || ''
     );
   }
 

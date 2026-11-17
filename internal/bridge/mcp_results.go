@@ -302,6 +302,11 @@ func mcpStructuredResponse(response object, method string, params object) object
 		if method == "dom.get_accessibility_tree" && response.object("result")["nodes"] != nil {
 			structured["evidenceMeta"] = value(mcpPick(response.object("result"), "rootIds count total rawTotal source format scanned compact interactiveOnly truncated truncation continuationHint"))
 		}
+		if method == "dom.get_accessibility_tree" {
+			if meta := cliOutlineEvidenceMeta(response.object("result"), evidence); meta != nil {
+				structured["evidenceMeta"] = value(meta)
+			}
+		}
 		if truncated {
 			structured["outputTruncated"], structured["outputLimit"] = value(true), value(limit)
 		}
@@ -558,6 +563,19 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 		out["returnedChars"] = value(min(length, limit))
 		return value(out), length > limit, object{"maxCharacters": value(limit)}
 	}
+	if method == "dom.get_accessibility_tree" && r.text("source") == "dom" && r["scope"] != nil && r["outline"] != nil {
+		text := r.text("outline")
+		limited := mcpStringLength(text) > 4000
+		if limited {
+			text = mcpSlice(text, 4000)
+			if end := strings.LastIndexByte(text, '\n'); end >= 0 {
+				text = text[:end]
+			} else {
+				text = ""
+			}
+		}
+		return value(text), limited, object{"maxCharacters": value(4000)}
+	}
 	if method == "dom.query" || method == "dom.get_accessibility_tree" {
 		var nodes []object
 		if json.Unmarshal(r["nodes"], &nodes) == nil {
@@ -611,7 +629,7 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 					out = append(out, compact)
 				} else if r.text("source") == "dom" {
 					// DOM trees carry actionable refs and states, not CDP node IDs.
-					compact := mcpPick(node, "ref role name depth states")
+					compact := mcpPick(node, "ref role name depth states matched")
 					mcpOmitEmpty(compact, "name", "states")
 					out = append(out, compact)
 				} else {

@@ -209,7 +209,7 @@ const BRIDGE_METHOD_DESCRIPTIONS: Readonly<Record<import('./types.js').BridgeMet
       'Find visible elements by ARIA role and accessible name (labels, aria-*, alt, content).',
     'dom.get_html': 'Read inner or outer HTML for one element.',
     'dom.get_accessibility_tree':
-      'Read an accessibility tree; source=dom returns a compact actionable outline with elementRefs and no debugger.',
+      'Read an accessibility tree; source=dom returns actionable refs without the debugger. DOM-only scope=auto|modal|main|document opts into document-local scope; selector overrides it. find is literal case-insensitive role/name search with context=0..3. Scoped/search reads never merge other frames and report scope, fallback and completeness.',
     'layout.get_box_model': 'Read the box model for one element.',
     'layout.hit_test': 'Resolve the topmost element at a viewport point.',
     'styles.get_computed':
@@ -651,7 +651,18 @@ export const BRIDGE_METHOD_REGISTRY: Readonly<
     'dom.get_accessibility_tree',
     'inspect',
     true,
-    ['selector', 'maxNodes', 'maxDepth', 'compact', 'interactiveOnly', 'source', 'format'],
+    [
+      'selector',
+      'maxNodes',
+      'maxDepth',
+      'compact',
+      'interactiveOnly',
+      'source',
+      'format',
+      'scope',
+      'find',
+      'context',
+    ],
     'moderate',
     METHOD_POLICIES.domReadDebugger,
     {

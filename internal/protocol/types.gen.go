@@ -5145,18 +5145,24 @@ type AccessibilityTreeParams struct {
 
 	Format Optional[string] `json:"format,omitzero"`
 
+	Scope Optional[string] `json:"scope,omitzero"`
+
+	Find Optional[string] `json:"find,omitzero"`
+
+	Context Optional[float64] `json:"context,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v AccessibilityTreeParams) MarshalJSON() ([]byte, error) {
 	type alias AccessibilityTreeParams
-	return marshalOpen(alias(v), v.Extra, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format"})
+	return marshalOpen(alias(v), v.Extra, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format", "scope", "find", "context"})
 }
 
 func (v *AccessibilityTreeParams) UnmarshalJSON(data []byte) error {
 	type alias AccessibilityTreeParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format", "scope", "find", "context"})
 	if err != nil {
 		return err
 	}
@@ -5180,23 +5186,194 @@ type NormalizedAccessibilityTreeParams struct {
 
 	Format Optional[string] `json:"format,omitzero"`
 
+	Scope Optional[string] `json:"scope,omitzero"`
+
+	Find Optional[string] `json:"find,omitzero"`
+
+	Context Optional[float64] `json:"context,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v NormalizedAccessibilityTreeParams) MarshalJSON() ([]byte, error) {
 	type alias NormalizedAccessibilityTreeParams
-	return marshalOpen(alias(v), v.Extra, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format"})
+	return marshalOpen(alias(v), v.Extra, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format", "scope", "find", "context"})
 }
 
 func (v *NormalizedAccessibilityTreeParams) UnmarshalJSON(data []byte) error {
 	type alias NormalizedAccessibilityTreeParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format", "scope", "find", "context"})
 	if err != nil {
 		return err
 	}
 	decoded.Extra = extra
 	*v = NormalizedAccessibilityTreeParams(decoded)
+	return nil
+}
+
+type DomOutlineNode struct {
+	Ref string `json:"ref"`
+
+	Role string `json:"role"`
+
+	Name string `json:"name"`
+
+	Depth float64 `json:"depth"`
+
+	States []string `json:"states"`
+
+	Matched Optional[bool] `json:"matched,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v DomOutlineNode) MarshalJSON() ([]byte, error) {
+	type alias DomOutlineNode
+	return marshalOpen(alias(v), v.Extra, []string{"ref", "role", "name", "depth", "states", "matched"})
+}
+
+func (v *DomOutlineNode) UnmarshalJSON(data []byte) error {
+	type alias DomOutlineNode
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"ref", "role", "name", "depth", "states", "matched"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = DomOutlineNode(decoded)
+	return nil
+}
+
+type DomOutlineScope struct {
+	Requested string `json:"requested"`
+
+	Resolved string `json:"resolved"`
+
+	Boundary string `json:"boundary"`
+
+	FrameId Optional[float64] `json:"frameId,omitzero"`
+
+	Selector Optional[string] `json:"selector,omitzero"`
+
+	RootRef Optional[string] `json:"rootRef,omitzero"`
+
+	Scanned float64 `json:"scanned"`
+
+	FallbackReason Optional[string] `json:"fallbackReason,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v DomOutlineScope) MarshalJSON() ([]byte, error) {
+	type alias DomOutlineScope
+	return marshalOpen(alias(v), v.Extra, []string{"requested", "resolved", "boundary", "frameId", "selector", "rootRef", "scanned", "fallbackReason"})
+}
+
+func (v *DomOutlineScope) UnmarshalJSON(data []byte) error {
+	type alias DomOutlineScope
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"requested", "resolved", "boundary", "frameId", "selector", "rootRef", "scanned", "fallbackReason"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = DomOutlineScope(decoded)
+	return nil
+}
+
+type DomOutlineCompleteness struct {
+	Complete bool `json:"complete"`
+
+	Reasons []string `json:"reasons"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v DomOutlineCompleteness) MarshalJSON() ([]byte, error) {
+	type alias DomOutlineCompleteness
+	return marshalOpen(alias(v), v.Extra, []string{"complete", "reasons"})
+}
+
+func (v *DomOutlineCompleteness) UnmarshalJSON(data []byte) error {
+	type alias DomOutlineCompleteness
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"complete", "reasons"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = DomOutlineCompleteness(decoded)
+	return nil
+}
+
+type DomOutlineSearch struct {
+	Query string `json:"query"`
+
+	Context float64 `json:"context"`
+
+	MatchCount float64 `json:"matchCount"`
+
+	ReturnedMatches float64 `json:"returnedMatches"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v DomOutlineSearch) MarshalJSON() ([]byte, error) {
+	type alias DomOutlineSearch
+	return marshalOpen(alias(v), v.Extra, []string{"query", "context", "matchCount", "returnedMatches"})
+}
+
+func (v *DomOutlineSearch) UnmarshalJSON(data []byte) error {
+	type alias DomOutlineSearch
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"query", "context", "matchCount", "returnedMatches"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = DomOutlineSearch(decoded)
+	return nil
+}
+
+type DomOutlineResult struct {
+	Source string `json:"source"`
+
+	Format string `json:"format"`
+
+	Nodes Optional[[]DomOutlineNode] `json:"nodes,omitzero"`
+
+	Outline Optional[string] `json:"outline,omitzero"`
+
+	Count float64 `json:"count"`
+
+	Scanned float64 `json:"scanned"`
+
+	Truncated bool `json:"truncated"`
+
+	Scope Optional[DomOutlineScope] `json:"scope,omitzero"`
+
+	Search Optional[DomOutlineSearch] `json:"search,omitzero"`
+
+	Completeness Optional[DomOutlineCompleteness] `json:"completeness,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v DomOutlineResult) MarshalJSON() ([]byte, error) {
+	type alias DomOutlineResult
+	return marshalOpen(alias(v), v.Extra, []string{"source", "format", "nodes", "outline", "count", "scanned", "truncated", "scope", "search", "completeness"})
+}
+
+func (v *DomOutlineResult) UnmarshalJSON(data []byte) error {
+	type alias DomOutlineResult
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"source", "format", "nodes", "outline", "count", "scanned", "truncated", "scope", "search", "completeness"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = DomOutlineResult(decoded)
 	return nil
 }
 

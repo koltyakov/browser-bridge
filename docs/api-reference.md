@@ -192,6 +192,59 @@ rules per tab, with a 2,048-character URL pattern, 256 KiB body, 64 headers,
 | `dom.get_html`              | Read inner or outer HTML for one element                                 |
 | `dom.get_accessibility_tree` | Read a depth-limited accessibility tree with optional compact or interactive filtering |
 
+#### Scoped DOM outline search
+
+The default CDP source is unchanged. With `source: "dom"`, opt into a
+document-local outline or tree using `scope: "auto"`, `"modal"`, `"main"` or
+`"document"`. Auto chooses one visible modal dialog, otherwise one visible main.
+Multiple candidates, missing requested landmarks, or incomplete scope discovery
+fall back to the document with an explicit `scope.fallbackReason`. A plain
+non-modal dialog does not hide the rest of the page. Main scope excludes global
+header controls outside main.
+
+An explicit `selector` overrides scope and retains existing selector routing,
+including routing to a matching child frame. Scope/search reads only that resolved
+document and never merges unrelated child frames. Calls without these options
+retain existing unscoped frame merging.
+
+```json
+{
+  "source": "dom",
+  "scope": "auto",
+  "find": "Save profile",
+  "context": 1,
+  "maxNodes": 30,
+  "maxDepth": 6
+}
+```
+
+`find` is a literal, case-insensitive substring of an eligible node's role or
+accessible name, not a regex, selector or search of input values. It must be
+nonblank and at most 200 characters. `context` requires `find`, defaults to 1,
+and accepts 0 through 3. Zero returns only matching nodes; otherwise include
+that many semantic siblings on each side plus ancestors. Context never searches
+outside scope. Matching nodes take priority when the result budget is exhausted.
+Tree nodes identify matches with `matched`; text outlines append `[match]`.
+
+Opt-in responses include `scope`, optional `search`, and `completeness`.
+`scope.boundary` is `"document"` and `frameId` identifies the resolved frame.
+Scope discovery and outline traversal are each capped at 20,000 candidates.
+Existing node/depth limits still apply. Search counts are observed counts, not
+exact totals when incomplete. Never treat zero matches as proof of absence when
+`completeness.complete` is false.
+Name inspection is bounded to 2,000 source characters with bounded label
+references; reaching that limit adds `nameLimit`, even when the displayed name
+is shorter. A separately returned scope root reserves one of the 5,000 reference
+slots, so a capacity-sized result may contain 4,999 nodes plus that root.
+
+Compact CLI and MCP results retain this metadata in `evidenceMeta`. Formatter
+clipping adds `deliveryLimit` and updates delivered counts rather than claiming
+complete evidence. MCP text clipping keeps whole lines and actionable refs.
+If an explicit bridge token budget cannot hold the scoped result, the bridge
+returns `RESULT_TOO_LARGE` instead of generically shrinking refs or completeness
+metadata. Narrow the read or increase the budget.
+No baseline or delta is created by these reads.
+
 ### Layout and styles
 
 | Method                    | Description                                                              |

@@ -66,6 +66,38 @@ function failureResponse(id: string, code: string, message: string): BridgeRespo
   };
 }
 
+test('scoped outline token budgets preserve complete metadata and whole refs or fail atomically', () => {
+  for (const format of ['tree', 'outline']) {
+    const response = successResponse('scoped-budget', {
+      source: 'dom',
+      format,
+      count: 30,
+      scanned: 30,
+      truncated: false,
+      ...(format === 'tree'
+        ? {
+            nodes: Array.from({ length: 30 }, (_, index) => ({
+              ref: `el_${index}`,
+              role: 'button',
+              name: 'Save '.repeat(20),
+            })),
+          }
+        : { outline: '- button "Save" [el_1] [match]\n'.repeat(30) }),
+      scope: { requested: 'auto', resolved: 'main', boundary: 'document', scanned: 30 },
+      completeness: { complete: true, reasons: [] },
+    });
+    assert.equal(enforceTokenBudget('dom.get_accessibility_tree', response, 10000), response);
+    assert.equal(enforceTokenBudget('dom.get_accessibility_tree', response, undefined), response);
+    const denied = enforceTokenBudget('dom.get_accessibility_tree', response, 20);
+    assert.equal(denied.ok, false);
+    if (!denied.ok) {
+      assert.equal(denied.error.code, 'RESULT_TOO_LARGE');
+      assert.equal(denied.result, null);
+      assert.match(denied.error.message, /Narrow scope/);
+    }
+  }
+});
+
 test('background helpers normalize runtime errors', () => {
   assert.equal(normalizeRuntimeErrorMessage('No tab with id: 7.'), 'TAB_MISMATCH');
   assert.equal(normalizeRuntimeErrorMessage('Error: No tab with id: 7.'), 'TAB_MISMATCH');
