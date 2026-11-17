@@ -68,7 +68,7 @@ import {
   handleCreateTab as executeCreateTab,
   handleListTabs as executeListTabs,
 } from './background-tabs.js';
-import { TabDebuggerCoordinator } from './debugger-coordinator.js';
+import { TabDebuggerCoordinator, probeOwnedDebuggerAttachment } from './debugger-coordinator.js';
 import { NavigationWaitCoordinator } from './navigation-wait.js';
 import {
   createExtensionState,
@@ -266,12 +266,10 @@ const recoveryTelemetry = new RecoveryTelemetryCollector();
 const tabDebugger = new TabDebuggerCoordinator({
   attach: (target, protocolVersion) => chrome.debugger.attach(target, protocolVersion),
   detach: (target) => chrome.debugger.detach(target),
-  ownsAttachment: async (target) => {
-    // Chrome rejects sendCommand unless this extension owns the attachment.
-    // A read-only runtime ID does not execute page code or replay input.
-    await chrome.debugger.sendCommand(target, 'Runtime.getIsolateId', {});
-    return true;
-  },
+  ownsAttachment: (target) =>
+    probeOwnedDebuggerAttachment(target, (debugTarget, method, params) =>
+      chrome.debugger.sendCommand(debugTarget, method, params)
+    ),
   initialize: async (target) => {
     await chrome.debugger.sendCommand(target, 'Page.enable', {});
   },

@@ -65,9 +65,15 @@ Coverage includes both MCP protocol eras, an actual MV3 worker replacement
 and native-host reconnection, MCP cancellation between native input steps,
 disconnecting/reconnecting MCP during a sequence, independent exact-once page
 verification, and settled request/scheduler/connection counts.
-Worker recovery also covers a debugger session retained across termination.
-The new worker resets it only after Chrome's extension-owned `sendCommand`
-boundary proves ownership, before dispatching any input.
+Worker recovery covers both a debugger session retained across termination and
+a session normally detached by the burst-idle timer before termination.
+The new worker resets a retained session only after a non-mutating
+`Page.getFrameTree` through Chrome's extension-owned `sendCommand` boundary
+proves ownership. It does not use trusted-client-only V8 commands, activate the
+tab, or retry input. Each post-restart click must take effect exactly once.
+If interrupted input returns an MCP error before the transport closes, its
+recovery must also forbid replay and omit retry backoff. A local MCP error
+without a confirmed bridge result cannot establish how many steps executed.
 
 Mixed-version coverage runs the current Go/MCP build with a genuinely older,
 protocol-compatible extension as well as the current extension. Supply an

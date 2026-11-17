@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { TabDebuggerCoordinator } from '../src/debugger-coordinator.js';
+import {
+  TabDebuggerCoordinator,
+  probeOwnedDebuggerAttachment,
+} from '../src/debugger-coordinator.js';
 
 function nextTick(): Promise<void> {
   return new Promise((resolve) => {
@@ -45,6 +48,148 @@ test('worker recovery resets only a proven own attachment before dispatching one
     'task',
     'detach',
   ]);
+});
+
+test('retained attachment recovery works when trusted-only Runtime.getIsolateId is rejected', async () => {
+  const events: string[] = [];
+  let attached = true;
+  const sendCommand = async (
+    target: { tabId: number },
+    method: string,
+    params: Record<string, unknown>
+  ): Promise<unknown> => {
+    assert.deepEqual(target, { tabId: 7 });
+    events.push(method);
+    if (method === 'Runtime.getIsolateId')
+      throw new Error('Runtime.getIsolateId is not allowed for untrusted clients');
+    assert(attached, 'Commands require a proven own attachment');
+    if (method === 'Page.getFrameTree') {
+      assert.deepEqual(params, {});
+      return { frameTree: { frame: { id: 'fixture-frame' } } };
+    }
+    assert.equal(method, 'Input.dispatchMouseEvent');
+    return {};
+  };
+  // Match the observed Chrome restriction independently of the recovery probe.
+  await assert.rejects(sendCommand({ tabId: 7 }, 'Runtime.getIsolateId', {}), /untrusted clients/);
+  events.length = 0;
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      events.push('attach');
+      if (attached) throw new Error('Another debugger is already attached');
+      attached = true;
+    },
+    ownsAttachment: (target) => probeOwnedDebuggerAttachment(target, sendCommand),
+    detach: async () => {
+      events.push('detach');
+      attached = false;
+    },
+    initialize: async () => {
+      events.push('initialize');
+    },
+  });
+  await coordinator.run(
+    7,
+    (target) => sendCommand(target, 'Input.dispatchMouseEvent', { type: 'mousePressed' }),
+    { releaseAfterRun: true }
+  );
+  await nextTick();
+  assert.deepEqual(events, [
+    'attach',
+    'Page.getFrameTree',
+    'detach',
+    'attach',
+    'initialize',
+    'Input.dispatchMouseEvent',
+    'detach',
+  ]);
+  assert.equal(attached, false);
+});
+
+test('a normally detached attachment is reacquired without probing, resetting, or replaying input', async () => {
+  const events: string[] = [];
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      events.push('attach');
+    },
+    detach: async () => {
+      events.push('detach');
+    },
+    initialize: async () => {
+      events.push('initialize');
+    },
+    ownsAttachment: (target) =>
+      probeOwnedDebuggerAttachment(target, async () => {
+        assert.fail('Fresh attachments must not need an ownership proof');
+      }),
+  });
+  await coordinator.run(
+    7,
+    async () => {
+      events.push('input');
+    },
+    { releaseAfterRun: true }
+  );
+  await nextTick();
+  assert.deepEqual(events, ['attach', 'initialize', 'input', 'detach']);
+});
+
+test('a rejected Page ownership proof preserves the original conflict and never detaches or dispatches', async () => {
+  for (const message of [
+    'Debugger is not attached to this extension',
+    'Page.getFrameTree unavailable',
+  ]) {
+    const conflict = new Error('Another debugger is already attached');
+    const commands: string[] = [];
+    const coordinator = new TabDebuggerCoordinator({
+      attach: async () => {
+        commands.push('attach');
+        throw conflict;
+      },
+      ownsAttachment: (target) =>
+        probeOwnedDebuggerAttachment(target, async (_target, method) => {
+          commands.push(method);
+          throw new Error(message);
+        }),
+      detach: async () => {
+        commands.push('detach');
+      },
+    });
+    await assert.rejects(
+      coordinator.run(7, async () => {
+        commands.push('input');
+      }),
+      (error: unknown) => error === conflict
+    );
+    assert.deepEqual(commands, ['attach', 'Page.getFrameTree']);
+    assert.equal(coordinator.attachedTabs.size, 0);
+  }
+});
+
+test('loss of ownership during reset never reattaches or dispatches input', async () => {
+  const events: string[] = [];
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      events.push('attach');
+      throw new Error('Another debugger is already attached');
+    },
+    ownsAttachment: (target) =>
+      probeOwnedDebuggerAttachment(target, async (_target, method) => {
+        events.push(method);
+        return {};
+      }),
+    detach: async () => {
+      events.push('detach');
+      throw new Error('Debugger is not attached to this extension');
+    },
+  });
+  await assert.rejects(
+    coordinator.run(7, async () => {
+      events.push('input');
+    }),
+    /not attached to this extension/
+  );
+  assert.deepEqual(events, ['attach', 'Page.getFrameTree', 'detach']);
 });
 
 test('worker recovery never detaches a foreign or unprovable attachment', async () => {

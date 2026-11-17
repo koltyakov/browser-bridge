@@ -6,6 +6,21 @@ export type DebuggerDetach = (target: DebuggerTarget) => Promise<void>;
 export type DebuggerInitialize = (target: DebuggerTarget) => Promise<void>;
 export type DebuggerRunOptions = { retryDetached?: boolean; releaseAfterRun?: boolean };
 
+/** Chrome rejects sendCommand unless this extension owns the attachment.
+ * Use a non-mutating Page read, not a V8 command restricted to trusted clients.
+ * Failure must remain unproven ownership; never infer it from getTargets. */
+export async function probeOwnedDebuggerAttachment(
+  target: DebuggerTarget,
+  sendCommand: (
+    target: DebuggerTarget,
+    method: string,
+    params: Record<string, unknown>
+  ) => Promise<unknown>
+): Promise<boolean> {
+  await sendCommand(target, 'Page.getFrameTree', {});
+  return true;
+}
+
 const MAX_TRACKED_DIALOGS = 100;
 const MAX_DIALOG_TEXT_LENGTH = 4_096;
 const RECENT_DEBUGGER_REASON_TTL_MS = 5 * 60 * 1000;

@@ -52,7 +52,19 @@ func mcpRPCResult(id json.RawMessage, method, era string, result object) object 
 
 func toolResult(response object, err error) object {
 	if err != nil {
-		return mcpErrorResult("INTERNAL_ERROR", err.Error())
+		// A local cancellation, timeout, or transport failure can race with
+		// browser dispatch. There is no confirmed bridge result here, so the
+		// code's generic retry hint is unsafe, even after a clean MCP EOF.
+		// Do not invent dispatch state or partial progress from a local error.
+		failed := failure("", "INTERNAL_ERROR", err.Error())
+		bridgeError := failed.object("error")
+		bridgeError["details"] = value(object{"outcomeUncertain": value(true)})
+		bridgeError["recovery"] = value(object{
+			"retry": value(false),
+			"hint":  value("No confirmed result is available. Actions may already have executed. Inspect current state before another deliberate action; do not replay automatically."),
+		})
+		failed["error"] = value(bridgeError)
+		return mcpResponse(failed, "", nil)
 	}
 	return response
 }

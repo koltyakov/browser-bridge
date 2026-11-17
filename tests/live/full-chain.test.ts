@@ -240,27 +240,45 @@ test('MCP to installed extension full-chain regressions', { timeout: 240000 }, a
         assert.equal(capability.advisory, true);
         assert(Array.isArray(capability.operations));
         assert.equal(object(capability.operations[0]).status, 'available');
-        const oldConnection = client.extensionId;
-        const workerId = await harness.stopWorker();
-        await eventually('MCP recovery after MV3 restart/native reconnect', 30000, async () => {
-          const health = await client.refresh();
-          assert.notEqual(client.extensionId, oldConnection);
-          const loaded = object(
-            health.loadedBuild ??
-              evidence(await client.call('health.ping', harness.tabId, { diagnostics: true }))
-                .loadedBuild
-          );
-          assert.notEqual(loaded.workerId, workerId, 'Worker must actually be replaced');
-          evidence(await client.call('page.get_state', harness.tabId));
-        });
-        await verifiedClick(client);
-        measurements.push({
-          name,
-          fault: 'worker_restart_and_native_reconnect',
-          oldConnection,
-          newConnection: client.extensionId,
-          workerId,
-        });
+        for (const attachment of ['retained', 'normally_detached'] as const) {
+          await verifiedClick(client);
+          const attached = () =>
+            harness.uiEvaluate(
+              `(await chrome.debugger.getTargets()).some(target => target.tabId === ${harness.tabId} && target.attached)`
+            );
+          if (attachment === 'retained') {
+            assert.equal(await attached(), true, 'Restart must interrupt a retained attachment');
+          } else {
+            await eventually('normal burst-idle detach before restart', 10000, async () => {
+              assert.equal(await attached(), false);
+            });
+          }
+          const oldConnection = client.extensionId;
+          const workerId = await harness.stopWorker();
+          await eventually('MCP recovery after MV3 restart/native reconnect', 30000, async () => {
+            const health = await client.refresh();
+            assert.notEqual(client.extensionId, oldConnection);
+            const loaded = object(
+              health.loadedBuild ??
+                evidence(await client.call('health.ping', harness.tabId, { diagnostics: true }))
+                  .loadedBuild
+            );
+            assert.notEqual(loaded.workerId, workerId, 'Worker must actually be replaced');
+            evidence(await client.call('page.get_state', harness.tabId));
+          });
+          // No retries or manual debugger resets: recovery must precede this
+          // one deliberate action, whose exact-once effect is checked separately.
+          const click = await verifiedClick(client);
+          measurements.push({
+            name,
+            fault: 'worker_restart_and_native_reconnect',
+            attachment,
+            oldConnection,
+            newConnection: client.extensionId,
+            workerId,
+            click,
+          });
+        }
       } else {
         const unsupported = await client.call('protocol.capabilities', harness.tabId, {
           calls: [{ method: 'input.fill' }],
@@ -311,6 +329,16 @@ test('MCP to installed extension full-chain regressions', { timeout: 240000 }, a
           'error' in outcome || outcome.result?.isError === true,
           'Interrupted sequence must not report success'
         );
+        if ('result' in outcome) {
+          const recovery = object(object(outcome.result.structuredContent).recovery);
+          assert.equal(recovery.retry, false, 'Interrupted input must not advertise replay');
+          assert.equal(
+            recovery.retryAfterMs,
+            undefined,
+            'Interrupted input must not advertise backoff'
+          );
+          assert.match(String(recovery.hint), /do not replay/i);
+        }
         if (fault === 'mcp_disconnect') client = await connect();
         await delay(2800);
         const after = await harness.state();
