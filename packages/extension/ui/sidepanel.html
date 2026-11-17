@@ -134,6 +134,8 @@
             aria-selected="true" aria-controls="setup-native-panel" tabindex="0">Standalone</button>
           <button id="setup-npm-tab" class="setup-install-tab" type="button" role="tab"
             aria-selected="false" aria-controls="setup-npm-panel" tabindex="-1">Install with npm</button>
+          <button id="setup-agent-tab" class="setup-install-tab" type="button" role="tab"
+            aria-selected="false" aria-controls="setup-agent-panel" tabindex="-1">Install with agent</button>
         </div>
         <div id="setup-native-panel" class="setup-install-panel" role="tabpanel" aria-labelledby="setup-native-tab" tabindex="0">
           <span id="setup-native-hint" class="setup-step-hint" hidden></span>
@@ -146,6 +148,13 @@
         </div>
         <div id="setup-npm-panel" class="setup-install-panel" role="tabpanel" aria-labelledby="setup-npm-tab" tabindex="0" hidden>
           <code id="setup-npm-cmd" class="setup-cmd">npm install -g @browserbridge/bbx</code>
+        </div>
+        <div id="setup-agent-panel" class="setup-install-panel" role="tabpanel" aria-labelledby="setup-agent-tab" tabindex="0" hidden>
+          <span class="setup-step-hint">Copy this prompt into an agent that can run commands on this computer.</span>
+          <button id="setup-agent-prompt" class="setup-cmd setup-agent-prompt" type="button"
+            aria-label="Copy BBX installation prompt" title="Click to copy the installation prompt"></button>
+          <a class="setup-link" href="https://raw.githubusercontent.com/koltyakov/browser-bridge/main/docs/troubleshooting-skill.md"
+            target="_blank" rel="noopener noreferrer">Read the troubleshooting skill ↗</a>
         </div>
         <span class="setup-step-hint">If the CLI is installed and you still see this screen, initialize the browser connection:</span>
         <code id="setup-install-cmd" class="setup-cmd">bbx install</code>

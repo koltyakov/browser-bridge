@@ -481,12 +481,15 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     t.mock.timers.tick(1500);
     const nativeTab = document.getElementById('setup-native-tab') as HTMLButtonElement;
     const npmTab = document.getElementById('setup-npm-tab') as HTMLButtonElement;
+    const agentTab = document.getElementById('setup-agent-tab') as HTMLButtonElement;
     const nativePanel = document.getElementById('setup-native-panel') as HTMLElement;
     const npmPanel = document.getElementById('setup-npm-panel') as HTMLElement;
+    const agentPanel = document.getElementById('setup-agent-panel') as HTMLElement;
+    const agentPrompt = document.getElementById('setup-agent-prompt') as HTMLButtonElement;
     const npmCommand = document.getElementById('setup-npm-cmd') as HTMLElement;
     const registrationCommand = document.getElementById('setup-install-cmd') as HTMLElement;
-    const tabs = [nativeTab, npmTab];
-    const panels = [nativePanel, npmPanel];
+    const tabs = [nativeTab, npmTab, agentTab];
+    const panels = [nativePanel, npmPanel, agentPanel];
     function assertSelectedTab(index: number): void {
       for (const [i, tab] of tabs.entries()) {
         assert.equal(tab.getAttribute('role'), 'tab');
@@ -513,18 +516,43 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     await flushMicrotasks();
     assert.equal(clipboardWrites.at(-1), 'npm install -g @browserbridge/bbx@1.8');
     t.mock.timers.tick(1500);
+    agentTab.click();
+    assertSelectedTab(2);
+    assert.equal(agentPrompt.closest('[role="tabpanel"]'), agentPanel);
+    assert.equal(agentPrompt.type, 'button');
+    assert.equal(agentPrompt.getAttribute('aria-label'), 'Copy BBX installation prompt');
+    const skillUrl =
+      'https://raw.githubusercontent.com/koltyakov/browser-bridge/main/docs/troubleshooting-skill.md';
+    assert.ok(agentPrompt.textContent?.includes(skillUrl));
+    assert.ok(agentPrompt.textContent?.includes('install or repair BBX on this computer'));
+    assert.ok(agentPrompt.textContent?.includes('Extension version: 1.8.0'));
+    assert.ok(agentPrompt.textContent?.includes(`Extension ID: ${'a'.repeat(32)}.`));
+    assert.ok(agentPrompt.textContent?.includes('bbx doctor and bbx status'));
+    assert.ok(agentPrompt.textContent?.includes('Ask me before changing agent configuration'));
+    const skillLink = agentPanel.querySelector('a');
+    assert.equal(skillLink?.getAttribute('href'), skillUrl);
+    assert.equal(skillLink?.getAttribute('target'), '_blank');
+    assert.equal(skillLink?.getAttribute('rel'), 'noopener noreferrer');
+    agentPrompt.click();
+    await flushMicrotasks();
+    assert.equal(clipboardWrites.at(-1), agentPrompt.textContent);
+    assert.equal(agentPrompt.classList.contains('copied'), true);
+    t.mock.timers.tick(1500);
+    assert.equal(agentPrompt.classList.contains('copied'), false);
     let focusedTab: HTMLButtonElement | undefined;
     for (const tab of tabs)
       Reflect.set(tab, 'focus', () => {
         focusedTab = tab;
       });
     for (const [source, key, expected] of [
-      [1, 'ArrowRight', 0],
-      [0, 'ArrowLeft', 1],
-      [1, 'Home', 0],
-      [0, 'End', 1],
+      [2, 'ArrowRight', 0],
+      [0, 'ArrowLeft', 2],
+      [2, 'Home', 0],
+      [0, 'End', 2],
+      [2, 'ArrowLeft', 1],
       [1, 'ArrowLeft', 0],
       [0, 'ArrowRight', 1],
+      [1, 'ArrowRight', 2],
     ] as const) {
       const event = new window.Event('keydown', { bubbles: true, cancelable: true });
       Reflect.set(event, 'key', key);
@@ -537,7 +565,7 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     Reflect.set(escape, 'key', 'Escape');
     npmTab.dispatchEvent(escape);
     assert.equal(escape.defaultPrevented, false);
-    assertSelectedTab(1);
+    assertSelectedTab(2);
     nativeTab.click();
     assertSelectedTab(0);
     assert.doesNotMatch(
@@ -552,7 +580,7 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     assert.equal(releasesLink?.getAttribute('target'), '_blank');
     assert.deepEqual(
       [...document.querySelectorAll('#native-setup .setup-cmd')].map((element) => element.id),
-      ['setup-native-cmd', 'setup-npm-cmd', 'setup-install-cmd']
+      ['setup-native-cmd', 'setup-npm-cmd', 'setup-agent-prompt', 'setup-install-cmd']
     );
     assert.doesNotMatch(document.getElementById('native-setup')?.textContent ?? '', /Manual setup/);
     assert.match(document.getElementById('native-setup')?.textContent ?? '', /Install with npm/);
@@ -577,6 +605,7 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     assert.deepEqual(intervalCalls, [{ delay: 5_000 }]);
     assert.deepEqual(portPair.left.postedMessages, [
       { type: 'state.request', scopeTabId: 41, scopeWindowId: 1 },
+      { type: 'native.retry', installationCopied: true },
       { type: 'native.retry', installationCopied: true },
       { type: 'native.retry', installationCopied: true },
     ]);

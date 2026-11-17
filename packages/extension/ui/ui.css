@@ -1546,6 +1546,16 @@ button:hover {
   white-space: pre-wrap;
 }
 
+.setup-agent-prompt {
+  margin: 0;
+  font-family: inherit;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
 .setup-cmd::after {
   content: '⧉';
   position: absolute;

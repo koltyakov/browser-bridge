@@ -150,6 +150,13 @@ const nativeLoading = document.getElementById('native-loading') as HTMLElement;
 const setupInstallCmd = document.getElementById('setup-install-cmd') as HTMLElement;
 const setupNpmCmd = document.getElementById('setup-npm-cmd') as HTMLElement;
 setupNpmCmd.textContent = getNpmInstallCommand(manifest.version);
+const setupAgentPrompt = document.getElementById('setup-agent-prompt') as HTMLButtonElement;
+setupAgentPrompt.textContent =
+  'Read https://raw.githubusercontent.com/koltyakov/browser-bridge/main/docs/troubleshooting-skill.md ' +
+  'and use it to install or repair BBX on this computer and connect my Browser Bridge extension. ' +
+  `Extension version: ${manifest.version_name ?? manifest.version}. Extension ID: ${chrome.runtime.id}. ` +
+  'Check the existing installation and preserve diagnostic evidence before making changes. ' +
+  'Verify the connection with bbx doctor and bbx status. Ask me before changing agent configuration or restarting the browser.';
 const setupInstallTabs = [
   {
     button: document.getElementById('setup-native-tab') as HTMLButtonElement,
@@ -158,6 +165,10 @@ const setupInstallTabs = [
   {
     button: document.getElementById('setup-npm-tab') as HTMLButtonElement,
     panel: document.getElementById('setup-npm-panel') as HTMLElement,
+  },
+  {
+    button: document.getElementById('setup-agent-tab') as HTMLButtonElement,
+    panel: document.getElementById('setup-agent-panel') as HTMLElement,
   },
 ];
 for (const [index, tab] of setupInstallTabs.entries()) {
@@ -428,7 +439,11 @@ function copySetupText(target: HTMLElement, text: string): void {
     .writeText(text)
     .then(() => {
       target.classList.add('copied');
-      if (['setup-native-cmd', 'setup-npm-cmd', 'setup-install-cmd'].includes(target.id)) {
+      if (
+        ['setup-native-cmd', 'setup-npm-cmd', 'setup-agent-prompt', 'setup-install-cmd'].includes(
+          target.id
+        )
+      ) {
         try {
           port.postMessage({ type: 'native.retry', installationCopied: true });
         } catch {
