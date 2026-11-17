@@ -22,6 +22,17 @@ export function getAccessPolicyDenial(
   };
 }
 
+export function isNavigationAllowed(
+  currentUrl: string,
+  destinationUrl: string,
+  allowOffDomainNavigation: boolean
+): boolean {
+  const current = new URL(currentUrl);
+  const destination = new URL(destinationUrl);
+  // A blank tab has no hostname yet. Ports and schemes do not change domains.
+  return allowOffDomainNavigation || !current.hostname || current.hostname === destination.hostname;
+}
+
 export const DEFAULT_ACCESS_SETTINGS: Readonly<AccessSettings> = Object.freeze({
   allowCreatingTabs: true,
   allowClosingUserTabs: false,

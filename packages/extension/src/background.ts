@@ -25,7 +25,11 @@ import {
   sameWindowGrant,
 } from './background-access.js';
 import { createAccessSettingsController } from './background-access-settings.js';
-import { getAccessPolicyDenial, getAccessSettingsSnapshot } from './access-settings.js';
+import {
+  getAccessPolicyDenial,
+  getAccessSettingsSnapshot,
+  isNavigationAllowed,
+} from './access-settings.js';
 import {
   createNativeConnectionController,
   sendAccessUpdate as sendAccessUpdateNative,
@@ -1657,14 +1661,7 @@ async function handleNavigationRequest(request: BridgeRequest): Promise<BridgeRe
   return executeNavigationRequest(request, {
     captureAccess: () => captureWindowGrant(state),
     assertNavigationAllowed: (target, url) => {
-      const current = new URL(target.url);
-      const destination = new URL(url);
-      // A new, blank AI tab has no domain yet. Its first navigation establishes one.
-      if (
-        !state.accessSettings.allowOffDomainNavigation &&
-        current.hostname &&
-        current.hostname !== destination.hostname
-      ) {
+      if (!isNavigationAllowed(target.url, url, state.accessSettings.allowOffDomainNavigation)) {
         throw new BridgeError(
           ERROR_CODES.ACCESS_DENIED,
           'Navigating to a different domain is disabled in access settings.',

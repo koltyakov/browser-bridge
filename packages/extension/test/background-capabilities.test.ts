@@ -219,6 +219,37 @@ test('runtime policy settings distinguish AI-owned closes and off-domain navigat
   assert.equal(denied.operations[0]?.reason, 'allowClosingUserTabs_disabled');
 });
 
+for (const { name, currentUrl, destinationUrl } of [
+  {
+    name: 'blank-tab navigation',
+    currentUrl: 'about:blank',
+    destinationUrl: 'https://fixture.test/',
+  },
+  {
+    name: 'localhost port changes',
+    currentUrl: 'http://localhost:3000/',
+    destinationUrl: 'http://localhost:4000/',
+  },
+  {
+    name: 'HTTP-to-HTTPS navigation on the same hostname',
+    currentUrl: 'http://fixture.test/',
+    destinationUrl: 'https://fixture.test/',
+  },
+]) {
+  test(`navigation capabilities allow ${name} with off-domain navigation disabled`, async () => {
+    const h = harness({
+      getTab: async () => ({ active: true, windowId: 2, url: currentUrl }),
+    });
+    assert.equal(h.dependencies.settings().settings.allowOffDomainNavigation, false);
+    const result = await h.discover([
+      { method: 'navigation.navigate', params: { url: destinationUrl } },
+    ]);
+    assert.equal(result.grant.status, 'granted');
+    assert.equal(result.operations[0]?.status, 'available');
+    assert.equal(result.operations[0]?.reason, 'eligible_dispatch_checks_required');
+  });
+}
+
 test('probe failure means unknown, missing browser APIs have explicit reasons', async () => {
   const failed = await harness({
     probeFrame: async () => {

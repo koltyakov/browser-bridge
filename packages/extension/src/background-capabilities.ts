@@ -21,6 +21,7 @@ import {
 } from './background-helpers.js';
 import type { ResolvedTabTarget } from './background-routing.js';
 import type { AccessSettingsSnapshot } from '../../../protocol/src/types.js';
+import { isNavigationAllowed } from './access-settings.js';
 
 export type CapabilityProbe = { webmcp: boolean };
 
@@ -218,7 +219,7 @@ export async function discoverRuntimeCapabilities(
     if (method === 'navigation.navigate' && !settings.settings.allowOffDomainNavigation) {
       if (typeof args.url !== 'string') return answer('unknown', 'navigation_url_required');
       try {
-        if (new URL(args.url).origin !== new URL(tab.url).origin)
+        if (!isNavigationAllowed(tab.url, args.url, settings.settings.allowOffDomainNavigation))
           return answer('unavailable', 'allowOffDomainNavigation_disabled');
       } catch {
         return answer('unknown', 'navigation_url_invalid');
