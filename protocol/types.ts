@@ -755,6 +755,29 @@ export interface InputExecutionMetadata {
   targetCoordinates?: { x: number; y: number };
 }
 
+export interface InputObservationStatus {
+  status: 'not_requested' | 'completed' | 'unavailable' | 'interrupted' | 'failed';
+  reason?:
+    | 'not_started'
+    | 'start_failed'
+    | 'finish_failed'
+    | 'expired'
+    | 'navigation'
+    | 'navigation_signal'
+    | 'action_interrupted'
+    | 'unsupported';
+  /** Guard interruption after acknowledged dispatch. Never includes dialog text. */
+  interruption?: { code: ErrorCode; dialogId?: string };
+}
+
+export interface InputAftermath {
+  /** completed means the input routine returned, not that an application outcome succeeded. */
+  dispatch: 'not_started' | 'completed' | 'uncertain';
+  observation: InputObservationStatus;
+  /** Individual input effects/read-back never verify application postconditions. Use input.perform outcomes. */
+  verification: 'not_requested';
+}
+
 export interface InputActionParams extends InputWaitObserveParams {
   target?: InputTarget;
   button?: 'left' | 'middle' | 'right';
@@ -925,6 +948,7 @@ export interface PerformResult {
   startedAtMs: number[];
   failures: PerformStepFailure[];
   lastResult?: PerformLastResult;
+  /** Present only for explicitly requested outcomes. Never inferred from input effects or read-back. */
   verified?: boolean;
   outcomes?: PerformOutcomeResult[];
 }

@@ -17,6 +17,10 @@ func cliSummarize(response object, method string, now int64) object {
 	result := cliSummaryBody(response, method, now)
 	meta := response.object("meta")
 	if response.boolean("ok") {
+		status := response.object("result").object("aftermath").object("observation").text("status")
+		if stringIn(status, []string{"failed", "unavailable", "interrupted"}) {
+			result["summary"] = value(result.text("summary") + " Observation " + status + "; application outcome unverified.")
+		}
 		_, tab := cliNumberValue(meta["tab_id"])
 		_, active := cliNumberValue(meta["active_tab_id"])
 		// A caller that passed tabId already chose the tab; the note is for

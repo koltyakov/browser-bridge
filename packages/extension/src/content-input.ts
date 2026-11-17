@@ -2548,19 +2548,30 @@ target's own state. Lets agents skip a follow-up read after most actions. */
             }
           })
         : null;
-    observer?.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: ['open', 'hidden', 'aria-hidden', 'aria-expanded', 'class', 'style'],
-    });
+    try {
+      observer?.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ['open', 'hidden', 'aria-hidden', 'aria-expanded', 'class', 'style'],
+      });
+    } catch (error) {
+      observer?.disconnect();
+      throw error;
+    }
+    let navigationSignal = false;
+    const onBeforeUnload = () => {
+      navigationSignal = true;
+      notifyUnload();
+    };
     const onUnload = () => {
       unloading = true;
+      navigationSignal = true;
       notifyUnload();
     };
     globalThis.addEventListener?.('pagehide', onUnload);
-    globalThis.addEventListener?.('beforeunload', onUnload);
+    globalThis.addEventListener?.('beforeunload', onBeforeUnload);
 
     let disposed = false;
     const dispose = () => {
@@ -2568,7 +2579,7 @@ target's own state. Lets agents skip a follow-up read after most actions. */
       disposed = true;
       observer?.disconnect();
       globalThis.removeEventListener?.('pagehide', onUnload);
-      globalThis.removeEventListener?.('beforeunload', onUnload);
+      globalThis.removeEventListener?.('beforeunload', onBeforeUnload);
     };
 
     return {
@@ -2579,7 +2590,7 @@ target's own state. Lets agents skip a follow-up read after most actions. */
         // on navigation. Finish before that happens instead of waiting to settle.
         await Promise.race([sleep(Math.min(50, settleMs)), unloadSignal]);
         while (
-          !unloading &&
+          !navigationSignal &&
           Date.now() < deadline &&
           Date.now() - lastMutationAt < OBSERVE_QUIET_MS
         ) {
@@ -2615,8 +2626,16 @@ target's own state. Lets agents skip a follow-up read after most actions. */
         if (added || removed) effects.dom = { added, removed };
         const targetState = describeTargetState(element);
         if (targetState) effects.target = targetState;
-        effects.changed = Object.keys(effects).some((key) => key !== 'target');
+        const observation: import('../../../protocol/src/types.js').InputObservationStatus =
+          navigationSignal
+            ? { status: 'interrupted', reason: unloading ? 'navigation' : 'navigation_signal' }
+            : observer
+              ? { status: 'completed' }
+              : { status: 'unavailable', reason: 'unsupported' };
+        const changed = Object.keys(effects).some((key) => key !== 'target');
+        if (changed || observation.status === 'completed') effects.changed = changed;
         effects.settledMs = Date.now() - startedAt;
+        effects.observation = observation;
         return effects;
       },
     };
@@ -2652,50 +2671,100 @@ action as exact refs, so the action itself stays synchronous and atomic. */
     action: (params: InputParams) => Record<string, unknown> | Promise<Record<string, unknown>>
   ): (params: InputParams) => Promise<Record<string, unknown>> {
     return async (params) => {
-      const assertActive =
-        typeof params.__bbxAssertActive === 'function'
-          ? (params.__bbxAssertActive as () => void)
-          : () => {};
-      assertActive();
-      const timeoutMs = clamp(Number(params.timeoutMs) || 0, 0, 15_000);
-      const recoverStale = params.recoverStale === true;
-
-      const prepared: InputParams = { ...params };
-
-      const preResolutions: Record<
-        string,
-        { resolution: InputResolutionMetadata; waitedMs: number }
-      > = {};
-
-      let primaryElement: Element | null = null;
-      for (const [key, pointer] of INPUT_TARGET_KEYS[method] ?? []) {
-        const spec = params[key];
-        if (!hasTargetSpec(spec)) continue;
-        const { resolved, waitedMs } = await awaitActionableTarget(spec, {
-          pointer,
-          recoverStale,
-          timeoutMs,
-          assertActive,
-        });
-        prepared[key] = { elementRef: rememberElement(resolved.element) };
-        preResolutions[key] = { resolution: resolved.resolution, waitedMs };
-        primaryElement ??= resolved.element;
-      }
-      if (Object.keys(preResolutions).length) prepared.recoverStale = false;
-
       const observeOptions = params.observe as { settleMs?: unknown } | null | undefined;
-      const observation = observeOptions ? startObservation() : null;
+      const aftermath: import('../../../protocol/src/types.js').InputAftermath = {
+        dispatch: 'not_started',
+        observation: observeOptions
+          ? { status: 'unavailable', reason: 'not_started' }
+          : { status: 'not_requested' },
+        verification: 'not_requested',
+      };
+      let observation: ReturnType<typeof startObservation> | null = null;
       try {
+        const assertActive =
+          typeof params.__bbxAssertActive === 'function'
+            ? (params.__bbxAssertActive as () => void)
+            : () => {};
         assertActive();
+        const timeoutMs = clamp(Number(params.timeoutMs) || 0, 0, 15_000);
+        const recoverStale = params.recoverStale === true;
+
+        const prepared: InputParams = { ...params };
+
+        const preResolutions: Record<
+          string,
+          { resolution: InputResolutionMetadata; waitedMs: number }
+        > = {};
+
+        let primaryElement: Element | null = null;
+        for (const [key, pointer] of INPUT_TARGET_KEYS[method] ?? []) {
+          const spec = params[key];
+          if (!hasTargetSpec(spec)) continue;
+          const { resolved, waitedMs } = await awaitActionableTarget(spec, {
+            pointer,
+            recoverStale,
+            timeoutMs,
+            assertActive,
+          });
+          prepared[key] = { elementRef: rememberElement(resolved.element) };
+          preResolutions[key] = { resolution: resolved.resolution, waitedMs };
+          primaryElement ??= resolved.element;
+        }
+        if (Object.keys(preResolutions).length) prepared.recoverStale = false;
+
+        if (observeOptions) {
+          try {
+            observation = startObservation();
+            aftermath.observation = { status: 'interrupted', reason: 'action_interrupted' };
+          } catch {
+            aftermath.observation = { status: 'unavailable', reason: 'start_failed' };
+          }
+        }
+        assertActive();
+        aftermath.dispatch = 'uncertain';
         const result = await action(prepared);
+        aftermath.dispatch = 'completed';
         mergePreResolution(result, preResolutions);
         if (observation) {
-          result.effects = await observation.finish({
-            settleMs: clamp(Number(observeOptions?.settleMs) || 0, 0, 5_000),
-            element: primaryElement,
-          });
+          try {
+            const { observation: status, ...effects } = await observation.finish({
+              settleMs: clamp(Number(observeOptions?.settleMs) || 0, 0, 5_000),
+              element: primaryElement,
+            });
+            aftermath.observation =
+              status as import('../../../protocol/src/types.js').InputObservationStatus;
+            result.effects = effects;
+          } catch {
+            aftermath.observation = { status: 'failed', reason: 'finish_failed' };
+          }
         }
+        result.aftermath = aftermath;
         return result;
+      } catch (error) {
+        const source =
+          error && typeof error === 'object'
+            ? (error as { code?: unknown; message?: unknown; name?: unknown; details?: unknown })
+            : {};
+        const details =
+          source.details && typeof source.details === 'object' && !Array.isArray(source.details)
+            ? (source.details as Record<string, unknown>)
+            : {};
+        throw Object.assign(
+          new Error(typeof source.message === 'string' ? source.message : String(error)),
+          {
+            code:
+              typeof source.code === 'string'
+                ? source.code
+                : source.name === 'SyntaxError'
+                  ? 'INVALID_REQUEST'
+                  : 'INTERNAL_ERROR',
+            details: {
+              ...details,
+              aftermath,
+              ...(aftermath.dispatch !== 'not_started' ? { outcomeUncertain: true } : {}),
+            },
+          }
+        );
       } finally {
         observation?.dispose();
       }
@@ -2795,7 +2864,8 @@ key events. Read-only: resolves without waiting or mutating. */
     const observationId = String(params.observationId ?? '');
     const observation = pendingObservations.get(observationId);
     pendingObservations.delete(observationId);
-    if (!observation) return { changed: false, expired: true };
+    if (!observation)
+      return { expired: true, observation: { status: 'unavailable', reason: 'expired' } };
     if (params.discard === true) {
       observation.dispose();
       return { changed: false };
@@ -2809,10 +2879,14 @@ key events. Read-only: resolves without waiting or mutating. */
         element = null;
       }
     }
-    return observation.finish({
-      settleMs: clamp(Number(params.settleMs) || 0, 0, 5_000),
-      element,
-    });
+    try {
+      return await observation.finish({
+        settleMs: clamp(Number(params.settleMs) || 0, 0, 5_000),
+        element,
+      });
+    } finally {
+      observation.dispose();
+    }
   }
 
   globalState.__BBX_CONTENT_INPUT__ = Object.freeze({

@@ -78,6 +78,8 @@ var wireRoundTrips = map[string]func([]byte) ([]byte, error){
 	"InputExecutionMode":                  roundTrip[InputExecutionMode],
 	"InputResolutionMetadata":             roundTrip[InputResolutionMetadata],
 	"InputExecutionMetadata":              roundTrip[InputExecutionMetadata],
+	"InputObservationStatus":              roundTrip[InputObservationStatus],
+	"InputAftermath":                      roundTrip[InputAftermath],
 	"InputActionParams":                   roundTrip[InputActionParams],
 	"NormalizedInputAction":               roundTrip[NormalizedInputAction],
 	"TouchPositionParams":                 roundTrip[TouchPositionParams],

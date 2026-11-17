@@ -17,6 +17,7 @@ import {
   normalizeWaitForParams,
 } from '../../../protocol/src/index.js';
 import { requestLifetimes } from './background-request-lifetime.js';
+import { createInputAftermath, inputAftermathError } from './input-aftermath.js';
 
 export type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
 export type BridgeResponse = import('../../../protocol/src/types.js').BridgeResponse;
@@ -307,6 +308,7 @@ export async function handleTabBoundRequest(
 
   const guarded = request.method.startsWith('input.') && Boolean(dependencies.runWithDialogGuard);
 
+  let dispatchSent = false;
   const execute = async (): Promise<BridgeResponse> => {
     assertAccess();
     const timeoutMs = getContentScriptTimeout(
@@ -321,6 +323,7 @@ export async function handleTabBoundRequest(
       method: request.method,
       params: payload,
     };
+    if (request.method.startsWith('input.')) dispatchSent = true;
     let response =
       frameId !== 0 && dependencies.frames
         ? await dependencies.frames.sendFrameMessage(target.tabId, frameId, message, timeoutMs)
@@ -373,9 +376,27 @@ export async function handleTabBoundRequest(
       ...(staleOutcome ? { stale_recovery: staleOutcome } : {}),
     });
   };
-  return guarded && dependencies.runWithDialogGuard
-    ? dependencies.runWithDialogGuard(target.tabId, execute)
-    : execute();
+  try {
+    return await (guarded && dependencies.runWithDialogGuard
+      ? dependencies.runWithDialogGuard(target.tabId, execute)
+      : execute());
+  } catch (error) {
+    if (!request.method.startsWith('input.')) throw error;
+    // The dialog guard may return before the content operation settles. Cancel
+    // its lifetime so an auto-wait cannot dispatch fresh input after dismissal.
+    requestLifetimes.cancel(request.id);
+    const source =
+      error && typeof error === 'object' && 'details' in error
+        ? (error.details as Record<string, unknown> | null)
+        : null;
+    if (source?.aftermath) throw error;
+    const aftermath = createInputAftermath(payload.observe);
+    aftermath.dispatch =
+      source?.actionStarted === false || !dispatchSent ? 'not_started' : 'uncertain';
+    if (dispatchSent && payload.observe)
+      aftermath.observation = { status: 'interrupted', reason: 'action_interrupted' };
+    throw inputAftermathError(error, aftermath);
+  }
 }
 
 /** Reads that also search child frames (merged into the top frame's result). */

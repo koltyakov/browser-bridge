@@ -2388,6 +2388,81 @@
       ],
       "additionalProperties": true
     },
+    "InputObservationStatus": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "not_requested",
+            "completed",
+            "unavailable",
+            "interrupted",
+            "failed"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "not_started",
+            "start_failed",
+            "finish_failed",
+            "expired",
+            "navigation",
+            "navigation_signal",
+            "action_interrupted",
+            "unsupported"
+          ]
+        },
+        "interruption": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ErrorCode"
+            },
+            "dialogId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": true
+    },
+    "InputAftermath": {
+      "type": "object",
+      "properties": {
+        "dispatch": {
+          "type": "string",
+          "enum": [
+            "not_started",
+            "completed",
+            "uncertain"
+          ]
+        },
+        "observation": {
+          "$ref": "#/$defs/InputObservationStatus"
+        },
+        "verification": {
+          "type": "string",
+          "enum": [
+            "not_requested"
+          ]
+        }
+      },
+      "required": [
+        "dispatch",
+        "observation",
+        "verification"
+      ],
+      "additionalProperties": true
+    },
     "InputActionParams": {
       "type": "object",
       "properties": {

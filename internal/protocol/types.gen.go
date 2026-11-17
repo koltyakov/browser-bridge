@@ -2482,6 +2482,60 @@ func (v *InputExecutionMetadata) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type InputObservationStatus struct {
+	Status string `json:"status"`
+
+	Reason Optional[string] `json:"reason,omitzero"`
+
+	Interruption Optional[InputObservationStatusInterruption] `json:"interruption,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v InputObservationStatus) MarshalJSON() ([]byte, error) {
+	type alias InputObservationStatus
+	return marshalOpen(alias(v), v.Extra, []string{"status", "reason", "interruption"})
+}
+
+func (v *InputObservationStatus) UnmarshalJSON(data []byte) error {
+	type alias InputObservationStatus
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"status", "reason", "interruption"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = InputObservationStatus(decoded)
+	return nil
+}
+
+type InputAftermath struct {
+	Dispatch string `json:"dispatch"`
+
+	Observation InputObservationStatus `json:"observation"`
+
+	Verification string `json:"verification"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v InputAftermath) MarshalJSON() ([]byte, error) {
+	type alias InputAftermath
+	return marshalOpen(alias(v), v.Extra, []string{"dispatch", "observation", "verification"})
+}
+
+func (v *InputAftermath) UnmarshalJSON(data []byte) error {
+	type alias InputAftermath
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"dispatch", "observation", "verification"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = InputAftermath(decoded)
+	return nil
+}
+
 type InputActionParams struct {
 	TimeoutMs Optional[float64] `json:"timeoutMs,omitzero"`
 
@@ -7007,6 +7061,31 @@ func (v *InputExecutionMetadataTargetCoordinates) UnmarshalJSON(data []byte) err
 	}
 	decoded.Extra = extra
 	*v = InputExecutionMetadataTargetCoordinates(decoded)
+	return nil
+}
+
+type InputObservationStatusInterruption struct {
+	Code ErrorCode `json:"code"`
+
+	DialogId Optional[string] `json:"dialogId,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v InputObservationStatusInterruption) MarshalJSON() ([]byte, error) {
+	type alias InputObservationStatusInterruption
+	return marshalOpen(alias(v), v.Extra, []string{"code", "dialogId"})
+}
+
+func (v *InputObservationStatusInterruption) UnmarshalJSON(data []byte) error {
+	type alias InputObservationStatusInterruption
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"code", "dialogId"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = InputObservationStatusInterruption(decoded)
 	return nil
 }
 

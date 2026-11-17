@@ -110,18 +110,34 @@ for (const phase of ['command', 'observation']) {
       },
       contentScriptTimeoutMs: 5000,
     });
-    await assert.rejects(
-      controller.handleNativeInput(
-        createRequest({ id: 'guard-native', method: 'input.press_key', params: { key: 'Enter' } }),
-        tab,
-        {
-          key: 'Enter',
-          observe: phase === 'observation' ? { settleMs: 10 } : null,
-        }
-      ),
-      { code: 'DIALOG_BLOCKED' }
+    const input = controller.handleNativeInput(
+      createRequest({ id: 'guard-native', method: 'input.press_key', params: { key: 'Enter' } }),
+      tab,
+      {
+        key: 'Enter',
+        observe: phase === 'observation' ? { settleMs: 10 } : null,
+      }
     );
-    await dismiss();
+    try {
+      if (phase === 'command') {
+        await assert.rejects(input, { code: 'DIALOG_BLOCKED' });
+      } else {
+        const result = await input;
+        assert.equal(result.key, 'Enter');
+        assert.equal(result.code, 'Enter');
+        const aftermath = result.aftermath as {
+          dispatch: string;
+          observation: { status: string; interruption: { code: string; dialogId: string } };
+        };
+        assert.equal(aftermath.dispatch, 'completed');
+        assert.equal(aftermath.observation.status, 'interrupted');
+        assert.equal(aftermath.observation.interruption.code, 'DIALOG_BLOCKED');
+        assert.equal(typeof aftermath.observation.interruption.dialogId, 'string');
+        assert.doesNotMatch(JSON.stringify(result), /The expression is invalid/);
+      }
+    } finally {
+      await dismiss();
+    }
     assert.equal(commands, 2, 'key-up must still be dispatched after interruption');
   });
 }

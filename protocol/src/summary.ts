@@ -135,6 +135,7 @@ function compactInputEvidence(
     };
   }
   if (r.effects && typeof r.effects === 'object') evidence.effects = r.effects;
+  if (r.aftermath && typeof r.aftermath === 'object') evidence.aftermath = r.aftermath;
   return Object.fromEntries(Object.entries(evidence).filter(([, value]) => value !== undefined));
 }
 
@@ -281,6 +282,12 @@ const ACTION_SUMMARIES: Record<string, ActionSummary> = {
 
 export function summarizeBridgeResponse(response: BridgeResponse, method?: string): BridgeSummary {
   const summarized = summarizeBridgeResponseBody(response, method);
+  if (response.ok) {
+    const status = toRecord(toRecord(toRecord(response.result).aftermath).observation).status;
+    if (status === 'failed' || status === 'unavailable' || status === 'interrupted') {
+      summarized.summary += ` Observation ${status}; application outcome unverified.`;
+    }
+  }
   const routingNote = response.ok ? getTabRoutingNote(response.meta) : null;
   return routingNote
     ? { ...summarized, summary: `${summarized.summary} ${routingNote}` }

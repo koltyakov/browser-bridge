@@ -1,6 +1,12 @@
 import { BridgeError, ERROR_CODES } from '../../../protocol/src/index.js';
 import { createCdpKeyPressEventPair } from './background-helpers.js';
 import { requestLifetimes } from './background-request-lifetime.js';
+import {
+  createInputAftermath,
+  inputAftermathError,
+  splitInputObservation,
+  type InputAftermath,
+} from './input-aftermath.js';
 
 export type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
 export type ResolvedTabTarget = import('./background-state.js').ResolvedTabTarget;
@@ -70,8 +76,14 @@ export function createBackgroundInputController(dependencies: {
     timeoutMs?: number
   ) => Promise<unknown>;
   contentScriptTimeoutMs: number;
+  assertCommandActive?: (
+    target: DebuggerTarget,
+    method: string,
+    params: Record<string, unknown>
+  ) => void;
 }) {
   const guards = new WeakMap<DebuggerTarget, () => void>();
+  const dispatches = new WeakMap<DebuggerTarget, InputAftermath>();
   const originalSend = dependencies.sendCommand;
   dependencies = {
     ...dependencies,
@@ -79,6 +91,11 @@ export function createBackgroundInputController(dependencies: {
       // Always allow physical releases after interruption so a held key, mouse,
       // or touch contact cannot be left pressed.
       if (!isNativeInputRelease(method, params)) guards.get(target)?.();
+      dependencies.assertCommandActive?.(target, method, params);
+      if (method.startsWith('Input.') && !isNativeInputRelease(method, params)) {
+        const aftermath = dispatches.get(target);
+        if (aftermath) aftermath.dispatch = 'uncertain';
+      }
       return originalSend(target, method, params);
     },
   };
@@ -86,6 +103,45 @@ export function createBackgroundInputController(dependencies: {
     request: BridgeRequest,
     tab: ResolvedTabTarget,
     params: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const aftermath = createInputAftermath(params.observe);
+    const completion: { result: Record<string, unknown> | null } = { result: null };
+    try {
+      return await runNativeInput(request, tab, params, aftermath, completion);
+    } catch (error) {
+      const annotated = inputAftermathError(error, aftermath);
+      if (completion.result) {
+        // The guard can return while observation is still pending. Keep the
+        // acknowledged action, and snapshot evidence so its late finish cannot
+        // rewrite the result already delivered to the caller.
+        const details = annotated.details as Record<string, unknown>;
+        return {
+          ...completion.result,
+          aftermath: {
+            ...aftermath,
+            observation: {
+              ...aftermath.observation,
+              interruption: {
+                code: annotated.code,
+                ...(annotated.code === ERROR_CODES.DIALOG_BLOCKED &&
+                typeof details.dialogId === 'string'
+                  ? { dialogId: details.dialogId }
+                  : {}),
+              },
+            },
+          },
+        };
+      }
+      throw annotated;
+    }
+  }
+
+  async function runNativeInput(
+    request: BridgeRequest,
+    tab: ResolvedTabTarget,
+    params: Record<string, unknown>,
+    aftermath: InputAftermath,
+    completion: { result: Record<string, unknown> | null }
   ): Promise<Record<string, unknown>> {
     const assertGrant = dependencies.captureAccess?.() ?? (() => {});
     const assertActive = requestLifetimes.guard(request.id, request.meta?.deadline_ms);
@@ -117,28 +173,44 @@ export function createBackgroundInputController(dependencies: {
       tab.tabId,
       async (debuggerTarget) => {
         guards.set(debuggerTarget, assertAccess);
+        dispatches.set(debuggerTarget, aftermath);
         let observationId: string | null = null;
         try {
           assertAccess();
           observationId = observe ? await beginObservation(tab.tabId) : null;
+          if (observe && !observationId)
+            aftermath.observation = { status: 'unavailable', reason: 'start_failed' };
+          if (observationId)
+            aftermath.observation = { status: 'interrupted', reason: 'action_interrupted' };
           assertAccess();
           const result = await executeNative(debuggerTarget);
+          aftermath.dispatch = 'completed';
+          completion.result = result;
           if (observationId) {
             const finishedId = observationId;
             observationId = null;
-            result.effects = await finishObservation(
-              tab.tabId,
-              finishedId,
-              Number(observe?.settleMs) || 0,
-              typeof result.elementRef === 'string' ? result.elementRef : null
+            const observed = splitInputObservation(
+              await finishObservation(
+                tab.tabId,
+                finishedId,
+                Number(observe?.settleMs) || 0,
+                typeof result.elementRef === 'string' ? result.elementRef : null
+              )
             );
+            aftermath.observation = observed.observation;
+            if (Object.keys(observed.effects).length) result.effects = observed.effects;
+            if (observed.observation.status === 'failed') {
+              await finishObservation(tab.tabId, finishedId, 0, null, true);
+            }
           }
+          result.aftermath = aftermath;
           return result;
         } finally {
           if (observationId) {
             await finishObservation(tab.tabId, observationId, 0, null, true);
           }
           guards.delete(debuggerTarget);
+          dispatches.delete(debuggerTarget);
         }
       },
       { retryDetached: false }
@@ -203,12 +275,15 @@ is best effort: an unscriptable page simply reports no effects. */
             ...(discard ? { discard: true } : {}),
           },
         },
-        dependencies.contentScriptTimeoutMs + boundedSettleMs
+        discard
+          ? Math.min(dependencies.contentScriptTimeoutMs, 1000)
+          : dependencies.contentScriptTimeoutMs + boundedSettleMs
       );
       return unwrapContentResponse(response);
     } catch {
-      // The page may have navigated away mid-settle.
-      return { navigation: 'unloading', changed: true };
+      // Lost observation is not evidence of navigation, an unchanged page, or
+      // failed input. Never fail an acknowledged mutation just to retry it.
+      return { observation: { status: 'failed', reason: 'finish_failed' } };
     }
   }
 

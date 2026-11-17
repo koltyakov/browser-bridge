@@ -37,6 +37,9 @@ func cliCompactInput(r, extra object) object {
 	if r.object("effects") != nil {
 		e["effects"] = r["effects"]
 	}
+	if r.object("aftermath") != nil {
+		e["aftermath"] = r["aftermath"]
+	}
 	return e
 }
 func cliCompactHealth(r object) object {

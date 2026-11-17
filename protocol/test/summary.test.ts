@@ -12,6 +12,48 @@ import type { BridgeMethod, BridgeResponse } from '../src/types.js';
 
 // --- summarizeBridgeResponse: error path ---
 
+test('input summaries retain effects and distinguish observation from application verification', () => {
+  for (const status of ['not_requested', 'completed', 'failed', 'unavailable', 'interrupted']) {
+    const aftermath = {
+      dispatch: 'completed',
+      observation: { status },
+      verification: 'not_requested',
+    };
+    const effects = { changed: true, dom: { added: 1, removed: 0 } };
+    for (const [method, action] of [
+      ['input.click', { clicked: true }],
+      ['input.hover', { hovered: true }],
+      ['input.focus', { focused: true }],
+      ['input.type', { typed: 1, value: 'x' }],
+      ['input.press_key', { pressed: true }],
+      ['input.set_checked', { checked: true }],
+      ['input.select_option', { selectedValues: ['x'] }],
+      ['input.drag', { dragged: true }],
+      ['input.touch', { touched: true }],
+    ] as const) {
+      const summary = summarizeBridgeResponse(
+        ok({
+          elementRef: 'el_1',
+          ...action,
+          effects,
+          aftermath,
+          execution: { actualMode: 'dom' },
+        }),
+        method
+      );
+      const evidence = summary.evidence as Record<string, unknown>;
+      assert.deepEqual(evidence.aftermath, aftermath);
+      assert.deepEqual(evidence.effects, effects);
+      assert.equal(evidence.verified, undefined);
+      assert.equal(summary.ok, true);
+      assert.equal(
+        summary.summary.includes('application outcome unverified'),
+        ['failed', 'unavailable', 'interrupted'].includes(status)
+      );
+    }
+  }
+});
+
 test('attribute summaries retain values without interpreting attribute names as result metadata', () => {
   for (const attributes of [
     { id: 'send-email', type: 'checkbox' },

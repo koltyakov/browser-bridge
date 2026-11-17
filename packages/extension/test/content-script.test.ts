@@ -215,10 +215,12 @@ function expectPatchResult(value: unknown): PatchResult {
 }
 
 function withoutInputMetadata(value: BridgeResult): BridgeResult {
-  const { resolution, execution, ...result } = value;
+  const { resolution, execution, aftermath, ...result } = value;
   assert.equal(typeof resolution, 'object');
   assert.equal((execution as { actualMode?: unknown })?.actualMode, 'dom');
   assert.equal((execution as { debuggerUsed?: unknown })?.debuggerUsed, false);
+  assert.equal(expectRecord(aftermath).dispatch, 'completed');
+  assert.equal(expectRecord(aftermath).verification, 'not_requested');
   return result;
 }
 
@@ -1392,7 +1394,7 @@ test('failed, discarded, and evicted input observations release observers and un
         assert.equal(listeners.get('beforeunload')?.size, 8);
         assert.deepEqual(
           await executeBridgeMethod(listener, 'input.observe_finish', { observationId: ids[0] }),
-          { changed: false, expired: true }
+          { expired: true, observation: { status: 'unavailable', reason: 'expired' } }
         );
         for (const observationId of ids.slice(1)) {
           assert.deepEqual(
@@ -1423,6 +1425,128 @@ test('failed, discarded, and evicted input observations release observers and un
   );
 });
 
+for (const mode of [
+  'completed',
+  'start_failed',
+  'finish_failed',
+  'pagehide',
+  'beforeunload',
+  'action_error',
+  'not_requested',
+] as const) {
+  test(`DOM aftermath distinguishes ${mode} and always cleans observation resources`, async (t) => {
+    const NativeEvent = globalThis.Event;
+    await withDocument(
+      '<html><body><button id="target">Act</button></body></html>',
+      async ({ document }) => {
+        const saved = captureGlobals([
+          'location',
+          'MutationObserver',
+          'addEventListener',
+          'removeEventListener',
+        ]);
+        const events = new EventTarget();
+        const active = new Set<object>();
+        let failStart = false;
+        let failFinish = false;
+        let clicks = 0;
+        try {
+          Reflect.set(globalThis, 'location', { href: 'https://example.test/' });
+          // LinkeDOM has Event but does not provide a MouseEvent constructor.
+          Reflect.set(globalThis, 'MouseEvent', globalThis.Event);
+          Reflect.set(globalThis, 'addEventListener', events.addEventListener.bind(events));
+          Reflect.set(globalThis, 'removeEventListener', events.removeEventListener.bind(events));
+          Reflect.set(
+            globalThis,
+            'MutationObserver',
+            class {
+              observe() {
+                if (failStart) throw new Error('private observer failure');
+                active.add(this);
+              }
+              disconnect() {
+                active.delete(this);
+              }
+            }
+          );
+          Object.defineProperty(document, 'title', {
+            configurable: true,
+            get() {
+              if (failFinish) throw new Error('private observer failure');
+              return 'Before';
+            },
+          });
+          const button = document.getElementById('target')!;
+          Reflect.set(document, 'elementFromPoint', () => button);
+          Reflect.set(button, 'getBoundingClientRect', () => ({
+            left: 0,
+            top: 0,
+            width: 20,
+            height: 20,
+          }));
+          button.addEventListener('click', () => {
+            clicks += 1;
+            if (mode === 'finish_failed') failFinish = true;
+            if (mode === 'pagehide' || mode === 'beforeunload')
+              events.dispatchEvent(new NativeEvent(mode));
+          });
+          const harness = createChromeHarness();
+          await loadContentScript(t, {
+            withHelpers: true,
+            preserveDomGlobals: true,
+            chrome: harness.chrome,
+          });
+          const baseline = active.size;
+          failStart = mode === 'start_failed';
+          const result = await executeBridgeMethod(
+            harness.getListener(),
+            mode === 'action_error' ? 'input.fill' : 'input.click',
+            {
+              target: { selector: '#target' },
+              value: 'not editable',
+              observe: mode === 'not_requested' ? false : { settleMs: 0 },
+            }
+          );
+          if (mode === 'action_error') {
+            const details = expectRecord(expectRecord(result.error).details);
+            assert.equal(details.outcomeUncertain, true);
+            assert.equal(expectRecord(details.aftermath).dispatch, 'uncertain');
+            assert.equal(clicks, 0);
+          } else {
+            assert.equal(
+              result.error,
+              undefined,
+              'Observation failures must not turn acknowledged input into failure.'
+            );
+            assert.equal(clicks, 1);
+            const aftermath = expectRecord(result.aftermath);
+            assert.equal(aftermath.dispatch, 'completed');
+            assert.equal(aftermath.verification, 'not_requested');
+            const expectedStatus =
+              mode === 'start_failed'
+                ? 'unavailable'
+                : mode === 'finish_failed'
+                  ? 'failed'
+                  : mode === 'pagehide' || mode === 'beforeunload'
+                    ? 'interrupted'
+                    : mode;
+            assert.equal(expectRecord(aftermath.observation).status, expectedStatus);
+            const effects = result.effects ? expectRecord(result.effects) : {};
+            assert.equal(effects.navigation, mode === 'pagehide' ? 'unloading' : undefined);
+            if (mode === 'start_failed' || mode === 'finish_failed' || mode === 'beforeunload')
+              assert.equal(effects.changed, undefined);
+            assert.equal(result.verified, undefined);
+            assert.doesNotMatch(JSON.stringify(result), /private observer failure/);
+          }
+          assert.equal(active.size, baseline);
+        } finally {
+          restoreGlobals(saved);
+        }
+      }
+    );
+  });
+}
+
 for (const event of ['beforeunload', 'pagehide']) {
   test(`input observation returns on ${event} even when document timers freeze`, async (t) => {
     const NativeEvent = globalThis.Event;
@@ -1452,8 +1576,18 @@ for (const event of ['beforeunload', 'pagehide']) {
           new Promise<null>((resolve) => setImmediate(() => resolve(null))),
         ]);
         assert.ok(result, 'navigation must finish observation without another timer tick');
-        assert.equal(result.navigation, 'unloading');
-        assert.equal(result.changed, true);
+        if (event === 'pagehide') {
+          assert.equal(result.navigation, 'unloading');
+          assert.equal(result.changed, true);
+          assert.deepEqual(result.observation, { status: 'interrupted', reason: 'navigation' });
+        } else {
+          assert.equal(result.navigation, undefined);
+          assert.equal(result.changed, undefined);
+          assert.deepEqual(result.observation, {
+            status: 'interrupted',
+            reason: 'navigation_signal',
+          });
+        }
       } finally {
         t.mock.timers.reset();
         restoreGlobals(saved);
@@ -2617,7 +2751,15 @@ test('content script input.click returns click metadata and stale element refs f
         error: {
           code: 'ELEMENT_STALE',
           message: 'Element reference is stale.',
-          details: { elementRef: clickResult.elementRef, recovered: false },
+          details: {
+            elementRef: clickResult.elementRef,
+            recovered: false,
+            aftermath: {
+              dispatch: 'not_started',
+              observation: { status: 'not_requested' },
+              verification: 'not_requested',
+            },
+          },
         },
       }
     );

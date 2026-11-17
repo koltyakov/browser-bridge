@@ -283,6 +283,20 @@ bbx call input.press_key '{"key":"q","holdMs":400,"executionMode":"cdp"}'
 
 Use it for long-press menus, sustained notes, and buttons that act while pressed.
 
+## Input aftermath
+
+Click, focus, type/fill, key, checkbox, select, hover, and drag results include `aftermath` separately from existing `effects`. CDP touch includes it too:
+
+- `dispatch: "completed"` means the input routine returned, not that the application task succeeded. `"not_started"` means dispatch did not begin. `"uncertain"` means input may have reached the page before interruption.
+- `observation.status` is `"not_requested"`, `"completed"`, `"unavailable"`, `"interrupted"`, or `"failed"`. Observation startup or finish failure does not fail acknowledged input. Missing observation is not evidence of navigation or an unchanged page.
+- `verification: "not_requested"` applies to individual inputs. Effects and local value read-back do not verify application postconditions. Use explicit `input.perform` outcomes for `verified` and per-condition evidence.
+
+Only observed `pagehide` reports `effects.navigation: "unloading"`. A `beforeunload` signal alone reports interrupted observation with reason `"navigation_signal"`, because the user may cancel navigation. Older observations without status metadata are unavailable; their navigation and changed claims are omitted.
+
+Input failures with possible dispatch report `retry: false`. Inspect postconditions before another deliberate action. Do not replay input to recover missing observation.
+
+If a debugger guard interrupts observation after native input returned, the action stays successful with interrupted observation. Its `interruption` reports an error code and, for a dialog, its opaque `dialogId`, never dialog text. Inspect the dialog explicitly with `page.handle_dialog`; do not replay the acknowledged action.
+
 ## Multi-step flows
 
 Use `input.perform` when the next authorized steps are known. Form filling, opening a menu and choosing a known item, or navigating and checking an expected result do not need a model round-trip per action. Semantic input targets auto-wait for actionability, so skip separate find and pre-action wait calls. Wait for the expected application outcome when needed.

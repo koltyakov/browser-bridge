@@ -2,7 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createBackgroundInputController } from '../src/background-input.js';
-import { createRequest } from '../../../protocol/src/index.js';
+import { executeInputPerform } from '../src/background-perform.js';
+import {
+  createRequest,
+  createFailure,
+  createSuccess,
+  BridgeError,
+} from '../../../protocol/src/index.js';
 
 type CommandCall = { method: string; params: Record<string, unknown> };
 
@@ -12,6 +18,14 @@ function createController(
     failRevalidationAt?: number;
     staleRead?: boolean;
     active?: boolean;
+    observationStartFails?: boolean;
+    observationFinishFails?: boolean;
+    observationExpired?: boolean;
+    observationNavigation?: boolean;
+    legacyObservation?: boolean;
+    failCommandGuard?: boolean;
+    runWithDebugger?: <T>(operation: (target: { tabId: number }) => Promise<T>) => Promise<T>;
+    finishObservation?: () => Promise<Record<string, unknown>>;
   } = {}
 ) {
   const commands: CommandCall[] = [];
@@ -21,8 +35,14 @@ function createController(
   const controller = createBackgroundInputController({
     getTab: async () => ({ active: options.active ?? true }),
     contentScriptTimeoutMs: 5000,
+    assertCommandActive: () => {
+      if (options.failCommandGuard)
+        throw new BridgeError('DIALOG_BLOCKED', 'Guard rejected before dispatch.');
+    },
     async runWithDebugger<T>(_tabId: number, operation: (target: { tabId: number }) => Promise<T>) {
-      return operation({ tabId: 17 });
+      return options.runWithDebugger
+        ? options.runWithDebugger(operation)
+        : operation({ tabId: 17 });
     },
     async sendCommand(_target, method, params) {
       commands.push({ method, params });
@@ -65,9 +85,26 @@ function createController(
         }
         return { elementRef: params.elementRef, active: true };
       }
-      if (method === 'input.observe_start') return { observationId: 'obs_1' };
+      if (method === 'input.observe_start') {
+        if (options.observationStartFails) throw new Error('private observation failure');
+        return { observationId: 'obs_1' };
+      }
       if (method === 'input.observe_finish') {
-        return { changed: true, dom: { added: 1, removed: 0 }, settledMs: 12 };
+        if (options.finishObservation) return options.finishObservation();
+        if (options.observationFinishFails && !(message.params as Record<string, unknown>).discard)
+          throw new Error('private observation failure');
+        if (options.legacyObservation) return { changed: false, navigation: 'unloading' };
+        if (options.observationExpired)
+          return { expired: true, observation: { status: 'unavailable', reason: 'expired' } };
+        return {
+          changed: true,
+          dom: { added: 1, removed: 0 },
+          settledMs: 12,
+          ...(options.observationNavigation ? { navigation: 'unloading' } : {}),
+          observation: options.observationNavigation
+            ? { status: 'interrupted', reason: 'navigation' }
+            : { status: 'completed' },
+        };
       }
       const selector = params.target?.selector ?? '';
       return {
@@ -96,10 +133,22 @@ test('native pointer input rejects inactive tabs before dispatch instead of clai
     method: 'input.click',
     params: { target: { selector: '#save' }, executionMode: 'cdp' },
   });
-  await assert.rejects(controller.handleNativeInput(request, tab, request.params), {
-    code: 'INPUT_UNSUPPORTED',
-    details: { reason: 'inactive_native_pointer_target', tabId: 17 },
-  });
+  await assert.rejects(
+    controller.handleNativeInput(request, tab, request.params),
+    (error: unknown) => {
+      assert(error instanceof BridgeError);
+      assert.equal(error.code, 'INPUT_UNSUPPORTED');
+      const details = error.details as {
+        reason: string;
+        tabId: number;
+        aftermath: { dispatch: string };
+      };
+      assert.equal(details.reason, 'inactive_native_pointer_target');
+      assert.equal(details.tabId, 17);
+      assert.equal(details.aftermath.dispatch, 'not_started');
+      return true;
+    }
+  );
   assert.deepEqual(commands, []);
   assert.deepEqual(messages, []);
 });
@@ -118,6 +167,11 @@ test('CDP click resolves immediately before native mouse dispatch', async () => 
     ['input.observe_start', 'input.resolve_native', 'input.observe_finish']
   );
   assert.deepEqual(result.effects, { changed: true, dom: { added: 1, removed: 0 }, settledMs: 12 });
+  assert.deepEqual(result.aftermath, {
+    dispatch: 'completed',
+    observation: { status: 'completed' },
+    verification: 'not_requested',
+  });
   assert.deepEqual(
     commands.map((call) => [call.method, call.params.type]),
     [
@@ -133,6 +187,238 @@ test('CDP click resolves immediately before native mouse dispatch', async () => 
     debuggerUsed: true,
     targetCoordinates: { x: 10, y: 20 },
   });
+});
+
+test('CDP observation failures do not fabricate navigation or fail acknowledged input', async () => {
+  for (const [options, observation] of [
+    [{ observationFinishFails: true }, { status: 'failed', reason: 'finish_failed' }],
+    [{ observationStartFails: true }, { status: 'unavailable', reason: 'start_failed' }],
+    [{ observationExpired: true }, { status: 'unavailable', reason: 'expired' }],
+    [{ legacyObservation: true }, { status: 'unavailable', reason: 'unsupported' }],
+  ] as const) {
+    const { controller, commands, messages } = createController(options);
+    const request = createRequest({
+      id: crypto.randomUUID(),
+      method: 'input.click',
+      params: { target: { selector: '#save' }, executionMode: 'cdp' },
+    });
+    const result = await controller.handleNativeInput(request, tab, request.params);
+    assert.deepEqual(result.aftermath, {
+      dispatch: 'completed',
+      observation,
+      verification: 'not_requested',
+    });
+    assert.equal((result.effects as Record<string, unknown> | undefined)?.navigation, undefined);
+    assert.equal((result.effects as Record<string, unknown> | undefined)?.changed, undefined);
+    assert.equal(commands.filter((call) => call.params.type === 'mousePressed').length, 1);
+    assert.equal(commands.filter((call) => call.params.type === 'mouseReleased').length, 1);
+    assert.doesNotMatch(JSON.stringify(result), /private observation failure/);
+    if ('observationFinishFails' in options) {
+      assert.equal(
+        messages.filter((message) => message.method === 'input.observe_finish').length,
+        2
+      );
+      assert.equal((messages.at(-1)?.params as Record<string, unknown> | undefined)?.discard, true);
+    }
+  }
+});
+
+for (const sequence of [false, true]) {
+  test(`a guard interrupting CDP observation preserves acknowledged ${sequence ? 'sequence step' : 'input'}`, async () => {
+    let rejectGuard: (error: Error) => void = () => {};
+    const blocked = new Promise<never>((_resolve, reject) => {
+      rejectGuard = reject;
+    });
+    let signalFinishing = () => {};
+    const finishing = new Promise<void>((resolve) => {
+      signalFinishing = resolve;
+    });
+    let finishObservation: (value: Record<string, unknown>) => void = () => {};
+    const observation = new Promise<Record<string, unknown>>((resolve) => {
+      finishObservation = resolve;
+    });
+    const pending: { task: Promise<unknown> | null } = { task: null };
+    const { controller, commands } = createController({
+      runWithDebugger: async <T>(operation: (target: { tabId: number }) => Promise<T>) => {
+        const task = operation({ tabId: 17 });
+        pending.task = task;
+        return Promise.race([task, blocked]);
+      },
+      finishObservation: () => {
+        signalFinishing();
+        return observation;
+      },
+    });
+    const params = { target: { selector: '#save' }, executionMode: 'cdp', observe: true };
+    const click = createRequest({ id: 'acknowledged-click', method: 'input.click', params });
+    const responsePromise = sequence
+      ? executeInputPerform(
+          createRequest({
+            id: 'acknowledged-sequence',
+            method: 'input.perform',
+            params: { returnLastResult: true, steps: [{ method: 'input.click', params }] },
+          }),
+          {
+            resolveRequestTarget: async () => tab,
+            dispatch: async (step) =>
+              createSuccess(step.id, await controller.handleNativeInput(step, tab, step.params)),
+          }
+        )
+      : controller
+          .handleNativeInput(click, tab, click.params)
+          .then((result) => createSuccess(click.id, result));
+    await finishing;
+    rejectGuard(
+      new BridgeError('DIALOG_BLOCKED', 'private dialog text', {
+        tabId: 17,
+        dialogId: 'dialog_1',
+        type: 'alert',
+        actionStarted: true,
+      })
+    );
+    try {
+      const response = await responsePromise;
+      assert.equal(response.ok, true);
+      const outer = response.result as Record<string, unknown>;
+      const result = sequence
+        ? (outer.lastResult as { result: Record<string, unknown> }).result
+        : outer;
+      if (sequence) {
+        assert.equal(outer.completed, 1);
+        assert.deepEqual(outer.failures, []);
+        assert.equal(outer.verified, undefined);
+      }
+      assert.equal(result.clicked, true);
+      assert.deepEqual(result.aftermath, {
+        dispatch: 'completed',
+        verification: 'not_requested',
+        observation: {
+          status: 'interrupted',
+          reason: 'action_interrupted',
+          interruption: { code: 'DIALOG_BLOCKED', dialogId: 'dialog_1' },
+        },
+      });
+      assert.equal(result.effects, undefined);
+      assert.equal(commands.filter((call) => call.params.type === 'mousePressed').length, 1);
+      assert.equal(commands.filter((call) => call.params.type === 'mouseReleased').length, 1);
+      const snapshot = JSON.stringify(response);
+      assert.doesNotMatch(snapshot, /private dialog text/);
+      finishObservation({ changed: true, observation: { status: 'completed' } });
+      await pending.task;
+      assert.equal(
+        JSON.stringify(response),
+        snapshot,
+        'Late observation must not rewrite delivered evidence.'
+      );
+    } finally {
+      finishObservation({ observation: { status: 'failed', reason: 'finish_failed' } });
+      await pending.task;
+    }
+  });
+}
+
+test('a native command failure preserves unavailable observation after failed startup', async () => {
+  const { controller } = createController({ observationStartFails: true, failMove: true });
+  const request = createRequest({
+    id: 'unobserved-native-failure',
+    method: 'input.drag',
+    params: {
+      source: { selector: '#source' },
+      destination: { selector: '#destination' },
+      executionMode: 'cdp',
+      observe: true,
+    },
+  });
+  await assert.rejects(
+    controller.handleNativeInput(request, tab, request.params),
+    (error: unknown) => {
+      assert(error instanceof BridgeError);
+      assert.deepEqual((error.details as Record<string, unknown>).aftermath, {
+        dispatch: 'uncertain',
+        observation: { status: 'unavailable', reason: 'start_failed' },
+        verification: 'not_requested',
+      });
+      assert.equal(
+        createFailure(request.id, error.code, error.message, error.details, {
+          method: request.method,
+        }).error.recovery?.retry,
+        false
+      );
+      return true;
+    }
+  );
+});
+
+test('CDP retains confirmed observation effects without promoting them to postconditions', async () => {
+  const { controller } = createController({ observationNavigation: true });
+  const request = createRequest({
+    id: 'confirmed-navigation',
+    method: 'input.click',
+    params: { target: { selector: '#save' }, executionMode: 'cdp' },
+  });
+  const result = await controller.handleNativeInput(request, tab, request.params);
+  assert.equal((result.effects as Record<string, unknown>).navigation, 'unloading');
+  assert.deepEqual(result.aftermath, {
+    dispatch: 'completed',
+    observation: { status: 'interrupted', reason: 'navigation' },
+    verification: 'not_requested',
+  });
+  assert.equal(result.verified, undefined);
+});
+
+test('a pre-send debugger guard does not claim dispatch, while partial input cannot invite retry', async () => {
+  const guarded = createController({ failCommandGuard: true });
+  const click = createRequest({
+    id: 'pre-send-guard',
+    method: 'input.click',
+    params: { target: { selector: '#save' }, executionMode: 'cdp' },
+  });
+  await assert.rejects(
+    guarded.controller.handleNativeInput(click, tab, click.params),
+    (error: unknown) => {
+      assert(error instanceof BridgeError);
+      assert.equal(
+        (error.details as { aftermath: { dispatch: string } }).aftermath.dispatch,
+        'not_started'
+      );
+      return true;
+    }
+  );
+  assert.deepEqual(guarded.commands, []);
+  const partial = createController({ failMove: true });
+  const drag = createRequest({
+    id: 'partial-drag',
+    method: 'input.drag',
+    params: {
+      source: { selector: '#source' },
+      destination: { selector: '#destination' },
+      executionMode: 'cdp',
+      observe: true,
+    },
+  });
+  await assert.rejects(
+    partial.controller.handleNativeInput(drag, tab, drag.params),
+    (error: unknown) => {
+      assert(error instanceof BridgeError);
+      const details = error.details as {
+        aftermath: { dispatch: string };
+        outcomeUncertain: boolean;
+      };
+      assert.equal(details.aftermath.dispatch, 'uncertain');
+      assert.equal(details.outcomeUncertain, true);
+      const failure = createFailure(drag.id, error.code, error.message, error.details, {
+        method: drag.method,
+      });
+      assert.equal(failure.error.recovery?.retry, false);
+      assert.match(failure.error.recovery?.hint ?? '', /do not replay/);
+      return true;
+    }
+  );
+  assert.equal(partial.commands.at(-1)?.params.type, 'mouseReleased');
+  assert.equal(
+    (partial.messages.at(-1)?.params as Record<string, unknown> | undefined)?.discard,
+    true
+  );
 });
 
 test('CDP fill clears, inserts text once, and reads without mutation replay', async () => {
@@ -154,6 +440,7 @@ test('CDP fill clears, inserts text once, and reads without mutation replay', as
   assert.equal(result.value, 'native value');
   assert.equal(result.mode, 'cdp');
   assert.deepEqual(result.postMutation, { status: 'read-back', verified: true });
+  assert.equal((result.aftermath as { verification: string }).verification, 'not_requested');
 });
 
 test('CDP text insertion revalidates exact focus immediately before insertText', async () => {

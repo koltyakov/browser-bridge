@@ -49,6 +49,49 @@ const click = (selector: string) => ({
   params: { target: { selector } },
 });
 
+test('input.perform verifies only explicit postconditions, independently of input observation status', async () => {
+  for (const outcome of ['none', 'matched', 'missing'] as const) {
+    const { dependencies, dispatched } = createHarness((request) =>
+      createSuccess(
+        request.id,
+        request.method === 'dom.wait_for'
+          ? { found: outcome === 'matched' }
+          : {
+              clicked: true,
+              postMutation: { verified: true, status: 'read-back' },
+              aftermath: {
+                dispatch: 'completed',
+                observation: { status: 'failed', reason: 'finish_failed' },
+                verification: 'not_requested',
+              },
+            }
+      )
+    );
+    const response = await executeInputPerform(
+      performRequest({
+        steps: [click('#save')],
+        ...(outcome === 'none'
+          ? {}
+          : { outcomes: [{ kind: 'dom', selector: '#saved', text: 'Saved' }] }),
+      }),
+      dependencies
+    );
+    assert.equal(dispatched.filter((entry) => entry.request.method === 'input.click').length, 1);
+    if (outcome === 'missing') {
+      assert.equal(response.ok, false);
+      const details = response.error?.details as { verified: boolean };
+      assert.equal(details.verified, false);
+      assert.equal(response.error?.recovery?.retry, false);
+    } else {
+      assert.equal(response.ok, true);
+      assert.equal(
+        (response.result as PerformResult).verified,
+        outcome === 'matched' ? true : undefined
+      );
+    }
+  }
+});
+
 test('input.perform verifies DOM and URL conditions in the same call', async () => {
   const { dependencies, dispatched } = createHarness((request) =>
     createSuccess(

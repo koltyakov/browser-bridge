@@ -2742,6 +2742,74 @@
     }
   },
   {
+    "type": "InputObservationStatus",
+    "valid": true,
+    "input": {
+      "status": "not_requested",
+      "reason": "not_started",
+      "interruption": {
+        "code": "OUTCOME_NOT_MET",
+        "dialogId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "InputAftermath",
+    "valid": true,
+    "input": {
+      "dispatch": "not_started",
+      "observation": {
+        "status": "not_requested",
+        "reason": "not_started",
+        "interruption": {
+          "code": "OUTCOME_NOT_MET",
+          "dialogId": "wire-✓",
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "verification": "not_requested",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
     "type": "InputActionParams",
     "valid": true,
     "input": {

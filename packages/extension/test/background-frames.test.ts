@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 
 import { handleTabBoundRequest } from '../src/background-tab-bound.js';
 import { enrichBridgeResponse } from '../src/background-action-log.js';
-import { createFailure, createRequest } from '../../../protocol/src/index.js';
+import { createFailure, createRequest, BridgeError } from '../../../protocol/src/index.js';
+import { requestLifetimes } from '../src/background-request-lifetime.js';
 import type { BridgeMethod, BridgeRequest } from '../../../protocol/src/types.js';
 
 type FrameMessage = { frameId: number; method: string; params: Record<string, unknown> };
@@ -97,6 +98,57 @@ function createDependencies(
 function request(method: BridgeMethod, params: Record<string, unknown>) {
   return createRequest({ id: `frames-${method}-${Math.random()}`, method, params });
 }
+
+test('dialog interruption cancels a waiting content operation before it can dispatch later', async () => {
+  const { dependencies } = createDependencies();
+  const input = request('input.click', { target: { selector: '#save' }, observe: true });
+  const finish = requestLifetimes.begin(input);
+  let canceled = false;
+  let release = () => {};
+  let running: Promise<unknown> | undefined;
+  let clicks = 0;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const untrack = requestLifetimes.track(input.id, () => {
+    canceled = true;
+  });
+  dependencies.sendTabMessage = async () => {
+    await waiting;
+    if (canceled) throw new BridgeError('TIMEOUT', 'Content was canceled.');
+    clicks += 1;
+    return { clicked: true };
+  };
+  const guarded = {
+    ...dependencies,
+    runWithDialogGuard: async (_tab: number, operation: () => Promise<unknown>) => {
+      running = operation().catch(() => {});
+      await Promise.resolve();
+      throw new BridgeError('DIALOG_BLOCKED', 'Dialog interrupted input.', { actionStarted: true });
+    },
+  };
+  try {
+    await assert.rejects(handleTabBoundRequest(input, guarded as never), (error: unknown) => {
+      assert(error instanceof BridgeError);
+      const details = error.details as {
+        aftermath: { dispatch: string; observation: { status: string } };
+        outcomeUncertain: boolean;
+      };
+      assert.equal(details.aftermath.dispatch, 'uncertain');
+      assert.equal(details.aftermath.observation.status, 'interrupted');
+      assert.equal(details.outcomeUncertain, true);
+      return true;
+    });
+    assert.equal(canceled, true);
+    release();
+    await running;
+    assert.equal(clicks, 0);
+  } finally {
+    release();
+    untrack();
+    finish();
+  }
+});
 
 test('locator inputs not found in the top frame run in the iframe that has them', async () => {
   const { dependencies, sent } = createDependencies();

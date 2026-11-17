@@ -85,6 +85,40 @@ import type {
 
 type ErrorWithCode = Error & { code?: string };
 
+test('possibly dispatched input failures never invite automatic retry', () => {
+  for (const dispatch of ['not_started', 'completed', 'uncertain'] as const) {
+    const details = {
+      aftermath: {
+        dispatch,
+        observation: { status: 'interrupted', reason: 'action_interrupted' },
+        verification: 'not_requested',
+      },
+      ...(dispatch !== 'not_started' ? { outcomeUncertain: true } : {}),
+    };
+    const failure = createFailure('input', 'TIMEOUT', 'Input timed out.', details, {
+      method: 'input.click',
+    });
+    assert.deepEqual(failure.error.details, details);
+    assert.equal(failure.error.recovery?.retry, dispatch === 'not_started');
+    if (dispatch !== 'not_started') {
+      assert.match(failure.error.recovery?.hint ?? '', /Inspect postconditions.*do not replay/);
+    }
+  }
+  assert.equal(createFailure('read', 'TIMEOUT', 'Read timed out.').error.recovery?.retry, true);
+  const dialog = createFailure(
+    'dialog',
+    'DIALOG_BLOCKED',
+    'Input interrupted.',
+    {
+      aftermath: { dispatch: 'uncertain' },
+    },
+    { method: 'input.click' }
+  );
+  assert.equal(dialog.error.recovery?.retry, false);
+  assert.equal(dialog.error.recovery?.alternativeMethod, 'page.handle_dialog');
+  assert.equal(isBatchSafeBridgeCall('input.click', {}), false);
+});
+
 /** Ensure budgeting normalizes user-provided limits safely. */
 test('applyBudget clamps and normalizes fields', () => {
   const budget = applyBudget({

@@ -248,21 +248,34 @@ export function createFailure(
   meta: Record<string, unknown> = {}
 ): BridgeFailureResponse {
   const recovery = getRoutingRecovery(code, details) ?? getErrorRecovery(code);
+  const aftermath =
+    details && typeof details === 'object' && 'aftermath' in details
+      ? (details.aftermath as import('./types.js').InputAftermath | undefined)
+      : undefined;
   const effectiveRecovery =
-    meta.method === 'webmcp.execute_tool'
+    typeof meta.method === 'string' &&
+    meta.method.startsWith('input.') &&
+    aftermath &&
+    aftermath.dispatch !== 'not_started'
       ? {
           retry: false,
-          hint: 'WebMCP executions are never retried automatically. Inspect postconditions if dispatch may have started; never replay through DOM fallback.',
+          ...(recovery?.alternativeMethod ? { alternativeMethod: recovery.alternativeMethod } : {}),
+          hint: 'Input may already have changed the page. Inspect postconditions before another deliberate action; do not replay automatically.',
         }
-      : recovery && meta.method === 'sensitive.read'
+      : meta.method === 'webmcp.execute_tool'
         ? {
             retry: false,
-            ...(recovery.alternativeMethod
-              ? { alternativeMethod: recovery.alternativeMethod }
-              : {}),
-            hint: `Sensitive reads are never retried automatically. ${recovery.hint}`,
+            hint: 'WebMCP executions are never retried automatically. Inspect postconditions if dispatch may have started; never replay through DOM fallback.',
           }
-        : recovery;
+        : recovery && meta.method === 'sensitive.read'
+          ? {
+              retry: false,
+              ...(recovery.alternativeMethod
+                ? { alternativeMethod: recovery.alternativeMethod }
+                : {}),
+              hint: `Sensitive reads are never retried automatically. ${recovery.hint}`,
+            }
+          : recovery;
   return {
     id,
     ok: false,
