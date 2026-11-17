@@ -35,6 +35,13 @@ Native messaging must resolve entirely inside the disposable home. The existing
 isolation harness supports macOS/Linux, not Windows. No sandbox or origin-security
 bypass is added. Do not run a build that rewrites `dist/ext` concurrently.
 
+Portable runs load the private extension with `Extensions.loadUnpacked` over the
+owned debugging pipe. They opt into extension debugging without the legacy
+`--load-extension` or `--disable-extensions-except` switches that current branded
+Chrome rejects. The browser must support this CDP method. On Linux, a cached
+testing browser may need `CHROME_DEVEL_SANDBOX` set to an existing, correctly
+installed sandbox helper. Do not use `--no-sandbox`.
+
 ## Task contracts
 
 | IDs | Required behavior |

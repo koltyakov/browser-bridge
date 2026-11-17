@@ -17,6 +17,21 @@ function evidence(result: CallToolResult): Record<string, unknown> {
   return object(content.evidence);
 }
 
+/** Opening a native dialog may interrupt the triggering click's reply. Inspect
+ * that dialog next, never repeat the click or hide unrelated action failures. */
+export async function triggerDialog(click: () => Promise<CallToolResult>): Promise<void> {
+  const result = await click();
+  if (result.isError === true) {
+    assert.equal(
+      object(object(result.structuredContent).error).code,
+      'DIALOG_BLOCKED',
+      JSON.stringify(result)
+    );
+    return;
+  }
+  evidence(result);
+}
+
 class Connection {
   private client?: Client;
   private transport?: StdioClientTransport;
@@ -297,7 +312,13 @@ async function open(
         if (task.id !== 'dialog-inspect') {
           // Arm Page events before the asynchronous fixture opens its dialog.
           await connection.call('cdp.get_document');
-          await click('#confirm');
+          await triggerDialog(() =>
+            connection.raw('input.click', {
+              target: { selector: '#confirm' },
+              executionMode: 'dom',
+              observe: false,
+            })
+          );
         }
         const dialog = await inspect();
         if (task.id === 'dialog-inspect') return { reported: 'stopped' };

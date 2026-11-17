@@ -9,6 +9,17 @@ import type { BridgeMethod } from '../../protocol/src/types.js';
 
 type FuzzCase = { method: BridgeMethod; params: Record<string, unknown> };
 
+const malformedCases: readonly FuzzCase[] = [
+  { method: 'dom.query', params: { selector: [] } },
+  { method: 'dom.query', params: { maxNodes: '5' } },
+  { method: 'dom.query', params: { maxDepth: {} } },
+  { method: 'dom.query', params: { includeBbox: 'yes' } },
+  { method: 'page.get_text', params: { textBudget: '80' } },
+  { method: 'dom.get_text', params: { target: [] } },
+  { method: 'dom.find_by_role', params: { role: 42 } },
+  { method: 'dom.find_by_role', params: { role: 'button', includeHidden: [] } },
+];
+
 function record(value: unknown): Record<string, unknown> {
   assert(value && typeof value === 'object' && !Array.isArray(value));
   return value as Record<string, unknown>;
@@ -253,6 +264,26 @@ test(
             });
           });
         }
+        for (const [index, spec] of malformedCases.entries()) {
+          await runCase(`MCP modern=${modern} malformed ${index} ${spec.method}`, async () => {
+            const result = await client.callTool(
+              { name: 'browser_call', arguments: { ...spec, ...target } },
+              { timeout: 20_000 }
+            );
+            assert.equal(result.isError, true, JSON.stringify(result));
+            const structured = record(result.structuredContent);
+            assert.equal(structured.ok, false);
+            assert.equal(record(structured.error).code, 'INVALID_REQUEST');
+          });
+        }
+        await runCase(`MCP modern=${modern} stays usable after malformed requests`, async () => {
+          const result = await client.callTool({
+            name: 'browser_call',
+            arguments: { method: 'page.get_state', ...target },
+          });
+          assert.notEqual(result.isError, true, JSON.stringify(result));
+          assert.equal(record(result.structuredContent).ok, true);
+        });
       } finally {
         await client.close();
       }

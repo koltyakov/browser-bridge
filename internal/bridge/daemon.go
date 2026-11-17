@@ -672,6 +672,10 @@ func (d *daemon) route(p *peer, request object) {
 		return
 	}
 	request["params"] = value(params)
+	if err := validateMethodParams(method, params); err != nil {
+		p.respond(failure(id, "INVALID_REQUEST", err.Error()))
+		return
+	}
 	if method == "health.ping" && params["diagnostics"] != nil && !jsonBoolean(params["diagnostics"]) {
 		p.respond(failure(id, "INVALID_REQUEST", "diagnostics must be a boolean."))
 		return

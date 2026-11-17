@@ -2,7 +2,83 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 import { ChromePipe, eventually } from '../_helpers/chromePipe.ts';
+import {
+  extensionLaunchArgs,
+  fixtureAccessExpression,
+  readyFixtureTab,
+} from '../live/chaos-harness.ts';
+
+test('fixture access waits for scoped acknowledgment and never retries a failed toggle', async () => {
+  for (const fail of [false, true]) {
+    const messages: Array<Record<string, unknown>> = [];
+    let listener: (message: unknown) => void = () => {};
+    let disconnects = 0;
+    const port = {
+      onMessage: {
+        addListener(callback: (message: unknown) => void) {
+          listener = callback;
+        },
+      },
+      onDisconnect: { addListener() {} },
+      disconnect() {
+        disconnects++;
+      },
+      postMessage(message: Record<string, unknown>) {
+        messages.push(message);
+        queueMicrotask(() => {
+          assert.equal(disconnects, 0, 'Port closed before access was confirmed');
+          if (message.type === 'state.request') {
+            listener({ type: 'state.sync', state: { currentTab: { tabId: 99, enabled: false } } });
+            listener({ type: 'state.sync', state: { currentTab: { tabId: 42, enabled: false } } });
+          } else {
+            listener(
+              fail
+                ? { type: 'toggle.error', error: 'denied' }
+                : { type: 'state.sync', state: { currentTab: { tabId: 42, enabled: true } } }
+            );
+          }
+        });
+      },
+    };
+    const result = runInNewContext(fixtureAccessExpression(42), {
+      chrome: { runtime: { connect: () => port } },
+      setTimeout,
+      clearTimeout,
+    }) as Promise<void>;
+    if (fail) await assert.rejects(result, /denied/);
+    else await result;
+    assert.equal(disconnects, 1);
+    assert.deepEqual(
+      messages.map((message) => message.type),
+      ['state.request', 'scope.set_enabled']
+    );
+  }
+});
+
+test('portable browser setup does not combine explicit CDP loading with rejected legacy switches', () => {
+  assert.deepEqual(extensionLaunchArgs('/private/extension', true), [
+    '--enable-unsafe-extension-debugging',
+  ]);
+  assert.deepEqual(extensionLaunchArgs('/private/extension', false), [
+    '--load-extension=/private/extension',
+    '--disable-extensions-except=/private/extension',
+  ]);
+});
+
+test('fixture setup waits for its owned tab to finish loading without choosing a duplicate', () => {
+  const url = 'http://127.0.0.1:1234/';
+  const first = { id: 1, url, status: 'complete' };
+  const pending = { id: 2, url, status: 'loading' };
+  assert.throws(() => readyFixtureTab([first, pending], url, 2), /not ready/);
+  assert.throws(() => readyFixtureTab([first], url, 2), /not ready/);
+  assert.throws(() =>
+    readyFixtureTab([{ ...pending, status: 'complete', url: 'about:blank' }], url, 2)
+  );
+  assert.equal(readyFixtureTab([first, { ...pending, status: 'complete' }], url, 2), 2);
+  assert.equal(readyFixtureTab([first], url), 1);
+});
 
 function pipe() {
   const input = new PassThrough();

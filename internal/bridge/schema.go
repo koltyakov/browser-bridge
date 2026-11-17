@@ -10,8 +10,22 @@ import (
 	"unicode/utf16"
 )
 
-// The exported compact-tool schemas use this JSON Schema subset. Method
-// parameters still undergo the extension's shared protocol validation.
+// Validate supplied canonical fields before compatibility defaults or extension
+// normalization can silently coerce them. Missing fields and legacy aliases
+// remain the responsibility of the method's existing normalizer.
+func validateMethodParams(method string, params object) error {
+	properties := catalog.MethodInputs[method].object("inputSchema").object("properties")
+	for key, raw := range params {
+		if schema := properties.object(key); schema != nil {
+			if err := validateSchema(raw, schema, method+"."+key); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// The exported compact-tool and method schemas use this JSON Schema subset.
 func validateSchema(raw json.RawMessage, schema object, location string) error {
 	for _, keyword := range []string{"anyOf", "oneOf", "allOf"} {
 		var branches []object

@@ -179,6 +179,36 @@ test('normalizeDomQuery gives top-level fields precedence over a nested budget',
   });
 });
 
+test('inspection wire params reject wrong types instead of coercing or broadening the query', () => {
+  for (const params of [
+    { selector: [] },
+    { maxNodes: '5' },
+    { maxDepth: {} },
+    { includeBbox: 'yes' },
+    { attributeAllowlist: [1] },
+    { budget: [] },
+    { budget: { maxDepth: {} } },
+  ]) {
+    assert.throws(
+      () => normalizeDomQuery(params as unknown as Parameters<typeof normalizeDomQuery>[0]),
+      { code: 'INVALID_REQUEST' }
+    );
+  }
+  assert.throws(
+    () =>
+      normalizePageTextParams({ textBudget: '80' } as unknown as Parameters<
+        typeof normalizePageTextParams
+      >[0]),
+    { code: 'INVALID_REQUEST' }
+  );
+  for (const normalize of [normalizeFindByTextParams, normalizeFindByRoleParams]) {
+    assert.throws(
+      () => normalize({ includeHidden: [] } as unknown as Parameters<typeof normalize>[0]),
+      { code: 'INVALID_REQUEST' }
+    );
+  }
+});
+
 test('DOM baseline create params normalize to a canonical bounded shape', () => {
   assert.deepEqual(
     normalizeDomBaselineCreateParams({

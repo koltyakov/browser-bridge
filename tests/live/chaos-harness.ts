@@ -38,6 +38,61 @@ export function positiveSetting(name: string, fallback: number, min: number, max
   return value;
 }
 
+export function readyFixtureTab(tabs: unknown, url: string, preferredId = 0): number {
+  assert(Array.isArray(tabs), 'Extension tab query returned no array');
+  const tab = tabs
+    .map(object)
+    .find((entry) => (preferredId ? entry.id === preferredId : entry.url === url));
+  assert(
+    tab?.url === url && tab.status === 'complete' && Number(tab.id) > 0,
+    `Synthetic fixture is not ready: ${JSON.stringify(tab ?? tabs)}`
+  );
+  return Number(tab.id);
+}
+
+export function extensionLaunchArgs(extensionPath: string, portable: boolean): string[] {
+  // Branded Chrome rejects these legacy switches and can suppress even a later
+  // CDP load when they are present. Portable runs use the private controller's
+  // explicit unpacked-extension API instead.
+  return portable
+    ? ['--enable-unsafe-extension-debugging']
+    : [`--load-extension=${extensionPath}`, `--disable-extensions-except=${extensionPath}`];
+}
+
+export function fixtureAccessExpression(tabId: number): string {
+  assert(Number.isSafeInteger(tabId) && tabId > 0);
+  return `new Promise((resolve, reject) => {
+    const port = chrome.runtime.connect({name:'ui-sidepanel'});
+    let finished = false;
+    let requested = false;
+    const finish = error => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      port.disconnect();
+      if (error) reject(error); else resolve(true);
+    };
+    const timer = setTimeout(() => finish(new Error('Fixture access confirmation timed out')), 15000);
+    port.onDisconnect.addListener(() => {
+      if (!finished) finish(new Error(chrome.runtime.lastError?.message || 'Fixture access port disconnected'));
+    });
+    port.onMessage.addListener(message => {
+      if (message.type === 'toggle.error') {
+        finish(new Error(message.error));
+        return;
+      }
+      if (message.type !== 'state.sync' || message.state?.currentTab?.tabId !== ${tabId}) return;
+      if (message.state.currentTab.enabled === true) {
+        finish();
+      } else if (!requested) {
+        requested = true;
+        port.postMessage({type:'scope.set_enabled',tabId:${tabId},enabled:true});
+      }
+    });
+    port.postMessage({type:'state.request',scopeTabId:${tabId}});
+  })`;
+}
+
 /** Linux-only: both Chrome's registry and Go's home are redirected into this run.
  * Never installs into the user's real browser or connects to an existing daemon. */
 export class ChaosHarness {
@@ -201,8 +256,7 @@ export class ChaosHarness {
       chromeExecutable,
       [
         `--user-data-dir=${profile}`,
-        `--load-extension=${extensionPath}`,
-        `--disable-extensions-except=${extensionPath}`,
+        ...extensionLaunchArgs(extensionPath, this.options.portable === true),
         ...(this.options.portable
           ? [
               ...(this.options.headless === false ? [] : ['--headless=new']),
@@ -233,8 +287,17 @@ export class ChaosHarness {
       kind: 'environment',
       node: process.version,
       architecture: process.arch,
-      browser: await this.cdp.command('Browser.getVersion'),
+      browser: await this.cdp.command('Browser.getVersion', {}, undefined, 15000),
     });
+    if (this.options.portable) {
+      const loaded = await this.cdp.command(
+        'Extensions.loadUnpacked',
+        { path: extensionPath },
+        undefined,
+        10000
+      );
+      assert.equal(loaded.id, this.extension, 'The private extension was not loaded');
+    }
     // Cold extension startup may outlast the ordinary 3s command budget. These
     // setup mutations get one bounded attempt, never an automatic replay.
     const opened = await this.cdp.command(
@@ -270,17 +333,14 @@ export class ChaosHarness {
     }
     await eventually('extension startup', 15_000, async (remaining) => {
       const tabs = await this.uiEvaluate('chrome.tabs.query({})', remaining);
-      assert(Array.isArray(tabs), 'Extension tab query returned no array');
-      this.tabId = Number(tabs.map(object).find((tab) => tab.url === url)?.id);
-      assert(this.tabId > 0, `Synthetic fixture not found: ${JSON.stringify(tabs)}`);
+      // Preserve the explicitly created portable tab, not an earlier startup
+      // tab with the same URL. A pending tab cannot yet receive an access grant.
+      this.tabId = readyFixtureTab(tabs, url, this.tabId);
     });
     // Exercise the shipped extension's UI-port access flow, not worker globals.
-    await this.uiEvaluate(`(() => {
-      const port = chrome.runtime.connect({name:'ui-sidepanel'});
-      port.postMessage({type:'state.request',scopeTabId:${this.tabId}});
-      port.postMessage({type:'scope.set_enabled',tabId:${this.tabId},enabled:true});
-      setTimeout(() => port.disconnect(), 500);
-    })()`);
+    // Cold state restoration can exceed 500ms under load. Keep this owned port
+    // alive through the scoped snapshot and explicit enable acknowledgment.
+    await this.uiEvaluate(fixtureAccessExpression(this.tabId), 16000);
     // Chrome rejects native pointer input in inactive tabs. Only this disposable
     // fixture is activated; the inspector stays attached to the extension UI.
     await this.uiEvaluate(`chrome.tabs.update(${this.tabId}, {active:true})`);

@@ -197,6 +197,9 @@ func (s *mcpSession) handleTool(ctx context.Context, name string, args object, e
 	if _, ok := catalog.Methods[method]; !ok {
 		return mcpErrorResult("INVALID_REQUEST", "Unknown bridge method: "+method), nil
 	}
+	if err := validateMethodParams(method, params); err != nil {
+		return mcpErrorResult("INVALID_REQUEST", err.Error()), nil
+	}
 	if method == "protocol.describe" {
 		return mcpDescribe(params), nil
 	}

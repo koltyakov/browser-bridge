@@ -672,14 +672,45 @@ export function normalizeAccessRequestParams(
 }
 
 export function normalizeDomQuery(params: DomQueryParams = {}): NormalizedDomQuery {
+  optionalParamType(params.selector, 'selector', 'string');
+  if (params.withinRef !== null) optionalParamType(params.withinRef, 'withinRef', 'string');
+  if (
+    params.budget !== undefined &&
+    (!params.budget || typeof params.budget !== 'object' || Array.isArray(params.budget))
+  ) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'budget must be an object.');
+  }
   const nestedBudget =
     params.budget && typeof params.budget === 'object' ? params.budget : undefined;
+  for (const budget of [params, nestedBudget]) {
+    if (!budget) continue;
+    for (const field of ['maxNodes', 'maxDepth', 'textBudget'] as const)
+      optionalParamType(budget[field], field, 'number');
+    optionalParamType(budget.includeBbox, 'includeBbox', 'boolean');
+    if (
+      budget.attributeAllowlist !== undefined &&
+      (!Array.isArray(budget.attributeAllowlist) ||
+        budget.attributeAllowlist.some((entry) => typeof entry !== 'string'))
+    ) {
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        'attributeAllowlist must be an array of strings.'
+      );
+    }
+  }
   return {
     selector:
       typeof params.selector === 'string' && params.selector.trim() ? params.selector : 'body',
     withinRef: typeof params.withinRef === 'string' ? params.withinRef : null,
     budget: applyBudget({ ...nestedBudget, ...params }),
   };
+}
+
+function optionalParamType(value: unknown, field: string, type: 'string' | 'number' | 'boolean') {
+  if (value === undefined) return;
+  if (typeof value !== type || (type === 'number' && !Number.isFinite(value))) {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, `${field} must be a ${type}.`);
+  }
 }
 
 export function normalizeDomBaselineCreateParams(
@@ -1480,6 +1511,8 @@ export function normalizeWaitForParams(params: WaitForParams = {}): NormalizedWa
 export function normalizeFindByTextParams(
   params: FindByTextParams = {}
 ): NormalizedFindByTextParams {
+  validateFindParams(params);
+  optionalParamType(params.text, 'text', 'string');
   return {
     text: typeof params.text === 'string' ? params.text : '',
     exact: Boolean(params.exact),
@@ -1492,6 +1525,9 @@ export function normalizeFindByTextParams(
 export function normalizeFindByRoleParams(
   params: FindByRoleParams = {}
 ): NormalizedFindByRoleParams {
+  validateFindParams(params);
+  optionalParamType(params.role, 'role', 'string');
+  optionalParamType(params.name, 'name', 'string');
   return {
     role: typeof params.role === 'string' ? params.role : '',
     name: typeof params.name === 'string' ? params.name : '',
@@ -1500,6 +1536,13 @@ export function normalizeFindByRoleParams(
     maxResults: clampInt(params.maxResults, 1, 50, 10),
     includeHidden: params.includeHidden === true,
   };
+}
+
+function validateFindParams(params: FindByTextParams | FindByRoleParams): void {
+  optionalParamType(params.selector, 'selector', 'string');
+  optionalParamType(params.exact, 'exact', 'boolean');
+  optionalParamType(params.maxResults, 'maxResults', 'number');
+  optionalParamType(params.includeHidden, 'includeHidden', 'boolean');
 }
 
 export function normalizeGetHtmlParams(params: GetHtmlParams = {}): NormalizedGetHtmlParams {
@@ -2000,6 +2043,7 @@ export function normalizeNetworkInterceptAddParams(
 }
 
 export function normalizePageTextParams(params: PageTextParams = {}): NormalizedPageTextParams {
+  optionalParamType(params.textBudget, 'textBudget', 'number');
   return {
     textBudget: clampInt(params.textBudget, 100, 100_000, DEFAULT_PAGE_TEXT_BUDGET),
   };
