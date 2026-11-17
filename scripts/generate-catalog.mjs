@@ -19,6 +19,7 @@ import {
 } from '../protocol/src/index.ts';
 
 /** @typedef {import('../protocol/mcp-metadata.js').McpMetadata} McpMetadata */
+/** @typedef {{ inputSchema: {type: string, properties: Record<string, unknown>, required: readonly unknown[], additionalProperties: boolean}, example?: Record<string, unknown>, signature: string, invocation: {tool: string, method: string} }} MethodInput */
 
 /** Inline only the wire types needed for one method, with no dangling references.
  * @param {unknown} value
@@ -43,9 +44,9 @@ function inlineSchema(value, definitions, parents = []) {
 
 /** Generate on-demand details separately so group indexes stay compact.
  * @param {Record<string, unknown>} definitions
- * @returns {Record<string, unknown>}
+ * @returns {Record<string, MethodInput>}
  */
-function createMethodInputs(definitions) {
+export function createMethodInputs(definitions) {
   const bindings = record(
     record(definitions.BridgeMethodParams, 'BridgeMethodParams').properties,
     'BridgeMethodParams.properties'
@@ -115,7 +116,7 @@ function createMethodInputs(definitions) {
  * @param {unknown} value
  * @returns {string}
  */
-function schemaSignature(value) {
+export function schemaSignature(value) {
   const schema = record(value, 'signature');
   if (Array.isArray(schema.enum))
     return schema.enum.map((item) => JSON.stringify(item)).join(' | ');

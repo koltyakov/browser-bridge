@@ -117,7 +117,7 @@ var cliCommands = []cliCommandDefinition{
 	{name: "proxy", localOnly: true, category: "Destinations", usage: "proxy enable|disable|status"},
 	{name: "call", category: "RPC", usage: "call [--extension ID] [--browser NAME] [--profile LABEL] [--tab ID] [--preset quick|normal|deep] METHOD [JSON|-]"},
 	{name: "batch", category: "Batch", usage: "batch [--preset quick|normal|deep] [--evidence-only] JSON"},
-	{name: "protocol", localOnly: true, category: "Protocol", usage: "protocol describe [method|group]"},
+	{name: "protocol", localOnly: true, category: "Protocol", usage: "protocol describe [method|group] | protocol adapter [javascript|declarations|typescript]"},
 	{name: "protocol.describe", localOnly: true},
 	{name: "skill", localOnly: true, category: "Protocol", usage: "skill"},
 	{name: "upload", file: true, category: "Files", usage: "upload --tab <id> <ref|selector> <local-file>..."},

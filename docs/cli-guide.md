@@ -5,6 +5,17 @@ agent wiring, see [manual-setup.md](./manual-setup.md).
 
 ## Setup and diagnostics
 
+Hosts with a code sandbox can export generated callable bindings without
+connecting to a browser:
+
+```sh
+bbx protocol adapter javascript > browser-bridge.mjs
+bbx protocol adapter declarations > browser-bridge.d.mts
+```
+
+See the [Code Mode adapter guide](./code-mode.md) for host integration,
+cancellation, routing and safety rules.
+
 ```bash
 bbx install
 bbx install --browser chrome

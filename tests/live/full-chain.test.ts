@@ -9,6 +9,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { ChaosHarness } from './chaos-harness.ts';
 import { eventually, object } from '../_helpers/chromePipe.ts';
 import { isolatedBridgeEnv, nativeExecutable, repoRoot } from '../_helpers/runCli.ts';
+import { createBrowserBridge } from '../../internal/bridge/generated/code-mode/browser-bridge.mjs';
 
 function evidence(result: CallToolResult): Record<string, unknown> {
   assert.notEqual(result.isError, true, JSON.stringify(result));
@@ -74,6 +75,20 @@ class ChainClient {
         _meta: { 'ai.opencode/sessionID': 'ses_full_chain' },
       },
       signal ? { signal } : undefined
+    );
+  }
+  bindings(tabId: number) {
+    return createBrowserBridge(
+      (args, options) =>
+        this.client.callTool(
+          {
+            name: 'browser_call',
+            arguments: args,
+            _meta: { 'ai.opencode/sessionID': 'ses_full_chain' },
+          },
+          options
+        ),
+      { tabId, extensionId: this.extensionId }
     );
   }
   async close(): Promise<void> {
@@ -190,7 +205,7 @@ test('MCP to installed extension full-chain regressions', { timeout: 240000 }, a
       async function verifiedClick(client: ChainClient) {
         const before = Number((await harness.state()).probe);
         const result = evidence(
-          await client.call('input.click', harness.tabId, {
+          await client.bindings(harness.tabId).input.click({
             target: { selector: '#probe' },
             executionMode: 'cdp',
             observe: true,
@@ -216,7 +231,7 @@ test('MCP to installed extension full-chain regressions', { timeout: 240000 }, a
         const health = await client.refresh();
         assert.equal(health.extensionVersion, identity.version);
         assert.equal(health.daemonVersion, current.version);
-        const state = evidence(await client.call('page.get_state', harness.tabId));
+        const state = evidence(await client.bindings(harness.tabId).page.get_state());
         assert.match(String(state.url), /^http:\/\/127\.0\.0\.1:/);
         const click = await verifiedClick(client);
         const search = await client.call('protocol.describe', harness.tabId, {

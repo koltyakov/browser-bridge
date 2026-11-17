@@ -14,6 +14,9 @@ function fixture(t: TestContext) {
     'cmd/bbx/main.go',
     'internal/bridge/main.go',
     'internal/bridge/generated/catalog.json.gz',
+    'internal/bridge/generated/code-mode/browser-bridge.ts',
+    'internal/bridge/generated/code-mode/browser-bridge.mjs',
+    'internal/bridge/generated/code-mode/browser-bridge.d.mts',
     'internal/bridge/assets/skills.bundle.gz',
     'internal/protocol/types.gen.go',
   ]) {
@@ -43,6 +46,9 @@ test('native hash tracks source contents, paths, module metadata, and embedded a
     'go.mod',
     'go.sum',
     'internal/bridge/generated/catalog.json.gz',
+    'internal/bridge/generated/code-mode/browser-bridge.ts',
+    'internal/bridge/generated/code-mode/browser-bridge.mjs',
+    'internal/bridge/generated/code-mode/browser-bridge.d.mts',
     'internal/bridge/assets/skills.bundle.gz',
   ]) {
     fs.appendFileSync(path.join(root, file), '\nchanged');

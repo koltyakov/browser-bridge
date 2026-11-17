@@ -24,6 +24,7 @@ This index keeps those paths separate.
 ## Reference
 
 - [CLI and wire API](./api-reference.md): raw method calls, transport envelopes, and response contracts
+- [Code Mode adapter](./code-mode.md): generated callable bindings for a host sandbox, using the existing Go/MCP path
 
 ## Maintainers
 

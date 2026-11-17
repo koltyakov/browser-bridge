@@ -28,6 +28,9 @@ export function nativeBuildHash(root = repositoryRoot) {
   collectSources('internal');
   files.push(
     'internal/bridge/generated/catalog.json.gz',
+    'internal/bridge/generated/code-mode/browser-bridge.ts',
+    'internal/bridge/generated/code-mode/browser-bridge.mjs',
+    'internal/bridge/generated/code-mode/browser-bridge.d.mts',
     'internal/bridge/assets/skills.bundle.gz'
   );
   const hash = createHash('sha256');

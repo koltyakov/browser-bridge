@@ -58,6 +58,8 @@ opens the user's keychain or disables browser origin/TLS checks.
 
 Each request under test travels through real MCP stdio, the current Go
 server/client/daemon, Chrome Native Messaging and the installed extension.
+Page-state reads and verified clicks also use the exported generated Code Mode
+bindings, backed by that same MCP connection.
 The private debugging pipe is only for fixture observation, initial private
 access setup and worker termination, not an adapter for requests under test.
 

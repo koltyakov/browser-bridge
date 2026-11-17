@@ -16,6 +16,8 @@
   },
   "include": [
     "protocol/**/*.ts",
+    "internal/bridge/generated/code-mode/*.ts",
+    "internal/bridge/generated/code-mode/*.mts",
     "packages/**/*.js",
     "packages/**/*.ts",
     "packages/**/*.d.ts",

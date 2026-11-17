@@ -97,8 +97,11 @@ func run(ctx context.Context, args []string) error {
 		}
 		return printCLIDescription(params)
 	case "protocol":
+		if len(args) >= 2 && args[1] == "adapter" {
+			return writeCodeModeAdapter(os.Stdout, args[2:])
+		}
 		if len(args) < 2 || args[1] != "describe" || len(args) > 3 {
-			return errors.New("usage: bbx protocol describe [method|group]")
+			return errors.New("usage: bbx protocol describe [method|group] | bbx protocol adapter [javascript|declarations|typescript]")
 		}
 		params := object{}
 		if len(args) == 3 {

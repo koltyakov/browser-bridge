@@ -4,6 +4,10 @@ Browser Bridge exposes browser methods through the Go CLI, MCP server, and
 authenticated daemon wire protocol. The npm package bootstraps and launches
 the Go executable; it does not export a JavaScript client API.
 
+For host-side code orchestration, the native CLI exports a dependency-free
+[Code Mode adapter](./code-mode.md) with generated parameter types. It delegates
+to the host's existing `browser_call`; it does not replace the Go runtime.
+
 If you are setting up Browser Bridge for normal end-user agent usage, start with
 [quickstart](./quickstart.md) or [manual setup](./manual-setup.md) instead.
 

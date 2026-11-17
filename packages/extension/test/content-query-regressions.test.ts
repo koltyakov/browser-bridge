@@ -47,6 +47,28 @@ test('deep DOM scans fail explicitly at their work limit instead of claiming uni
   });
 });
 
+test('deep DOM scans allow exactly 100 ms but reject the next candidate after the deadline', async (t) => {
+  await withQuery(
+    '<section><button id="first">First</button><button id="second">Second</button><button id="third">Third</button></section>',
+    ({ document, helpers }) => {
+      let now = 1000;
+      t.mock.method(performance, 'now', () => now);
+      const root = document.querySelector('section');
+      assert(root);
+      // Only three candidates: this exercises elapsed time, not the node limit.
+      const matches = helpers.querySelectorMatchesDeep('button', root);
+      assert.equal(matches.next().value?.id, 'first');
+      now = 1100;
+      assert.equal(matches.next().value?.id, 'second', 'The 100 ms boundary is inclusive');
+      now = 1101;
+      assert.throws(() => matches.next(), {
+        code: 'RESULT_TRUNCATED',
+        details: { scanLimit: 20000 },
+      });
+    }
+  );
+});
+
 test('lazy deep selectors preserve scoped matching and validate empty trees', async () => {
   await withQuery(
     '<section><button>Child</button><div><button>Nested</button></div></section>',
@@ -880,6 +902,9 @@ test(
       '<main><button id="first" class="status">Loading</button><button id="second" class="status">Ready</button></main>',
       async ({ document, query, registry }) => {
         t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1000 });
+        // Exercise wait transitions independently of real process scheduling.
+        // Scan deadline enforcement has its own controlled-clock test above.
+        t.mock.method(performance, 'now', () => 0);
         const main = document.querySelector('main');
         const first = document.getElementById('first');
         const second = document.getElementById('second');
@@ -958,6 +983,7 @@ test(
       '<button id="target" style="visibility:hidden">Waiting</button>',
       async ({ document, query }) => {
         t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1000 });
+        t.mock.method(performance, 'now', () => 0);
         const target = document.getElementById('target');
         assert(target);
         let visibility = 'hidden';

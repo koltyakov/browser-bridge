@@ -99,6 +99,7 @@ Managed installs support Codex (OpenAI), Claude Code, OpenCode, GitHub Copilot, 
 - Verifying a code change actually rendered the expected result in Chrome
 - Patching the live page to prove a fix visually, then moving it into source and rolling the patch back
 - Running structured browser checks from any local agent or IDE, not just one AI product
+- Composing typed browser calls in an agent host's code sandbox through a [generated Code Mode adapter](https://github.com/koltyakov/browser-bridge/blob/main/docs/code-mode.md), with the Go runtime and browser access checks unchanged
 - Calling website-provided WebMCP tools when the browser supports them, with exact-action user approval and DOM verification
 
 ## Why Browser Bridge
@@ -180,6 +181,7 @@ The npm package is a bootstrap and launcher with zero runtime npm dependencies. 
 - [Agent permissions](https://github.com/koltyakov/browser-bridge/blob/main/docs/agent-permissions.md)
 - [CLI guide](https://github.com/koltyakov/browser-bridge/blob/main/docs/cli-guide.md)
 - [MCP vs CLI](https://github.com/koltyakov/browser-bridge/blob/main/docs/mcp-vs-cli.md)
+- [Code Mode adapter](https://github.com/koltyakov/browser-bridge/blob/main/docs/code-mode.md)
 - [Troubleshooting](https://github.com/koltyakov/browser-bridge/blob/main/docs/troubleshooting.md)
 - [Standalone troubleshooting skill for agents](https://raw.githubusercontent.com/koltyakov/browser-bridge/main/docs/troubleshooting-skill.md)
 - [BridgeClient API](https://github.com/koltyakov/browser-bridge/blob/main/docs/api-reference.md)

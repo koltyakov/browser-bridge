@@ -9,6 +9,7 @@ import { generateCatalog } from './generate-catalog.mjs';
 import { generateSkills } from './generate-skills.mjs';
 import * as defaults from '../protocol/src/defaults.ts';
 import { generateInstallTargets } from './generate-install-targets.mjs';
+import { generateCodeMode } from './generate-code-mode.mjs';
 
 /** @typedef {{type: string, [key: string]: unknown}} Node */
 /** @typedef {{ $ref?: string, type?: string, enum?: unknown[], properties?: Record<string, Schema>, required?: string[], additionalProperties?: boolean | Schema, items?: Schema, anyOf?: Schema[] }} Schema */
@@ -431,6 +432,7 @@ await write(
 await write('protocol/generated/bridge.schema.json', `${JSON.stringify(document, null, 2)}\n`);
 await write('protocol/generated/roundtrip-fixtures.json', `${JSON.stringify(fixtures, null, 2)}\n`);
 await generateCatalog(process.argv.includes('--check'));
+await generateCodeMode(process.argv.includes('--check'));
 await generateSkills(process.argv.includes('--check'));
 await generateInstallTargets(process.argv.includes('--check'));
 console.log(
