@@ -41,6 +41,7 @@ export type ActionLogEntry = {
   id: string;
   at: number;
   method: string;
+  pingKind?: 'diagnostic' | 'lightweight';
   source: string;
   mcpEra?: import('../../../protocol/src/types.js').McpProtocolEra | null;
   caller?: import('../../../protocol/src/types.js').BridgeCaller;
@@ -255,6 +256,10 @@ export function normalizeActionLogEntry(entry: unknown): ActionLogEntry | null {
     id: candidate.id,
     at: Number(candidate.at) || 0,
     method: candidate.method,
+    ...(candidate.method === 'health.ping' &&
+    (candidate.pingKind === 'diagnostic' || candidate.pingKind === 'lightweight')
+      ? { pingKind: candidate.pingKind }
+      : {}),
     source,
     mcpEra: normalizeActionLogMcpEra(source, candidate.mcpEra),
     ...(caller ? { caller } : {}),

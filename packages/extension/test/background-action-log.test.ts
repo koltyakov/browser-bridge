@@ -154,6 +154,38 @@ test('sibling-tab and host activity cannot evict a quiet tab history', async () 
   assert.deepEqual(storage.snapshot().actionLog, state.actionLog);
 });
 
+test('connection checks distinguish requested diagnostics from lightweight pings, including failures', async () => {
+  const { controller, state } = createHistoryHarness();
+  for (const diagnostics of [undefined, false, true]) {
+    const request = createRequest({
+      id: `ping-${diagnostics}`,
+      method: 'health.ping',
+      params: diagnostics === undefined ? {} : { diagnostics },
+    });
+    for (const ok of [true, false]) {
+      const response = ok
+        ? createSuccess(request.id, { access: { enabled: true, routeReady: true } })
+        : createFailure(request.id, ERROR_CODES.INTERNAL_ERROR, 'Connection check failed.');
+      await controller.logBridgeAction(request, response, null);
+    }
+  }
+  assert.deepEqual(
+    state.actionLog.map((entry) => [entry.pingKind, entry.ok]),
+    [
+      ['lightweight', true],
+      ['lightweight', false],
+      ['lightweight', true],
+      ['lightweight', false],
+      ['diagnostic', true],
+      ['diagnostic', false],
+    ]
+  );
+  const request = createRequest({ id: 'not-a-ping', method: 'dom.query' });
+  await controller.logBridgeAction(request, createSuccess(request.id, { nodes: [] }), null);
+  assert.equal(state.actionLog.at(-1)?.method, 'dom.query');
+  assert.equal(state.actionLog.at(-1)?.pingKind, undefined);
+});
+
 test('connection checks retain every ping for UI grouping despite sibling activity', async () => {
   const { controller, state } = createHistoryHarness();
   await controller.appendActionLogEntry({

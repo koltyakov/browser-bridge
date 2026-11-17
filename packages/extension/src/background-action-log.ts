@@ -40,6 +40,7 @@ export type ActionContext = { tabId: number | null; url: string };
 
 export type ActionLogEntryInput = {
   method: string;
+  pingKind?: ActionLogEntry['pingKind'];
   source?: string;
   mcpEra?: import('../../../protocol/src/types.js').McpProtocolEra | null;
   caller?: import('../../../protocol/src/types.js').BridgeCaller;
@@ -260,6 +261,7 @@ Late responses are rejected by the tab-existence check in append. */
         id: crypto.randomUUID(),
         at,
         method: entry.method,
+        ...(entry.pingKind ? { pingKind: entry.pingKind } : {}),
         source,
         mcpEra: normalizeActionLogMcpEra(source, entry.mcpEra),
         ...(caller ? { caller } : {}),
@@ -349,6 +351,9 @@ Late responses are rejected by the tab-existence check in append. */
     try {
       await appendActionLogEntry({
         method: request.method,
+        ...(request.method === 'health.ping'
+          ? { pingKind: request.params.diagnostics === true ? 'diagnostic' : 'lightweight' }
+          : {}),
         source: normalizeActionLogSource(request.meta?.source),
         caller: normalizeBridgeCaller(request.meta?.caller),
         mcpEra:

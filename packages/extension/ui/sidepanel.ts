@@ -53,6 +53,7 @@ export type ActionLogEntry = {
   id: string;
   at: number;
   method: string;
+  pingKind?: 'diagnostic' | 'lightweight';
   source: string;
   mcpEra?: import('../../../protocol/src/types.js').McpProtocolEra | null;
   caller?: import('../../../protocol/src/types.js').BridgeCaller;
@@ -1507,6 +1508,13 @@ function renderActionLogEntry(
     count.className = 'activity-repeat-count';
     count.textContent = `x${repeatCount}`;
     title.append(count);
+  }
+  if (entry.method === 'health.ping' && entry.pingKind === 'diagnostic') {
+    const pingKind = document.createElement('span');
+    pingKind.className = 'activity-source-tag activity-ping-kind';
+    pingKind.textContent = 'Diagnostic';
+    pingKind.title = 'Full connection diagnostics requested with diagnostics: true.';
+    title.append(pingKind);
   }
   const activitySourcePills = getActivitySourcePills(entry.source, entry.mcpEra);
   if (activitySourcePills.source) {

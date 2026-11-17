@@ -16,6 +16,7 @@ export type ActionLogEntry = {
   id: string;
   at: number;
   method: string;
+  pingKind?: 'diagnostic' | 'lightweight';
   source: string;
   mcpEra?: import('../../../protocol/src/types.js').McpProtocolEra | null;
   caller?: import('../../../protocol/src/types.js').BridgeCaller;
@@ -234,8 +235,13 @@ export function renderSidepanelState(
     if (entry.method === 'health.ping') {
       while (index + repeatCount < state.actionLog.length) {
         const next = state.actionLog[index + repeatCount];
-        // Keep changed outcomes visible rather than hiding failures in a group.
-        if (next.method !== entry.method || next.ok !== entry.ok || next.summary !== entry.summary)
+        // Keep diagnostic costs and changed outcomes separate.
+        if (
+          next.method !== entry.method ||
+          next.pingKind !== entry.pingKind ||
+          next.ok !== entry.ok ||
+          next.summary !== entry.summary
+        )
           break;
         repeatCount += 1;
       }

@@ -43,6 +43,7 @@ type ActionLogEntry = {
   id: string;
   at: number;
   method: string;
+  pingKind?: 'diagnostic' | 'lightweight';
   source: string;
   mcpEra?: 'legacy' | 'modern' | null;
   caller?: import('../../../protocol/src/types.js').BridgeCaller;
@@ -1483,6 +1484,43 @@ test('sidepanel UI groups consecutive pings with a light counter and combined to
 
     pair.left.dispatchMessage(createSidepanelStateSync(true, null, null, [entries[0]]));
     assert.equal(document.querySelector('.activity-repeat-count'), null);
+    assert.equal(document.querySelector('.activity-ping-kind'), null);
+
+    const diagnosticPings = [
+      createActionLogEntry('diagnostic-2', 'health.ping', 500, { pingKind: 'diagnostic' }),
+      createActionLogEntry('diagnostic-1', 'health.ping', 600, { pingKind: 'diagnostic' }),
+    ];
+    const lightweightPings = [
+      createActionLogEntry('lightweight-2', 'health.ping', 90, { pingKind: 'lightweight' }),
+      createActionLogEntry('lightweight-1', 'health.ping', 100, { pingKind: 'lightweight' }),
+    ];
+    pair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, null, [
+        ...diagnosticPings,
+        ...lightweightPings,
+        createActionLogEntry('failed-diagnostic', 'health.ping', 20, {
+          pingKind: 'diagnostic',
+          ok: false,
+        }),
+        createActionLogEntry('failed-lightweight', 'health.ping', 20, {
+          pingKind: 'lightweight',
+          ok: false,
+        }),
+        entries[3],
+      ])
+    );
+    const separatedCards = [...document.querySelectorAll('#action-log .activity-card')];
+    assert.equal(separatedCards.length, 5);
+    assert.deepEqual(
+      separatedCards.map((card) => card.querySelector('.activity-ping-kind')?.textContent),
+      ['Diagnostic', undefined, 'Diagnostic', undefined, undefined]
+    );
+    assert.deepEqual(
+      separatedCards.map((card) => card.querySelector('.activity-repeat-count')?.textContent),
+      ['x2', 'x2', undefined, undefined, undefined]
+    );
+    assert.equal(separatedCards[0].querySelector('.activity-tokens')?.textContent, '≈1,100 tok');
+    assert.equal(separatedCards[1].querySelector('.activity-tokens')?.textContent, '≈190 tok');
     window.dispatchEvent(new window.Event('beforeunload'));
   });
   const css = await readFile(extensionFile('ui/ui.css'), 'utf8');

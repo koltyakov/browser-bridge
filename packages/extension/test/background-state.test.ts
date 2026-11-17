@@ -197,6 +197,25 @@ test('background state normalizes action log entries and rejects malformed value
   );
 });
 
+test('action log normalization preserves only valid ping kinds on health checks', () => {
+  for (const pingKind of ['diagnostic', 'lightweight'] as const) {
+    assert.equal(
+      normalizeActionLogEntry({ id: 'ping', method: 'health.ping', pingKind })?.pingKind,
+      pingKind
+    );
+  }
+  for (const pingKind of [undefined, null, true, 'unknown']) {
+    assert.equal(
+      normalizeActionLogEntry({ id: 'ping', method: 'health.ping', pingKind })?.pingKind,
+      undefined
+    );
+  }
+  assert.equal(
+    normalizeActionLogEntry({ id: 'query', method: 'dom.query', pingKind: 'diagnostic' })?.pingKind,
+    undefined
+  );
+});
+
 test('stored activity preserves safe caller attribution and strips incidental fields', () => {
   const entry = { id: 'caller-history', method: 'dom.query', source: 'cli' };
   assert.deepEqual(
