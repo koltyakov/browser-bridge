@@ -103,6 +103,7 @@ import {
 } from '../../../protocol/src/index.js';
 import * as protocolConstants from '../../../protocol/src/index.js';
 import {
+  assertNativeKeyboardTargetActive,
   createCdpKeyPressEventPair,
   matchesConsoleLevel,
   summarizeTabResult,
@@ -1006,13 +1007,24 @@ tab. */
 
     const target = await resolveRequestTarget(request);
     const retryDetached = request.method !== 'cdp.dispatch_key_event';
+    if (!retryDetached) {
+      await assertNativeKeyboardTargetActive(target.tabId, (tabId) => chromeObj.tabs.get(tabId));
+    }
     return dependencies.runWithDebugger(
       target.tabId,
       async (debugTarget) => {
         if (request.method === 'cdp.dispatch_key_event') {
           const events = createCdpKeyPressEventPair(request.params ?? {});
           for (const event of events) {
-            assertActive();
+            // Once pressed, the physical release must survive tab changes or
+            // cancellation. Never activate a tab or replay the press.
+            if (event.type !== 'keyUp') {
+              assertActive();
+              await assertNativeKeyboardTargetActive(target.tabId, (tabId) =>
+                chromeObj.tabs.get(tabId)
+              );
+              assertActive();
+            }
             await dependencies.sendCommand(debugTarget, 'Input.dispatchKeyEvent', event);
           }
           return createSuccess(

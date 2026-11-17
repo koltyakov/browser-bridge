@@ -1,4 +1,5 @@
 import {
+  BridgeError,
   createFailure,
   ERROR_CODES,
   estimateJsonPayloadCost,
@@ -112,6 +113,20 @@ function inferCdpKeyDefinition(key: string): {
   throw new Error(
     'Unsupported key. Use Escape, Enter, Tab, Backspace, arrow keys, or a single character.'
   );
+}
+
+/** Check before a key-dependent flow and again before each fresh key dispatch. */
+export async function assertNativeKeyboardTargetActive(
+  tabId: number,
+  getTab: (tabId: number) => Promise<Pick<chrome.tabs.Tab, 'active'>>
+): Promise<void> {
+  if (!(await getTab(tabId)).active) {
+    throw new BridgeError(
+      ERROR_CODES.INPUT_UNSUPPORTED,
+      'Native keyboard events require an active tab. No tab was activated. Use DOM input when trusted input is unnecessary, or ask permission to activate the target.',
+      { reason: 'inactive_native_keyboard_target', tabId }
+    );
+  }
 }
 
 /** Build the fixed keyDown/keyUp press pair accepted by CDP

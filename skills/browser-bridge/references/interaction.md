@@ -272,6 +272,21 @@ DOM mode dispatches the same event sequence a real device produces, so most page
 
 DOM events are still untrusted (`isTrusted: false`) and do not count as a user gesture, so Chrome may refuse what a page gates on one: starting audio or media (unless the site already has autoplay engagement), popups, clipboard writes, and fullscreen. When a page needs a real gesture, use `executionMode: "cdp"`, which dispatches trusted input through Chrome. If sound or video stays silent after a DOM click, retry the first interaction with CDP.
 
+Native CDP key events require an active tab. This includes `cdp.dispatch_key_event`, `input.press_key`,
+`input.fill`, and `input.type` with `clear: true` or `submit: true`. Inactive
+targets fail before dispatch with `INPUT_UNSUPPORTED` and reason
+`inactive_native_keyboard_target`. Plain native text insertion without clearing
+or submit remains available in the background. The bridge never activates a tab
+to satisfy this check.
+
+Native replacement also reads the exact target after clearing, before inserting
+text. If the read-back is missing, belongs to another target, or is nonempty,
+replacement and submit stop. A nonempty or malformed read-back reports
+`INPUT_UNSUPPORTED` with reason `native_clear_not_confirmed`; clearing may
+already have changed the field, so the failure is not automatically retryable.
+Stale targets retain their existing unverified post-mutation result without
+inserting into a replacement element.
+
 ## Press and Hold
 
 `holdMs` (0-10000) keeps a mouse button or key pressed between down and up:

@@ -78,6 +78,7 @@ function createController(
         }
         return {
           id: tabId,
+          active: true,
           windowId: 5,
           title: 'Loading tab',
           url: 'https://example.com/loading',
@@ -884,6 +885,73 @@ test('HAR export requires an armed capture and never starts or attaches capture'
   );
   assert.deepEqual(commands, []);
   assert.deepEqual(debuggerOptions, []);
+});
+
+test('CDP key presses reject inactive tabs before debugger attachment', async () => {
+  const { controller, commands, debuggerOptions } = createController({
+    getTab: async (tabId) => ({ id: tabId, active: false }),
+  });
+  await assert.rejects(
+    controller.handleCdpRequest(
+      createRequest({
+        id: 'inactive-cdp-key',
+        method: 'cdp.dispatch_key_event',
+        params: { key: 'Enter' },
+      })
+    ),
+    (error: unknown) => {
+      assert(error instanceof Error);
+      assert.equal((error as { code?: string }).code, ERROR_CODES.INPUT_UNSUPPORTED);
+      assert.equal(
+        (error as { details?: { reason?: string } }).details?.reason,
+        'inactive_native_keyboard_target'
+      );
+      return true;
+    }
+  );
+  assert.deepEqual(commands, []);
+  assert.deepEqual(debuggerOptions, []);
+});
+
+test('CDP key presses recheck activity after debugger queueing', async () => {
+  let checks = 0;
+  const { controller, commands, debuggerOptions } = createController({
+    getTab: async (tabId) => ({ id: tabId, active: ++checks === 1 }),
+  });
+  await assert.rejects(
+    controller.handleCdpRequest(
+      createRequest({
+        id: 'deactivated-cdp-key',
+        method: 'cdp.dispatch_key_event',
+        params: { key: 'Enter' },
+      })
+    ),
+    { code: ERROR_CODES.INPUT_UNSUPPORTED }
+  );
+  assert.equal(checks, 2);
+  assert.equal(debuggerOptions.length, 1);
+  assert.deepEqual(commands, []);
+});
+
+test('CDP key release survives losing tab activity after keyDown', async () => {
+  let active = true;
+  const { controller, commands } = createController({
+    getTab: async (tabId) => ({ id: tabId, active }),
+    onSendCommand: () => {
+      active = false;
+    },
+  });
+  await controller.handleCdpRequest(
+    createRequest({
+      id: 'release-cdp-key',
+      method: 'cdp.dispatch_key_event',
+      params: { key: 'Enter' },
+    })
+  );
+  assert.deepEqual(
+    commands.map(({ params }) => params.type),
+    ['keyDown', 'keyUp']
+  );
 });
 
 test('debugger replay is opt-in only for proven page and CDP reads', async () => {

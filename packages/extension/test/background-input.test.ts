@@ -18,6 +18,10 @@ function createController(
     failRevalidationAt?: number;
     staleRead?: boolean;
     active?: boolean;
+    activeChecks?: boolean[];
+    deactivateAfterKeyDown?: boolean;
+    clearReadback?: Record<string, unknown>;
+    clearReadFails?: boolean;
     observationStartFails?: boolean;
     observationFinishFails?: boolean;
     observationExpired?: boolean;
@@ -30,22 +34,47 @@ function createController(
 ) {
   const commands: CommandCall[] = [];
   const messages: Array<Record<string, unknown>> = [];
+  const events: string[] = [];
   let moveCount = 0;
   let revalidationCount = 0;
+  let active = options.active ?? true;
+  let tabChecks = 0;
+  let attachments = 0;
+  let cleared = false;
+  let inserted = false;
   const controller = createBackgroundInputController({
-    getTab: async () => ({ active: options.active ?? true }),
+    getTab: async () => {
+      const current = options.activeChecks?.[tabChecks] ?? active;
+      tabChecks += 1;
+      return { active: current };
+    },
     contentScriptTimeoutMs: 5000,
     assertCommandActive: () => {
       if (options.failCommandGuard)
         throw new BridgeError('DIALOG_BLOCKED', 'Guard rejected before dispatch.');
     },
     async runWithDebugger<T>(_tabId: number, operation: (target: { tabId: number }) => Promise<T>) {
+      attachments += 1;
       return options.runWithDebugger
         ? options.runWithDebugger(operation)
         : operation({ tabId: 17 });
     },
     async sendCommand(_target, method, params) {
       commands.push({ method, params });
+      events.push(method);
+      if (
+        method === 'Input.dispatchKeyEvent' &&
+        params.type === 'keyDown' &&
+        options.deactivateAfterKeyDown
+      )
+        active = false;
+      if (
+        method === 'Input.dispatchKeyEvent' &&
+        params.type === 'keyUp' &&
+        params.code === 'Backspace'
+      )
+        cleared = true;
+      if (method === 'Input.insertText') inserted = true;
       if (
         options.failMove &&
         method === 'Input.dispatchMouseEvent' &&
@@ -59,8 +88,11 @@ function createController(
     async sendTabMessage(_tabId, message) {
       messages.push(message);
       const method = message.method;
+      events.push(String(method));
       const params = message.params as { target?: { selector?: string }; elementRef?: string };
       if (method === 'input.read_value') {
+        if (cleared && !inserted && options.clearReadFails)
+          throw new BridgeError('TIMEOUT', 'Clear read-back was lost.');
         if (options.staleRead) {
           return {
             error: {
@@ -70,7 +102,11 @@ function createController(
             },
           };
         }
-        return { elementRef: params.elementRef, value: 'native value' };
+        return {
+          elementRef: params.elementRef,
+          value: cleared && !inserted ? '' : 'native value',
+          ...(cleared && !inserted ? options.clearReadback : {}),
+        };
       }
       if (method === 'input.revalidate_native') {
         revalidationCount += 1;
@@ -121,7 +157,7 @@ function createController(
       };
     },
   });
-  return { controller, commands, messages };
+  return { controller, commands, messages, events, attachments: () => attachments };
 }
 
 const tab = { tabId: 17, windowId: 3, title: 'Input', url: 'https://example.test' };
@@ -151,6 +187,133 @@ test('native pointer input rejects inactive tabs before dispatch instead of clai
   );
   assert.deepEqual(commands, []);
   assert.deepEqual(messages, []);
+});
+
+test('inactive tabs reject key-dependent native flows before attachment, focus, or insertion', async () => {
+  for (const [method, params] of [
+    ['input.fill', { target: { selector: '#name' }, value: 'replacement' }],
+    ['input.fill', { target: { selector: '#name' }, value: '' }],
+    ['input.press_key', { target: { selector: '#save' }, key: 'Enter' }],
+    ['input.press_key', { key: 'Escape' }],
+    ['input.type', { target: { selector: '#name' }, text: 'replacement', clear: true }],
+    ['input.type', { target: { selector: '#name' }, text: 'append', submit: true }],
+  ] as const) {
+    const harness = createController({ active: false });
+    const request = createRequest({
+      id: crypto.randomUUID(),
+      method,
+      params: { ...params, executionMode: 'cdp' },
+    });
+    await assert.rejects(
+      harness.controller.handleNativeInput(request, tab, request.params),
+      (error: unknown) => {
+        assert(error instanceof BridgeError);
+        assert.equal(error.code, 'INPUT_UNSUPPORTED');
+        const details = error.details as {
+          reason: string;
+          aftermath: { dispatch: string };
+          outcomeUncertain?: boolean;
+        };
+        assert.equal(details.reason, 'inactive_native_keyboard_target');
+        assert.equal(details.aftermath.dispatch, 'not_started');
+        assert.equal(details.outcomeUncertain, undefined);
+        assert.equal(
+          createFailure(request.id, error.code, error.message, error.details, { method }).error
+            .recovery?.retry,
+          false
+        );
+        return true;
+      }
+    );
+    assert.equal(harness.attachments(), 0);
+    assert.deepEqual(harness.messages, []);
+    assert.deepEqual(harness.commands, []);
+  }
+});
+
+test('background native text insertion without clearing or submit remains supported', async () => {
+  const { controller, commands } = createController({ active: false });
+  const request = createRequest({
+    id: 'background-insert',
+    method: 'input.type',
+    params: {
+      target: { selector: '#name' },
+      text: 'append',
+      clear: false,
+      submit: false,
+      executionMode: 'cdp',
+    },
+  });
+  const result = await controller.handleNativeInput(request, tab, request.params);
+  assert.deepEqual(
+    commands.map((call) => call.method),
+    ['Input.insertText']
+  );
+  assert.equal((result.aftermath as { dispatch: string }).dispatch, 'completed');
+});
+
+test('tab activity is rechecked before fresh keyboard dispatch, but never blocks a release', async () => {
+  for (const options of [{ activeChecks: [true, false] }, { deactivateAfterKeyDown: true }]) {
+    const { controller, commands } = createController(options);
+    const request = createRequest({
+      id: crypto.randomUUID(),
+      method: 'input.press_key',
+      params: { key: 'Enter', executionMode: 'cdp' },
+    });
+    if ('activeChecks' in options) {
+      await assert.rejects(
+        controller.handleNativeInput(request, tab, request.params),
+        (error: unknown) => {
+          assert(error instanceof BridgeError);
+          assert.equal(
+            (error.details as { aftermath: { dispatch: string } }).aftermath.dispatch,
+            'not_started'
+          );
+          return true;
+        }
+      );
+      assert.deepEqual(commands, []);
+    } else {
+      await controller.handleNativeInput(request, tab, request.params);
+      assert.deepEqual(
+        commands.map((call) => call.params.type),
+        ['keyDown', 'keyUp']
+      );
+    }
+  }
+});
+
+test('losing tab activity after select-all stops clearing without replay or insertion', async () => {
+  const { controller, commands } = createController({ activeChecks: [true, true, false] });
+  const request = createRequest({
+    id: 'tab-lost-mid-clear',
+    method: 'input.fill',
+    params: { target: { selector: '#name' }, value: 'replacement' },
+  });
+  await assert.rejects(
+    controller.handleNativeInput(request, tab, request.params),
+    (error: unknown) => {
+      assert(error instanceof BridgeError);
+      assert.equal(
+        (error.details as { aftermath: { dispatch: string } }).aftermath.dispatch,
+        'uncertain'
+      );
+      assert.equal(
+        createFailure(request.id, error.code, error.message, error.details, {
+          method: request.method,
+        }).error.recovery?.retry,
+        false
+      );
+      return true;
+    }
+  );
+  assert.deepEqual(
+    commands.map((call) => [call.params.type, call.params.code]),
+    [
+      ['keyDown', 'KeyA'],
+      ['keyUp', 'KeyA'],
+    ]
+  );
 });
 
 test('CDP click resolves immediately before native mouse dispatch', async () => {
@@ -422,7 +585,7 @@ test('a pre-send debugger guard does not claim dispatch, while partial input can
 });
 
 test('CDP fill clears, inserts text once, and reads without mutation replay', async () => {
-  const { controller, commands, messages } = createController();
+  const { controller, commands, messages, events } = createController();
   const request = createRequest({
     id: 'cdp-fill',
     method: 'input.fill',
@@ -436,11 +599,130 @@ test('CDP fill clears, inserts text once, and reads without mutation replay', as
   const result = await controller.handleNativeInput(request, tab, request.params);
   assert.equal(commands.filter((call) => call.method === 'Input.insertText').length, 1);
   assert.equal(messages.filter((message) => message.method === 'input.resolve_native').length, 1);
-  assert.equal(messages.filter((message) => message.method === 'input.read_value').length, 1);
+  assert.equal(messages.filter((message) => message.method === 'input.read_value').length, 2);
+  assert(events.indexOf('input.read_value') < events.indexOf('Input.insertText'));
   assert.equal(result.value, 'native value');
   assert.equal(result.mode, 'cdp');
   assert.deepEqual(result.postMutation, { status: 'read-back', verified: true });
   assert.equal((result.aftermath as { verification: string }).verification, 'not_requested');
+});
+
+test('native empty replacement confirms clearing without inserting text', async () => {
+  for (const [method, params] of [
+    ['input.fill', { value: '' }],
+    ['input.type', { text: '', clear: true, submit: true }],
+  ] as const) {
+    const { controller, commands, messages } = createController();
+    const request = createRequest({
+      id: crypto.randomUUID(),
+      method,
+      params: { target: { selector: '#name' }, ...params },
+    });
+    const result = await controller.handleNativeInput(request, tab, request.params);
+    assert.equal(result.value, '');
+    assert.deepEqual(result.postMutation, { status: 'read-back', verified: true });
+    assert.equal(
+      commands.some((call) => call.method === 'Input.insertText'),
+      false
+    );
+    assert.equal(
+      commands.filter((call) => call.params.code === 'Enter').length,
+      method === 'input.type' ? 2 : 0
+    );
+    assert.equal(messages.filter((message) => message.method === 'input.read_value').length, 2);
+  }
+});
+
+test('native replacement requires an exact empty read-back and never inserts or submits on mismatch', async () => {
+  for (const [method, extra] of [
+    ['input.fill', { value: 'replacement' }],
+    ['input.fill', { value: '' }],
+    ['input.type', { text: 'replacement', clear: true, submit: true }],
+  ] as const) {
+    for (const readback of [
+      { value: 'PRIVATE EXISTING VALUE' },
+      { value: null },
+      { value: undefined },
+      { elementRef: 'different-target', value: '' },
+    ]) {
+      const { controller, commands, messages } = createController({ clearReadback: readback });
+      const request = createRequest({
+        id: crypto.randomUUID(),
+        method,
+        params: { target: { selector: '#name' }, executionMode: 'cdp', observe: true, ...extra },
+      });
+      await assert.rejects(
+        controller.handleNativeInput(request, tab, request.params),
+        (error: unknown) => {
+          assert(error instanceof BridgeError);
+          assert.equal(error.code, 'INPUT_UNSUPPORTED');
+          const details = error.details as {
+            reason: string;
+            aftermath: { dispatch: string };
+            outcomeUncertain: boolean;
+          };
+          assert.equal(details.reason, 'native_clear_not_confirmed');
+          assert.equal(details.aftermath.dispatch, 'uncertain');
+          assert.equal(details.outcomeUncertain, true);
+          assert.equal(
+            createFailure(request.id, error.code, error.message, error.details, { method }).error
+              .recovery?.retry,
+            false
+          );
+          assert.doesNotMatch(JSON.stringify(error.details), /PRIVATE EXISTING VALUE/);
+          return true;
+        }
+      );
+      assert.equal(commands.length, 4, 'Only one clear key sequence is attempted.');
+      assert.equal(
+        commands.some((call) => call.method === 'Input.insertText' || call.params.code === 'Enter'),
+        false
+      );
+      assert.equal(messages.filter((message) => message.method === 'input.read_value').length, 1);
+      assert.equal((messages.at(-1)?.params as Record<string, unknown> | undefined)?.discard, true);
+    }
+  }
+});
+
+test('lost clear read-back stops insertion with nonretryable uncertainty', async () => {
+  const { controller, commands } = createController({ clearReadFails: true });
+  const request = createRequest({
+    id: 'lost-clear-read',
+    method: 'input.fill',
+    params: { target: { selector: '#name' }, value: 'replacement' },
+  });
+  await assert.rejects(
+    controller.handleNativeInput(request, tab, request.params),
+    (error: unknown) => {
+      assert(error instanceof BridgeError);
+      assert.equal(error.code, 'TIMEOUT');
+      assert.equal(
+        (error.details as { aftermath: { dispatch: string } }).aftermath.dispatch,
+        'uncertain'
+      );
+      assert.equal(
+        createFailure(request.id, error.code, error.message, error.details, {
+          method: request.method,
+        }).error.recovery?.retry,
+        false
+      );
+      return true;
+    }
+  );
+  assert.equal(commands.filter((call) => call.method === 'Input.insertText').length, 0);
+});
+
+test('a stale target during clear read-back skips replacement without replay', async () => {
+  const { controller, commands } = createController({ staleRead: true });
+  const request = createRequest({
+    id: 'stale-clear-read',
+    method: 'input.fill',
+    params: { target: { selector: '#name' }, value: 'replacement' },
+  });
+  const result = await controller.handleNativeInput(request, tab, request.params);
+  assert.equal(commands.filter((call) => call.method === 'Input.insertText').length, 0);
+  assert.equal(result.value, null);
+  assert.deepEqual(result.postMutation, { status: 'target-rerendered', verified: false });
 });
 
 test('CDP text insertion revalidates exact focus immediately before insertText', async () => {
@@ -493,7 +775,7 @@ test('CDP clear does not insert into redirected focus after the clear', async ()
   });
   const result = await controller.handleNativeInput(request, tab, request.params);
   assert.equal(commands.filter((call) => call.method === 'Input.insertText').length, 0);
-  assert.equal(messages.filter((message) => message.method === 'input.read_value').length, 0);
+  assert.equal(messages.filter((message) => message.method === 'input.read_value').length, 1);
   assert.equal(result.value, null);
   assert.deepEqual(result.postMutation, { status: 'focus-changed', verified: false });
 });

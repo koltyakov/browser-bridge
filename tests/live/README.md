@@ -1,5 +1,42 @@
 # Live browser verification
 
+## Isolated native-input and observer regressions
+
+```sh
+BBX_INPUT_CHROME="/absolute/path/to/Chrome for Testing" make test-input-live
+```
+
+This opt-in target launches its own headless Chrome for Testing or Chromium,
+with a fresh profile and home directory, extensions disabled, and a private
+debugging pipe. It does not attach to a running browser, expose a debugging
+port, install a native host, change an access grant, or activate a personal tab.
+No browser executable is guessed. Missing prerequisites fail rather than skip.
+
+The suite loads unchanged emitted content modules into real isolated worlds.
+It forces `MutationObserver` constructor/`observe()` exceptions and a finish-time
+read exception, checks cleanup and same-world recovery, and verifies actual
+DOM and trusted CDP clicks without replay or false application verification.
+It also checks prevented deletion cannot append replacement text, successful
+native clearing is read back before insertion, and inactive key-dependent
+flows stop before dispatch while plain text insertion remains available.
+
+Legacy tests compile the actual pre-aftermath `content-input.ts` from commit
+`45f35307a1b46daa36de196df405dbe7ed39e11a`, without rewriting its responses.
+They exercise real positive effects, the old beforeunload navigation overclaim,
+and an observation evicted by the legacy receiver. The current background
+controller must preserve supported evidence but discard unsupported navigation
+and changed claims. This requires that commit in the local Git history; fetch
+it before running from a shallow checkout, or explicitly set
+`BBX_INPUT_LEGACY_REF` to another available full pre-aftermath commit SHA.
+The suite never fetches history automatically.
+
+Results, browser identity, module/source hashes, and synthetic evidence remain
+under `dist/input-live/run-*/`. Owned targets, the browser process, profile,
+and home are cleaned up. The controller uses direct CDP/content-module
+adapters; this is not a test of installed extension grants, native messaging,
+the Go daemon, or OpenCode MCP integration. Do not run builds that rewrite
+`dist/ext` concurrently. The target is excluded from `make test`.
+
 ## Isolated macOS Arc verification
 
 The original browser-matrix runner was a disposable diagnostic. Its maintained

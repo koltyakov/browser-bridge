@@ -1,5 +1,8 @@
 import { BridgeError, ERROR_CODES } from '../../../protocol/src/index.js';
-import { createCdpKeyPressEventPair } from './background-helpers.js';
+import {
+  assertNativeKeyboardTargetActive,
+  createCdpKeyPressEventPair,
+} from './background-helpers.js';
 import { requestLifetimes } from './background-request-lifetime.js';
 import {
   createInputAftermath,
@@ -87,18 +90,28 @@ export function createBackgroundInputController(dependencies: {
   const originalSend = dependencies.sendCommand;
   dependencies = {
     ...dependencies,
-    sendCommand: (target, method, params) => {
+    sendCommand: async (target, method, params) => {
       // Always allow physical releases after interruption so a held key, mouse,
       // or touch contact cannot be left pressed.
-      if (!isNativeInputRelease(method, params)) guards.get(target)?.();
-      dependencies.assertCommandActive?.(target, method, params);
-      if (method.startsWith('Input.') && !isNativeInputRelease(method, params)) {
+      const release = isNativeInputRelease(method, params);
+      const assertAllowed = () => {
+        if (!release) guards.get(target)?.();
+        dependencies.assertCommandActive?.(target, method, params);
+      };
+      assertAllowed();
+      if (method === 'Input.dispatchKeyEvent' && !release) {
+        await assertNativeKeyboardTargetActive(target.tabId, dependencies.getTab);
+        // Access or debugger ownership may change while checking tab activity.
+        assertAllowed();
+      }
+      if (method.startsWith('Input.') && !release) {
         const aftermath = dispatches.get(target);
         if (aftermath) aftermath.dispatch = 'uncertain';
       }
       return originalSend(target, method, params);
     },
   };
+
   async function handleNativeInput(
     request: BridgeRequest,
     tab: ResolvedTabTarget,
@@ -166,6 +179,15 @@ export function createBackgroundInputController(dependencies: {
         'Chrome does not deliver native pointer input to an inactive tab. Use executionMode=dom when trusted input is unnecessary, or ask permission to activate this tab before using CDP input.',
         { reason: 'inactive_native_pointer_target', tabId: tab.tabId }
       );
+    }
+    if (
+      request.method === 'input.press_key' ||
+      request.method === 'input.fill' ||
+      (request.method === 'input.type' && (params.clear === true || params.submit === true))
+    ) {
+      // Reject key-dependent flows before even focusing a target or inserting
+      // text. Plain insertText does not use Chrome's keyboard-event path.
+      await assertNativeKeyboardTargetActive(tab.tabId, dependencies.getTab);
     }
 
     const observe = params.observe as { settleMs?: unknown } | null | undefined;
@@ -610,6 +632,19 @@ interpolated touchMove events across holdMs, then lift them together. */
       await revalidateEditable(tabId, resolved.elementRef);
       await clearEditable(target);
       mutationDispatched = true;
+      try {
+        const cleared = await readValue(tabId, resolved.elementRef);
+        if (cleared.elementRef !== resolved.elementRef || cleared.value !== '') {
+          throw new BridgeError(
+            ERROR_CODES.INPUT_UNSUPPORTED,
+            'Native clearing did not confirm an empty target. No replacement text or submit key was dispatched. Inspect the field before another deliberate action; do not replay automatically.',
+            { reason: 'native_clear_not_confirmed', elementRef: resolved.elementRef }
+          );
+        }
+      } catch (error) {
+        if (!isTargetInvalidationError(error)) throw error;
+        postMutationStatus = getInvalidationStatus(error);
+      }
     }
     if (text && !postMutationStatus) {
       try {

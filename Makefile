@@ -36,7 +36,7 @@ endif
 	check-release-version check check-extension-zip package-extension package-native \
 	package-native-all package-npm pack pack-dry-run release-check prepublish-check \
 	publish-native publish-release publish-npm fixture-browser fixture-interaction bench-interaction \
-	run status daemon install-manifest install sync-version bench-runtime bench-npm-launch test-visual-live test-inspection-live test-mcp-live test-workflows-live test-chaos-live test-arc-live
+	run status daemon install-manifest install sync-version bench-runtime bench-npm-launch test-visual-live test-inspection-live test-mcp-live test-workflows-live test-chaos-live test-arc-live test-input-live
 
 help: ## Show available tasks; the default when running make
 	@"$(NODE)" -e "const fs = require('node:fs'); for (const m of fs.readFileSync('Makefile', 'utf8').matchAll(/^([a-z][a-z-]+):.*?## (.+)$$/gm)) console.log(m[1].padEnd(24) + m[2]);"
@@ -104,6 +104,9 @@ test-mcp-live: build-native ## Read-only conversation routing; set BBX_LIVE_EXTE
 
 test-workflows-live: build-extension build-native ## Public demo forms and multi-tab mutations; set BBX_LIVE_PROFILE_LABEL or BBX_LIVE_EXTENSION_ID
 	"$(NODE)" --import tsx --test --test-concurrency=1 tests/live/workflows.test.ts
+
+test-input-live: build-extension ## Disposable headless native-input/observer faults and genuine legacy responses; set BBX_INPUT_CHROME
+	"$(NODE)" --import tsx --test tests/live/input-aftermath.test.ts
 
 test-chaos-live: build-extension build-native ## Disposable Linux headed-Chrome recovery/leak tests; set BBX_CHAOS_CHROME
 	"$(NODE)" --import tsx --test --test-concurrency=1 tests/live/chaos.test.ts
