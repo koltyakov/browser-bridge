@@ -28,7 +28,7 @@ export async function publishUpdateFeed(includeRelease = false) {
     let previous;
     // A missing feed is allowed only for an explicitly requested first publish.
     // Authentication and network failures never silently reset the sequence.
-    if (process.env.BBX_NATIVE_UPDATE_INITIALIZE !== '1') {
+    if (process.env.RELEASE_FEED_INITIALIZE !== '1') {
       gh(['release', 'download', 'native-updates', '--pattern', 'stable.json', '--dir', directory]);
       previous = readNativeUpdateFeed(
         await fs.readFile(path.join(directory, 'stable.json'), 'utf8')

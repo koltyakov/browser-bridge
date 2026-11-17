@@ -3,7 +3,9 @@ import { generateKeyPairSync } from 'node:crypto';
 import { test } from 'node:test';
 import {
   nativeUpdateLinkerFlags,
+  nativeUpdateKeys,
   nativeUpdateSigningKey,
+  nativeUpdateSigningKeyID,
 } from '../../scripts/native-update-config.mjs';
 import {
   readNativeUpdateFeed,
@@ -14,10 +16,14 @@ import {
 function fixture() {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
   const env = {
-    BBX_NATIVE_UPDATE_KEYS: JSON.stringify({
-      release: publicKey.export({ format: 'der', type: 'spki' }).subarray(-32).toString('base64'),
+    RELEASE_SIGNING_PUBLIC_KEYS: JSON.stringify({
+      'release-2026-11-17': publicKey
+        .export({ format: 'der', type: 'spki' })
+        .subarray(-32)
+        .toString('base64'),
     }),
-    BBX_NATIVE_UPDATE_PRIVATE_KEY: privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(),
+    RELEASE_SIGNING_KEY_ID: 'release-2026-11-17',
+    RELEASE_SIGNING_PRIVATE_KEY: privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(),
   };
   const release: UpdateRelease = {
     version: '2.2.2',
@@ -48,7 +54,8 @@ test('native update publishing authenticates, renews, and retains immutable rele
     () => signNativeUpdateFeed(first, { ...release, protocolMajor: 3 }, env),
     /immutable/
   );
-  const envelope = JSON.parse(raw) as { signed: string };
+  const envelope = JSON.parse(raw) as { signed: string; signatures: { keyId: string }[] };
+  assert.equal(envelope.signatures[0].keyId, env.RELEASE_SIGNING_KEY_ID);
   envelope.signed = Buffer.from('{}').toString('base64');
   assert.throws(() => readNativeUpdateFeed(JSON.stringify(envelope), env), /signature/);
   assert.throws(() => readNativeUpdateFeed(raw, fixture().env), /signature/);
@@ -64,12 +71,34 @@ test('native release builds pin keys and publishing rejects missing or mismatche
     () =>
       nativeUpdateSigningKey({
         ...env,
-        BBX_NATIVE_UPDATE_PRIVATE_KEY: fixture().env.BBX_NATIVE_UPDATE_PRIVATE_KEY,
+        RELEASE_SIGNING_PRIVATE_KEY: fixture().env.RELEASE_SIGNING_PRIVATE_KEY,
       }),
     /does not match/
   );
   assert.throws(
-    () => nativeUpdateLinkerFlags({ BBX_NATIVE_UPDATE_KEYS: '{"release":"invalid"}' }),
+    () => nativeUpdateLinkerFlags({ RELEASE_SIGNING_PUBLIC_KEYS: '{"release":"invalid"}' }),
     /Invalid/
   );
+  for (const id of ['', '../invalid', 'x'.repeat(65), 'unknown']) {
+    assert.throws(() => nativeUpdateSigningKey({ ...env, RELEASE_SIGNING_KEY_ID: id }));
+  }
+  assert.equal(nativeUpdateSigningKeyID(env), 'release-2026-11-17');
+});
+
+test('native update key rotation retains old pins and signs with the selected key ID', () => {
+  const first = fixture();
+  const next = fixture();
+  const env = {
+    ...next.env,
+    RELEASE_SIGNING_KEY_ID: 'release-next',
+    RELEASE_SIGNING_PUBLIC_KEYS: JSON.stringify({
+      ...nativeUpdateKeys(first.env),
+      'release-next': nativeUpdateKeys(next.env)['release-2026-11-17'],
+    }),
+  };
+  const oldFeed = signNativeUpdateFeed(undefined, first.release, first.env);
+  const previous = readNativeUpdateFeed(oldFeed, env);
+  const newFeed = signNativeUpdateFeed(previous, undefined, env);
+  assert.equal(readNativeUpdateFeed(newFeed, env).sequence, 2);
+  assert.throws(() => readNativeUpdateFeed(newFeed, first.env), /signature/);
 });

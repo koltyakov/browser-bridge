@@ -6,8 +6,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,9 +15,13 @@ concurrency:
 jobs:
   package:
     runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
     concurrency: native-release-publishing
     env:
-      BBX_NATIVE_UPDATE_KEYS: ${{ vars.BBX_NATIVE_UPDATE_KEYS }}
+      RELEASE_SIGNING_PUBLIC_KEYS: ${{ vars.RELEASE_SIGNING_PUBLIC_KEYS }}
+      RELEASE_SIGNING_KEY_ID: ${{ vars.RELEASE_SIGNING_KEY_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -55,7 +58,7 @@ jobs:
       - name: Verify native update signing configuration
         run: node scripts/native-update-config.mjs
         env:
-          BBX_NATIVE_UPDATE_PRIVATE_KEY: ${{ secrets.BBX_NATIVE_UPDATE_PRIVATE_KEY }}
+          RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}
 
       - name: Check release metadata and generated protocol
         run: make check-release-version check-protocol
@@ -100,14 +103,11 @@ jobs:
         run: make publish-update-feed
         env:
           GH_TOKEN: ${{ github.token }}
-          BBX_NATIVE_UPDATE_PRIVATE_KEY: ${{ secrets.BBX_NATIVE_UPDATE_PRIVATE_KEY }}
-          BBX_NATIVE_UPDATE_INITIALIZE: ${{ vars.BBX_NATIVE_UPDATE_INITIALIZE }}
+          RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}
+          RELEASE_FEED_INITIALIZE: ${{ vars.RELEASE_FEED_INITIALIZE }}
 
       - name: Create npm tarball
         run: make pack
-
-      - name: Publish npm package
-        run: make publish-npm
 
       - name: Upload npm tarball
         uses: actions/upload-artifact@v7
@@ -122,3 +122,33 @@ jobs:
           name: browser-bridge-extension-${{ github.ref_name }}
           path: dist/*.zip
           if-no-files-found: error
+
+  npm:
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.4
+          registry-url: https://registry.npmjs.org
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@11.5.1
+
+      - name: Resolve release version from Git tag
+        run: make sync-version
+
+      - name: Download this run's npm tarball
+        uses: actions/download-artifact@v7
+        with:
+          name: npm-package-${{ github.ref_name }}
+
+      - name: Publish npm package without a release environment
+        run: make publish-npm

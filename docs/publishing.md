@@ -90,7 +90,7 @@ make publish-npm ARGS=--provenance
 
 Authenticate `gh` with permission to create releases in `koltyakov/browser-bridge`. The release tag must already exist remotely. `make package-npm` packs only the launcher and does not build or publish native assets. `make publish-npm` selects the resolved version's tarball; override it with `TARBALL=path` if needed.
 
-The tag workflow publishes npm through trusted publishing with OIDC. Its token needs `contents: write` for GitHub releases and `id-token: write` for npm. It retains the npm tarball and extension ZIP as workflow artifacts.
+The tag workflow publishes npm through trusted publishing with OIDC. The package job uses the `release` environment and `contents: write` for GitHub assets. A dependent npm job downloads that run's tarball and uses `id-token: write` without an environment, preserving the npm publisher's OIDC identity. Neither npm publication nor its job receives the release-signing private key. The workflow retains the npm tarball and extension ZIP as artifacts.
 
 Trusted publishing requires npm CLI `11.5.1+`. The release workflow upgrades npm explicitly before running `npm publish`; if publish fails with `E404` or authentication issues, verify the workflow still prints an npm version at or above that threshold.
 
@@ -101,32 +101,65 @@ It embeds the public keys, publishes immutable binaries, then signs and
 publishes `native-updates/stable.json` on a separate prerelease. The prerelease
 does not become GitHub's latest stable binary release.
 
-Configure these GitHub Actions values:
+Use the same signing names and scopes as Control and Expose, with BBX's own key:
 
-- Repository variable `BBX_NATIVE_UPDATE_KEYS`, a JSON object with a `release`
-  key containing the base64 raw 32-byte Ed25519 public key.
-- Repository secret `BBX_NATIVE_UPDATE_PRIVATE_KEY`, the matching Ed25519
-  PKCS#8 PEM private key. Never commit this key.
+| Name | Type and scope | Value |
+| --- | --- | --- |
+| `RELEASE_SIGNING_PUBLIC_KEYS` | Repository variable | JSON map of stable key IDs to base64 raw 32-byte Ed25519 public keys |
+| `RELEASE_SIGNING_KEY_ID` | Repository variable | Active key ID, currently `release-2026-11-17` |
+| `RELEASE_SIGNING_PRIVATE_KEY` | Secret in the `release` environment | Matching Ed25519 PKCS#8 PEM private key |
+
+Public configuration is available to unsigned builds. Never keep a second copy of
+the private key as a repository secret. Control additionally checks the public map
+against its reviewed source pins. Keypairs must not be shared between projects.
+
+The `release` environment permits release tags matching `v*.*.*` and the `main`
+branch. The branch permission is required for weekly feed renewal and manual
+renewal from the default branch. Do not allow all branches or tags. Required
+environment approvals also gate renewals; configure them only if someone will
+approve the weekly job before the feed expires. npm trusted publishing remains
+OIDC-based and independent of this signing key.
+
 - For the first release only, repository variable
-  `BBX_NATIVE_UPDATE_INITIALIZE=1`. This creates the metadata prerelease.
+  `RELEASE_FEED_INITIALIZE=1`. This creates the metadata prerelease.
   Remove the variable after successful publication. Initialization refuses
   to overwrite an existing metadata release.
 
-Generate the keys locally with Node, then store them securely:
+Local files live under `~/.ssh/github/`: `bbx.pem` is PKCS#8 private PEM,
+`bbx.pub` is SPKI public PEM, and `bbx.json` is the public JSON map.
+Control uses the basename `control`; Expose uses `expose`.
+For a new key only, generate outside the checkout with Node:
 
 ```sh
 node --input-type=module -e '
 import { generateKeyPairSync } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+const directory = join(homedir(), ".ssh", "github");
+mkdirSync(directory, {recursive:true,mode:0o700});
 const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-writeFileSync("native-update-private.pem", privateKey.export({type:"pkcs8",format:"pem"}), {mode:0o600,flag:"wx"});
-console.log(JSON.stringify({release:publicKey.export({type:"spki",format:"der"}).subarray(-32).toString("base64")}));
+writeFileSync(join(directory, "bbx.pem"), privateKey.export({type:"pkcs8",format:"pem"}), {mode:0o600,flag:"wx"});
+writeFileSync(join(directory, "bbx.pub"), publicKey.export({type:"spki",format:"pem"}), {mode:0o644,flag:"wx"});
+writeFileSync(join(directory, "bbx.json"), JSON.stringify({"release-2026-11-17":publicKey.export({type:"spki",format:"der"}).subarray(-32).toString("base64")}) + "\n", {mode:0o644,flag:"wx"});
 '
 ```
 
-Run this outside the checkout to avoid adding the private key to Git. Copy the
-printed JSON to the variable and the PEM contents to the secret, then remove
-the local private-key file when it is no longer needed.
+Keep the directory at mode `0700` and the private key at `0600`. Keep an encrypted
+offline backup. Never commit, print, or attach private keys to release artifacts.
+Configure GitHub from the files:
+
+```sh
+gh secret set RELEASE_SIGNING_PRIVATE_KEY --repo koltyakov/browser-bridge --env release \
+  < "$HOME/.ssh/github/bbx.pem"
+gh variable set RELEASE_SIGNING_PUBLIC_KEYS --repo koltyakov/browser-bridge \
+  --body "$(cat "$HOME/.ssh/github/bbx.json")"
+gh variable set RELEASE_SIGNING_KEY_ID --repo koltyakov/browser-bridge --body release-2026-11-17
+```
+
+Remove superseded signing secrets and variables after verifying the replacements.
+The signer checks that the selected ID's public key matches the private key and
+writes that same ID into the feed signature. No `release` alias is required.
 
 `make publish-update-feed` adds the current native release only after
 `make publish-release` has verified the public assets. It authenticates the
@@ -141,6 +174,12 @@ same manually. Monitor that workflow. Expired or invalid metadata fails closed
 and leaves the installed version selected. Keep both old and new public keys
 embedded during signing-key rotation until existing installations can verify
 the new feed.
+
+For planned rotation, add the next public key under a new stable ID, publish
+bridge binaries trusting both keys while still signing with the old key, then
+switch `RELEASE_SIGNING_KEY_ID` and the environment secret. Remove the old public
+pin only after installations have crossed the bridge. Never rename an existing
+key ID or replace its public key after publication.
 
 Existing binaries without embedded trust and the native identity update hook
 need a one-time reinstall. An extension update cannot add updater code to an

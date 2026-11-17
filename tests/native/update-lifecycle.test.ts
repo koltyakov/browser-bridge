@@ -135,7 +135,7 @@ test(
     const keys = JSON.stringify({
       release: publicKey.export({ format: 'der', type: 'spki' }).subarray(-32).toString('base64'),
     });
-    const flags = nativeUpdateLinkerFlags({ BBX_NATIVE_UPDATE_KEYS: keys }).replace(
+    const flags = nativeUpdateLinkerFlags({ RELEASE_SIGNING_PUBLIC_KEYS: keys }).replace(
       nativeUpdateFeedURL,
       `${url}/feed`
     );

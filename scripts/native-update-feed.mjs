@@ -1,6 +1,10 @@
 // @ts-check
 import { createPublicKey, sign, verify } from 'node:crypto';
-import { nativeUpdateKeys, nativeUpdateSigningKey } from './native-update-config.mjs';
+import {
+  nativeUpdateKeys,
+  nativeUpdateSigningKey,
+  nativeUpdateSigningKeyID,
+} from './native-update-config.mjs';
 
 /** @typedef {{url: string, sha256: string, size: number}} UpdateArtifact */
 /** @typedef {{version: string, protocolMajor: number, artifacts: Record<string, UpdateArtifact>}} UpdateRelease */
@@ -78,6 +82,11 @@ export function signNativeUpdateFeed(previous, release, env = process.env, now =
   );
   return JSON.stringify({
     signed: signed.toString('base64'),
-    signatures: [{ keyId: 'release', signature: sign(null, signed, key).toString('base64') }],
+    signatures: [
+      {
+        keyId: nativeUpdateSigningKeyID(env),
+        signature: sign(null, signed, key).toString('base64'),
+      },
+    ],
   });
 }
