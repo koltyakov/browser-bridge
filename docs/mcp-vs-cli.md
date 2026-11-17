@@ -183,6 +183,57 @@ There are no tool-surface profiles or profile configuration. `BBX_MCP_TOOLSET` i
 `bbx install-mcp` / `bbx mcp config` do not accept `--profile`. Reinstalling Browser Bridge MCP
 config removes a stale selector from the managed server entry.
 
+## Code mode and shared MCP connections
+
+OpenCode can discover Browser Bridge's MCP tools and call them inside its host
+`execute` runtime. Use the exact tool paths returned by the host's search tool.
+Browser Bridge does not need an embedded JavaScript engine for this composition.
+`page.evaluate` runs page JavaScript, `browser_batch` runs independent reads, and
+`input.perform` runs a known sequence. None of these calls other MCP servers.
+
+Keep the selected `destinationId`, `extensionId`, and `tabId` on follow-up calls.
+Inspect structured results and individual batch failures rather than assuming
+that a fulfilled tool call proves the browser task succeeded. Hosts may wrap MCP
+results differently, so inspect the host's returned value before using an example
+that assumes a particular result shape. Bound concurrent calls; BBX allows at most
+16 active MCP calls and uses five workers for a read-only batch.
+
+OpenCode supplies the invoking conversation in
+`tools/call.params._meta["ai.opencode/sessionID"]`, for both direct and code-mode
+calls. BBX derives an opaque request-local identity from that value, a random MCP
+server-instance namespace, and the connection's session namespace. Interleaved
+conversations therefore retain separate working-tab leases and session-owned
+files, active recordings and WebMCP references without opening separate daemon connections.
+Nested batches, profile discovery and ordered actions retain that request identity.
+
+The recognized host ID must be a nonblank string of at most 1024 UTF-8 bytes without
+control characters. BBX preserves its exact value when hashing, never forwards the
+raw host ID, and rejects malformed recognized metadata before dispatch. Unrelated
+metadata fields do not select a conversation. Without host session metadata, the
+existing per-connection identity remains unchanged, including an explicit
+`BBX_SESSION`. With host metadata, `BBX_SESSION` supplies a namespace rather than
+merging conversations. A new MCP server instance derives different identities.
+
+These IDs are self-reported routing data, not authentication or access grants.
+They do not isolate callers that can impersonate each other's metadata. Staged
+files and recordings still require their current transport and access scope;
+reconnecting does not recover transport-owned handles. Artifacts remain owned by
+the agent transport, so conversations sharing that transport can use a known
+artifact ID. Semantic and pixel baseline handles remain transferable secret
+capabilities within their authorized browser, access, tab and document scope.
+Recovery journal IDs remain secret capabilities for reconnect/restart recovery,
+rather than conversation-bound recording-session handles.
+
+See [OpenCode's MCP context contract](https://opencode.ai/docs/mcp-servers/#context)
+for host metadata and code-mode configuration.
+
+To verify shared-conversation routing against an already enabled browser, set
+`BBX_LIVE_EXTENSION_ID`, `BBX_LIVE_TAB_ID`, and `BBX_LIVE_SECOND_TAB_ID` to one
+profile and two different authorized tabs, then run `make test-mcp-live`.
+The test uses the workspace Go executable over MCP in both protocol eras. It only
+reads page state and tab metadata; it does not create, activate or navigate tabs.
+This checks real MCP/browser routing, not OpenCode's result adapter or discovery.
+
 ## Feature Comparison
 
 ### MCP Advantages

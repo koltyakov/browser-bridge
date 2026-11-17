@@ -419,12 +419,15 @@ func (s *mcpSession) bridge(ctx context.Context, method string, params, args obj
 	if method == "tabs.list" && !mcpHasTarget(args) && !args.boolean("_skipProfileDiscovery") {
 		return s.profileTabs(ctx, params, args, era)
 	}
-	s.mu.Lock()
-	if s.agentSession == "" {
-		s.agentSession = "mcp_" + uniqueID()
+	agentSession, identified := ctx.Value(mcpConversationContextKey{}).(string)
+	if !identified {
+		s.mu.Lock()
+		if s.agentSession == "" {
+			s.agentSession = "mcp_" + uniqueID()
+		}
+		agentSession = s.agentSession
+		s.mu.Unlock()
 	}
-	agentSession := s.agentSession
-	s.mu.Unlock()
 	meta := object{"source": value("mcp"), "mcp_era": value(era), "agent_session": value(agentSession)}
 	if caller, ok := ctx.Value(mcpCallerContextKey{}).(*protocol.BridgeCaller); ok {
 		meta["caller"] = value(caller)

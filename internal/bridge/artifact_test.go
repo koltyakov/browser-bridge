@@ -119,6 +119,26 @@ func TestArtifactStoreLifecycleAndOwnership(t *testing.T) {
 	}
 }
 
+func TestArtifactsRemainTransportOwnedAcrossConversations(t *testing.T) {
+	store := newArtifactTestStore(t)
+	data := []byte("shared transport artifact")
+	a := artifactTestDescriptor("a", data)
+	storeTestArtifact(t, store, a, data, "request", "transport", "extension")
+	d := &daemon{artifacts: store}
+	params := object{"artifactId": a["artifactId"]}
+	for _, session := range []string{"mcp_conversation_a", "mcp_conversation_b"} {
+		request := newRequest("artifact.read", params, object{"agent_session": value(session)}, 0)
+		response := d.localStorageResponse("transport", request, params)
+		if !response.boolean("ok") {
+			t.Fatalf("conversation identity changed transport-owned artifact access: %s", value(response))
+		}
+		denied := d.localStorageResponse("another-transport", request, params)
+		if denied.boolean("ok") || denied.object("error").text("code") != "ARTIFACT_NOT_FOUND" {
+			t.Fatal("conversation metadata bypassed transport ownership")
+		}
+	}
+}
+
 func TestArtifactStoreTransferValidationQuotasAndExpiry(t *testing.T) {
 	s := newArtifactTestStore(t)
 	a := artifactTestDescriptor("b", []byte("payload"))

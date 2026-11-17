@@ -446,6 +446,31 @@ test('agent sessions keep separate working tabs and tabs.list marks the caller t
   }
 });
 
+test('opaque pooled-conversation IDs keep explicit reads and implicit actions on separate tabs', async () => {
+  const { loaded, reloads, activate } = await loadTwoTabBackground('agent-tabs-conversations');
+  const first = `mcp_${'a'.repeat(64)}`;
+  const second = `mcp_${'b'.repeat(64)}`;
+  for (const [session, tabId] of [
+    [first, 81],
+    [second, 82],
+  ] as const) {
+    assert.equal(normalizeAgentSession(session), session);
+    assert.equal((await call(loaded, 'page.get_state', { session, tabId })).ok, true);
+  }
+  activate(82);
+  for (const session of [first, second, first]) {
+    assert.equal((await call(loaded, 'navigation.reload', { session })).ok, true);
+  }
+  assert.deepEqual(reloads, [81, 82, 81]);
+  const state = loaded.module.getStateForTest() as ExtensionState;
+  state.enabledWindow = null;
+  for (const session of [first, second]) {
+    const denied = await call(loaded, 'navigation.reload', { session });
+    assert.equal(denied.ok, false, 'Conversation identity never grants browser access.');
+  }
+  assert.deepEqual(reloads, [81, 82, 81]);
+});
+
 test('tabs.activate moves the calling agent to the activated tab', async () => {
   const { loaded, tabs, reloads, updates } = await loadTwoTabBackground('agent-tabs-activate');
 

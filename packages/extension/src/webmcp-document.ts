@@ -197,13 +197,15 @@ export async function runWebMcpInDocument(
     }
     const ref = params.toolRef ?? '';
     const entry = current.refs.get(ref);
-    const candidates = entry
-      ? tools.filter((tool) => tool.name === entry.tool.name && tool.origin === entry.tool.origin)
-      : [];
+    if (!entry || entry.owner !== owner) {
+      // A foreign lookup must not invalidate the owning conversation's ref.
+      return failure('WEBMCP_TOOL_STALE', 'The tool reference is missing, expired, or changed.');
+    }
+    const candidates = tools.filter(
+      (tool) => tool.name === entry.tool.name && tool.origin === entry.tool.origin
+    );
     const descriptor = candidates[0];
     if (
-      !entry ||
-      entry.owner !== owner ||
       candidates.length !== 1 ||
       !descriptor ||
       JSON.stringify(metadata(descriptor)) !== entry.fingerprint

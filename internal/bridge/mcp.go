@@ -17,16 +17,17 @@ const versionKey = "io.modelcontextprotocol/protocolVersion"
 const capabilitiesKey = "io.modelcontextprotocol/clientCapabilities"
 
 type mcpSession struct {
-	config       config
-	mu           sync.Mutex
-	client       *client
-	clients      map[string]*client
-	connecting   map[string]*mcpConnecting
-	clientID     string
-	enabled      map[string]bool
-	agentSession string
-	caller       *protocol.BridgeCaller
-	closed       bool
+	config                config
+	mu                    sync.Mutex
+	client                *client
+	clients               map[string]*client
+	connecting            map[string]*mcpConnecting
+	clientID              string
+	enabled               map[string]bool
+	agentSession          string
+	conversationNamespace string
+	caller                *protocol.BridgeCaller
+	closed                bool
 }
 
 func rpcError(id json.RawMessage, code int, message string) object {
@@ -240,6 +241,15 @@ func mcpServe(ctx context.Context, c config, input io.Reader, output io.Writer) 
 		case "tools/list":
 			_ = writer.send(mcpRPCResult(id, method, era, object{"tools": value(s.tools(era))}))
 		case "tools/call":
+			if params["_meta"] != nil && envelope == nil {
+				_ = writer.send(rpcError(id, -32602, "Tool request _meta must be an object."))
+				continue
+			}
+			requestCtx, err := s.conversationContext(ctx, envelope)
+			if err != nil {
+				_ = writer.send(rpcError(id, -32602, err.Error()))
+				continue
+			}
 			name := params.text("name")
 			var schema object
 			for _, tool := range s.tools(era) {
@@ -283,7 +293,7 @@ func mcpServe(ctx context.Context, c config, input io.Reader, output io.Writer) 
 				_ = writer.send(rpcError(id, -32603, "Too many concurrent MCP requests."))
 				continue
 			}
-			callCtx, callCancel := context.WithTimeout(ctx, 124*time.Second)
+			callCtx, callCancel := context.WithTimeout(requestCtx, 124*time.Second)
 			callCtx = s.callerContext(callCtx, era, envelope)
 			pendingMu.Lock()
 			if _, duplicate := pending[string(id)]; duplicate {

@@ -44,13 +44,17 @@ function setup() {
       expiresAt: new Date(Date.now() + 10000).toISOString(),
     };
   };
-  const request = (method: BridgeMethod, params: Record<string, unknown> = {}) =>
+  const request = (
+    method: BridgeMethod,
+    params: Record<string, unknown> = {},
+    session = 'session'
+  ) =>
     createRequest({
       id: 'data-request',
       method,
       tabId: 21,
       params,
-      meta: { transport_owner: 'connection', agent_session: 'session' },
+      meta: { transport_owner: 'connection', agent_session: session },
     });
   return { state, scope, request, artifacts, storeByteArtifact };
 }
@@ -152,6 +156,38 @@ test('file request handler stages, assigns in the owning frame, and releases fil
   assert.deepEqual((injected[0] as { target: unknown }).target, { tabId: 21, frameIds: [3] });
   const released = await handle(request('files.release', { transferId }));
   assert.equal(released.ok, true);
+});
+
+test('pooled conversations cannot continue, assign, paste or release foreign staged files', async () => {
+  const { handle, request, deps } = filesHarness();
+  const owner = `mcp_${'a'.repeat(64)}`;
+  const other = `mcp_${'b'.repeat(64)}`;
+  const staged = await handle(
+    request('files.stage', { name: 'a.txt', size: 2, data: 'YQ==' }, owner)
+  );
+  const { transferId } = staged.result as { transferId: string };
+  await assert.rejects(
+    handle(request('files.stage', { transferId, offset: 1, data: 'Yg==' }, other)),
+    { code: 'ARTIFACT_NOT_FOUND' }
+  );
+  assert.equal(
+    (await handle(request('files.stage', { transferId, offset: 1, data: 'Yg==' }, owner))).ok,
+    true
+  );
+  let injections = 0;
+  deps.chrome.scripting.executeScript = async () => {
+    injections += 1;
+    return [{ frameId: 3, documentId: 'document', result: { assigned: 1 } }];
+  };
+  for (const [method, params] of [
+    ['input.set_files', { target: { selector: '#file' }, files: [transferId] }],
+    ['input.paste_image', { transferId, target: { selector: '#editor' } }],
+    ['files.release', { transferId }],
+  ] as const) {
+    await assert.rejects(handle(request(method, params, other)), { code: 'ARTIFACT_NOT_FOUND' });
+  }
+  assert.equal(injections, 0, 'Foreign requests must fail before browser dispatch.');
+  assert.equal((await handle(request('files.release', { transferId }, owner))).ok, true);
 });
 
 test('file assignment does not inject after revocation during content-script setup', async () => {
@@ -256,6 +292,60 @@ test('recording handler dispatches lifecycle calls and JSON/HTML export with con
     ['application/json', 'text/html']
   );
   assert.equal((await handle(request('session.release', { sessionId }))).ok, true);
+});
+
+test('pooled conversations cannot inspect, stop, export or release foreign recordings', async (t) => {
+  const { scope, request, artifacts, storeByteArtifact } = setup();
+  const recordings = createRecordingController({
+    page: async () => ({ epoch: 'document', active: true, events: [], dropped: 0 }),
+    captureFrame: async () => '',
+    startNetwork: async () => ({}),
+    stopNetwork: async () => ({}),
+    send: async () => ({}),
+  });
+  t.after(() => recordings.clear(21));
+  const handle = createRecordingRequestHandler({
+    ...scope,
+    recordings,
+    storeByteArtifact,
+    journals: {
+      begin: async () => {
+        throw new Error('unexpected journal');
+      },
+    },
+  });
+  const owner = `mcp_${'a'.repeat(64)}`;
+  const other = `mcp_${'b'.repeat(64)}`;
+  const started = await handle(
+    request('session.start', { network: true, durationMs: 60000 }, owner)
+  );
+  const { sessionId } = started.result as { sessionId: string };
+  for (const method of [
+    'session.status',
+    'session.read',
+    'session.stop',
+    'session.export',
+    'session.release',
+  ] as const) {
+    await assert.rejects(
+      handle(
+        request(
+          method,
+          {
+            sessionId,
+            ...(method === 'session.read' ? { cursor: 0, limit: 10, waitMs: 0 } : {}),
+            ...(method === 'session.export' ? { format: 'json' } : {}),
+          },
+          other
+        )
+      ),
+      { code: 'ARTIFACT_NOT_FOUND' }
+    );
+  }
+  const status = await handle(request('session.status', { sessionId }, owner));
+  assert.equal((status.result as { active: boolean }).active, true);
+  assert.deepEqual(artifacts, []);
+  assert.equal((await handle(request('session.release', { sessionId }, owner))).ok, true);
 });
 
 test('durable recording startup cannot continue after its journal await revokes access', async () => {

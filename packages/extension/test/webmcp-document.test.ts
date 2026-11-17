@@ -139,6 +139,20 @@ test('WebMCP refs bind to owner, metadata, catalog revision, document and access
   });
 });
 
+test('WebMCP refs reject another conversation in the same connection and grant', async (t) => {
+  await fixture(t, async ({ run }) => {
+    const owner = `worker:grant:connection:mcp_${'a'.repeat(64)}`;
+    const other = `worker:grant:connection:mcp_${'b'.repeat(64)}`;
+    const catalog = await run('webmcp.list_tools', {}, owner);
+    const toolRef = (catalog.tools as WebMcpTool[])[0].toolRef;
+    for (const method of ['webmcp.get_tool', 'webmcp.execute_tool']) {
+      assert.equal(errorCode(await run(method, { toolRef }, other)), 'WEBMCP_TOOL_STALE');
+    }
+    assert.equal(errorCode(await run('webmcp.get_tool', { toolRef }, owner)), undefined);
+    assert.equal(document.getElementById('result')!.textContent, 'idle');
+  });
+});
+
 test('WebMCP executes once, preserves output and verifies visible postcondition', async (t) => {
   await fixture(t, async ({ run }) => {
     const toolRef = await discover(run);
