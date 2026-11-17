@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.2.0] - 2026-11-17
+
+### Added
+
+- Scoped DOM accessibility outlines with role/name search, bounded context, and
+  completeness metadata.
+- Searchable RPC signatures through `protocol.describe` and advisory runtime
+  checks through `protocol.capabilities`.
+- `bbx protocol adapter` exports typed JavaScript/TypeScript Code Mode bindings
+  using the host's existing MCP connection.
+- Signed automatic native updates follow the extension's release line, respect
+  opt-outs and version pins, and coordinate runtime restarts. Older binaries
+  without updater support need a one-time reinstall.
+- Agent-assisted installation prompts and a troubleshooting skill.
+- Installation targets for Chrome channels, Chrome for Testing, Vivaldi, and
+  Opera, plus custom profile roots.
+- Paired browser-task benchmarks and isolated native-input, full-chain,
+  mixed-version, and Arc verification suites.
+
+### Changed
+
+- OpenCode conversations sharing an MCP connection keep separate working tabs.
+- Tab-only grants include linked descendant tabs without treating them as
+  disposable AI-created tabs.
+- Installation detects browser profiles, repairs registrations, and configures
+  shell `PATH`, including zsh and `ZDOTDIR` support.
+- Input results separate dispatch, observation, and application verification;
+  diagnostic health checks have distinct activity groups.
+- Release signing uses protected keys and a renewable update feed, isolated
+  from npm publishing.
+
+### Fixed
+
+- Interrupted actions preserve progress without suggesting automatic replay;
+  observation failures and older responses no longer imply unsupported success.
+- Native keyboard input rejects inactive tabs and verifies clearing before
+  inserting replacement text.
+- Debugger recovery verifies ownership; malformed request parameters fail before
+  dispatch.
+- Corrected Brave identity and native-host lookup, shared Windows registrations,
+  legacy command-shim precedence, and host-startup diagnostics.
+- Fixed tab-group colors, reduced-motion connection spinners, and Windows ZIP
+  entry handling.
+
 ## [2.1.0] - 2026-11-08
 
 ### Added
