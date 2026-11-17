@@ -43,7 +43,7 @@ bbx call navigation.go_forward
 ```
 
 - `waitForLoad` defaults `true`; set `false` for long-lived pages.
-- If navigation times out, retry with larger `timeoutMs` or check with `page.get_state`.
+- If navigation times out, inspect `page.get_state` or use the read-only `page.wait_for_load_state` for the expected URL. Navigation may already have happened; do not automatically repeat navigate, reload, back, or forward.
 
 For a navigation or SPA route caused by input, use event-aware URL conditions instead of polling:
 
@@ -270,7 +270,7 @@ DOM mode dispatches the same event sequence a real device produces, so most page
 - **Clicks**: `pointerover`/`pointerenter`/`mouseover`/`mouseenter` (only when the virtual pointer moves onto a new element), `pointermove`/`mousemove`, `pointerdown`/`mousedown`, focus, optional hold, `pointerup`/`mouseup`, then `click` (`contextmenu` for right, `auxclick` for middle) carrying coordinates, modifiers, `detail`, and `pointerType`. A canceled `pointerdown` suppresses the mouse events; a canceled `mousedown` keeps focus where it was. Leaving an element fires `pointerout`/`mouseout`/`leave` on it.
 - **Keys**: `keydown` with `key`, `code`, and `keyCode`, `keypress` for character keys, the editing action, then `keyup`. A canceled `keydown` suppresses the character, as in browsers.
 
-DOM events are still untrusted (`isTrusted: false`) and do not count as a user gesture, so Chrome may refuse what a page gates on one: starting audio or media (unless the site already has autoplay engagement), popups, clipboard writes, and fullscreen. When a page needs a real gesture, use `executionMode: "cdp"`, which dispatches trusted input through Chrome. If sound or video stays silent after a DOM click, retry the first interaction with CDP.
+DOM events are still untrusted (`isTrusted: false`) and do not count as a user gesture, so Chrome may refuse what a page gates on one: starting audio or media (unless the site already has autoplay engagement), popups, clipboard writes, and fullscreen. When a page needs a real gesture, use `executionMode: "cdp"`, which dispatches trusted input through Chrome. If a DOM click appears ineffective, inspect media/application state before another deliberate action. Silence or `changed: false` alone does not establish that the click had no effect; do not automatically replay it through CDP.
 
 Native CDP key events require an active tab. This includes `cdp.dispatch_key_event`, `input.press_key`,
 `input.fill`, and `input.type` with `clear: true` or `submit: true`. Inactive
@@ -309,6 +309,15 @@ Click, focus, type/fill, key, checkbox, select, hover, and drag results include 
 Only observed `pagehide` reports `effects.navigation: "unloading"`. A `beforeunload` signal alone reports interrupted observation with reason `"navigation_signal"`, because the user may cancel navigation. Older observations without status metadata are unavailable; their navigation and changed claims are omitted.
 
 Input failures with possible dispatch report `retry: false`. Inspect postconditions before another deliberate action. Do not replay input to recover missing observation.
+
+Timeouts, internal errors, cancellation, and lost connections do not prove that
+input failed to execute. Local MCP failures without a confirmed bridge result
+report `outcomeUncertain: true` and forbid automatic retry without inventing
+dispatch state or completed-step counts. Inspect confirmed partial progress when
+available, then read current state. A sequence with `completed: 0` may still have
+partially executed its first step. Only explicit evidence that the whole operation
+was undispatched permits a deliberate retry after resolving the blocker and
+revalidating access and target. See the [retry rules](../SKILL.md#error-recovery).
 
 If a debugger guard interrupts observation after native input returned, the action stays successful with interrupted observation. Its `interruption` reports an error code and, for a dialog, its opaque `dialogId`, never dialog text. Inspect the dialog explicitly with `page.handle_dialog`; do not replay the acknowledged action.
 

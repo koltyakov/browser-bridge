@@ -210,11 +210,42 @@ If the user has switched to their own tab, continue in the background. Activate 
 
 These rules apply to `tabs.activate`, `active:true` on creation, and equivalent focus APIs. New tabs open in the background by default.
 
-## Error Recovery
+## Error recovery
+
+Decide from the method, its parameters, execution evidence, and per-response
+recovery, not the error code alone. `retry: false` forbids automatic retry;
+`retry: true` is not permission to replay a mutation.
+
+- **Safe reads** such as `health.ping`, `page.get_state`, `dom.query`, and scoped
+  text/style reads may be retried once when recovery permits. Honor `retryAfterMs`
+  and narrow an oversized or slow read. After a raw transport disconnect without
+  recovery metadata, restore connectivity before retrying only a known-safe read.
+  MCP already performs bounded recovery for eligible reads; do not stack retry
+  loops around it or retry a canceled request.
+- **Check parameters, not names.** Console/network reads with `clear: true` or
+  capture start/stop change state. Arbitrary `page.evaluate` is not a safe read.
+  `sensitive.read` and `webmcp.execute_tool` are never automatically retried.
+- **Mutations** include input, navigation/reload/history, patches, uploads, and
+  dialog actions. After timeout, internal error, cancellation, or lost connection,
+  inspect partial progress and current application state before another deliberate
+  action. Missing progress, `completed: 0`, `changed: false`, or failed observation
+  does not prove that nothing executed. Never replay a sequence to recover a
+  missing read or observation; failed sequences do not roll back completed steps.
+- **Explicitly undispatched operations** may be deliberately retried after the
+  blocker is resolved and current access/target checks pass. Require evidence
+  covering the whole operation, such as `details.dispatched: false`, or
+  `aftermath.dispatch: "not_started"` for an individual input. Do not infer this
+  from an error code. Reconnection and debugger recovery restore transport or
+  ownership, not permission to resume or replay input.
+
+Local MCP errors without a confirmed bridge result return `retry: false` with
+`details.outcomeUncertain: true` and no retry backoff. They cannot establish
+dispatch state or completed-step counts. Inspect state rather than overriding
+that uncertainty with the generic guidance below.
 
 | Error                     | Retry?   | Recovery                                                                                  |
 | ------------------------- | -------- | ----------------------------------------------------------------------------------------- |
-| `ACCESS_DENIED`           | No       | Failed call already surfaced an `Enable` cue; ask user to click `Enable`, then retry once |
+| `ACCESS_DENIED`           | No automatic | Follow the access flow or policy-setting denial; do not bypass it. Deliberately retry only the undispatched operation after permission changes. |
 | `ELEMENT_STALE`           | No       | Re-query with `dom.query` or `dom.find_by_text` to get a fresh ref                        |
 | `ELEMENT_AMBIGUOUS`       | No       | Narrow the selector or use an explicit `elementRef`; do not guess                         |
 | `ELEMENT_NOT_ACTIONABLE`  | No       | Inspect hidden/disabled/inert state with `dom.describe`                                   |
@@ -223,16 +254,18 @@ These rules apply to `tabs.activate`, `active:true` on creation, and equivalent 
 | `DIALOG_NOT_OPEN`         | No       | Trigger or inspect the dialog again                                                       |
 | `DIALOG_ACTION_CONFLICT`  | No       | Inspect current dialog state; never auto-repeat accept/dismiss                            |
 | `TAB_MISMATCH`            | No       | For `ambiguous_browser_target`, select `extensionId` and list its tabs. For a closed working tab, select a new `tabId`. Never disable unrelated windows. |
-| `TIMEOUT`                 | Once     | Retry once; if still failing, simplify (smaller `maxNodes`, narrower selector)            |
+| `TIMEOUT`                 | Safe reads only | When recovery permits, retry a narrower read once. For mutations, inspect progress and postconditions instead of repeating the action. |
 | `CONTENT_SCRIPT_UNAVAILABLE` | No     | Switch to a normal http(s) page in the enabled window                                    |
-| `EXTENSION_DISCONNECTED`  | After 3s | Check Chrome is running; `bbx status` to verify, then retry                               |
+| `EXTENSION_DISCONNECTED`  | Safe reads only | Check Chrome and `bbx status`; honor recovery backoff and rediscover the same target connection. Do not replay possibly dispatched actions. |
 | `NATIVE_HOST_UNAVAILABLE` | No       | Run `bbx doctor` to diagnose the installation                                             |
-| `INTERNAL_ERROR`          | Once     | Retry once; if persistent, check `page.get_console` for details                           |
+| `INTERNAL_ERROR`          | Safe reads only | Retry a known-safe read once only if recovery permits. Local MCP uncertainty is non-retryable; inspect state and console evidence. |
 | `DAEMON_OFFLINE`          | No       | Daemon not running - start with `bbx restart`                                             |
-| `CONNECTION_LOST`         | Yes      | Socket dropped mid-request - retry; if persistent, run `bbx restart`                      |
-| `BRIDGE_TIMEOUT`          | Once     | Extension took too long - retry once with simpler call                                    |
+| `CONNECTION_LOST`         | Safe reads only | Reconnect and verify the same browser/profile/tab before one eligible read retry. A lost reply does not prove an action failed to execute. |
+| `BRIDGE_TIMEOUT`          | Safe reads only | Simplify an eligible read. Inspect application state for mutations; do not repeat navigation or input to repair a timeout. |
 
-Error responses now include a machine-readable `error.recovery` field with `retry`, `retryAfterMs`, `alternativeMethod`, and `hint`.
+Bridge errors include `error.recovery` with `retry`, optional `retryAfterMs`,
+`alternativeMethod`, and `hint`; MCP structured results also expose `recovery`.
+Use the specific response and execution evidence over code-level defaults.
 
 `health.ping` is compact by default. Set `diagnostics: true` for build, debugger,
 capture, baseline, transport, and recovery details. Routine pings still include
@@ -267,7 +300,7 @@ they contain no page data, URLs, selectors, payloads, errors, or group names.
 17. **Network monitoring** - use `page.get_network` to inspect API calls; auto-installs interceptor.
 18. **Overview with the DOM outline** - for "what can I do on this page?", call `dom.get_accessibility_tree` with `source: "dom"` (add `interactiveOnly: true` for controls only). It returns compact lines like `- button "Save" [el_k7q2_1f] disabled` whose refs work directly as input targets, includes shadow DOM and iframes, and needs no debugger. Reserve the default CDP source for accessibility audits.
 19. **Tailwind-aware** - when `page.get_state` returns `hints.tailwind: true`, load `references/tailwind.md`; avoid selecting by utility classes, prefer `find_by_text`/`find_by_role`; `dom.query` auto-escapes `[]` brackets.
-20. **Read the effects before reading the page** - click, press_key, set_checked, select_option, and submitting type/fill return `effects` after a short settle: same-document `url` changes, `navigation: "unloading"`, newly opened `dialogs`, alert/status/live-region `messages`, the `focused` element, `dom` churn, and the target's new state (`value`, `checked`, `expanded`, `removed`). The summary digests them (`Effects: URL → /done; alert: "Saved"`). Only follow up with a read when the effects do not answer the question; `changed: false` means nothing visible happened. Pass `observe: true` to other actions, or `observe: false` to skip the settle.
+20. **Read the effects before reading the page** - click, press_key, set_checked, select_option, and submitting type/fill return `effects` after a short settle: same-document `url` changes, `navigation: "unloading"`, newly opened `dialogs`, alert/status/live-region `messages`, the `focused` element, `dom` churn, and the target's new state (`value`, `checked`, `expanded`, `removed`). The summary digests them (`Effects: URL → /done; alert: "Saved"`). Only follow up with a read when the effects do not answer the question; `changed: false` does not prove the action did not execute. Pass `observe: true` to other actions, or `observe: false` to skip the settle.
 21. **Let actions wait** - targeted actions wait up to `timeoutMs` (default 2500, max 15000, `0` disables) for the target to appear, become enabled/visible/unobscured, and stop animating. Do not add a separate `dom.wait_for` before an action. Honor the errors that remain after the wait, plus `resolution.waitedMs`. `cdp_press_key` and `scroll_into_view` use separate contracts; `input.fill.mode: auto` is a separate DOM setter/keystroke strategy.
 22. **Stale recovery stays opt-in** - prefer re-querying. Use `recoverStale: true` once only when the same document/URL and a strong unique semantic descriptor should still identify the target; inspect `recovered`, old/new refs, and matched fields. A scan with more than 100 same-tag candidates fails as `ELEMENT_AMBIGUOUS`/`scan_incomplete` because uniqueness is not provable.
 23. **Dialogs are explicit** - inspect first, then accept or dismiss only when intended. `expectedDialogId` is a pre-dispatch stale-decision check, not an atomic CDP binding; never auto-repeat `DIALOG_ACTION_CONFLICT`.
@@ -275,7 +308,7 @@ they contain no page data, URLs, selectors, payloads, errors, or group names.
     When semantic DOM evidence cannot verify CSS appearance, canvas/chart changes, or visual regressions, optionally use `screenshot.baseline.create/compare/release`. Read its signature with `protocol.describe` and the visual baseline section in `references/protocol.md`. Scope to a complete component including labels. Useful local changes return context-expanded before/after crops. Unchanged, `diff_not_useful` and `not_comparable` return no images by default. An unhelpful diff is a result, not an error: inspect DOM/state or narrow scope rather than polling, replaying the action, or automatically asking for more images. Only if needed, `fallback: "current"` explicitly requests one full current scoped image, never a full before/after pair. Suppressed diffs do not advance the reference even with `advance: true`; geometry changes require a new baseline. Release retained pixels when done. This is debugger-backed, never automatic and never proof of application success.
 25. **HAR export reads an armed capture** - use CDP capture `start`, reproduce, `network.export_har`/`bbx har`, then `stop`. Export never starts, stops, or clears capture. Inspect truncation plus `dropped`, `abandoned`, and `inflight` before claiming completeness.
 26. **Keep known steps inside the browser** - use one `input.perform` for authorized multi-step flows, such as fill fields, click, wait for success, then read the result. Set `returnLastResult: true` to get bounded final-step evidence without another tool call. For rhythm, games, or gestures, add `atMs` from the sequence start or `delayMs` after the previous step. Never issue input as parallel tool calls. Stop at decisions requiring new evidence or user approval, leave `continueOnError` off, and never blindly replay a partially completed flow.
-27. **Use trusted input when the page needs a user gesture** - DOM-mode events are untrusted, so Chrome may refuse audio or media start, popups, clipboard writes, and fullscreen. `executionMode: "auto"` picks debugger input only for file inputs, media, `target=_blank` links, rich-text editors, or when the debugger is already attached (`execution.selectionReason` says why). Use `executionMode: "cdp"` to force it (click, hover, drag, type, fill, press_key, touch); `input.perform` accepts it once for every step. If a DOM click reports `changed: false` on a page that should react, retry once with `cdp` rather than repeating the DOM click. CDP input is not available for targets inside iframes.
+27. **Use trusted input when the page needs a user gesture** - DOM-mode events are untrusted, so Chrome may refuse audio or media start, popups, clipboard writes, and fullscreen. `executionMode: "auto"` picks debugger input only for file inputs, media, `target=_blank` links, rich-text editors, or when the debugger is already attached (`execution.selectionReason` says why). Use `executionMode: "cdp"` to force it (click, hover, drag, type, fill, press_key, touch); `input.perform` accepts it once for every step. If a DOM click appears ineffective, inspect application state first. `changed: false` alone does not justify repeating it through CDP; choose another deliberate action only when new evidence establishes it is still needed. CDP input is not available for targets inside iframes.
 28. **Simultaneous presses need touch** - a mouse has one pointer. For chords or multi-finger gestures use `input.touch` with several `points` (optionally `to` end positions for swipes and pinches); add `holdMs` to `input.click`/`input.press_key` when the press must last.
 
 ## Token Budget Quick Rules

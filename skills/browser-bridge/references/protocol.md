@@ -618,9 +618,16 @@ resets with the service worker and daemon data resets with the daemon.
 
 ## Error Codes
 
+Apply the [skill's retry rules](../SKILL.md#error-recovery) before interpreting
+code-level recovery defaults. `retry: false` forbids automatic retry, and
+`retry: true` never authorizes replay of a possibly dispatched mutation.
+MCP already performs bounded recovery for eligible safe reads. Local MCP errors
+without a confirmed result instead report `outcomeUncertain: true`, `retry: false`,
+and no retry backoff; they do not establish partial progress or dispatch state.
+
 | Code                         | Action                                                         | Recovery                                     |
 | ---------------------------- | -------------------------------------------------------------- | -------------------------------------------- |
-| `ACCESS_DENIED`              | Turn on Browser Bridge for the target window                   | `retry: false`                               |
+| `ACCESS_DENIED`              | Follow the access flow or policy-setting denial; do not bypass it | No automatic retry; deliberately retry only an undispatched operation after permission changes |
 | `TAB_MISMATCH`               | Explicit `tabId` is missing, closed, or outside enabled window | `retry: false`, use `tabs.list`              |
 | `ELEMENT_STALE`              | Re-query DOM for fresh `elementRef`                            | `retry: false`, use `dom.query`              |
 | `ELEMENT_AMBIGUOUS`          | Narrow selector or use an explicit ref                         | `retry: false`, use `dom.query`              |
@@ -637,9 +644,12 @@ resets with the service worker and daemon data resets with the daemon.
 | `DIALOG_ACTION_CONFLICT`     | Inspect again; never auto-repeat a dialog mutation              | `retry: false`                               |
 | `CONTENT_SCRIPT_UNAVAILABLE` | Page is restricted (chrome://, extensions, etc.)               | `retry: false`                               |
 | `NATIVE_HOST_UNAVAILABLE`    | Check daemon: `bbx status`                                     | `retry: false`                               |
-| `EXTENSION_DISCONNECTED`     | Extension not connected to daemon                              | `retry: true` after 3 s, check `health.ping` |
-| `TIMEOUT`                    | Wait/evaluate exceeded `timeoutMs`                             | `retry: true` after 1 s                      |
+| `EXTENSION_DISCONNECTED`     | Check connectivity and rediscover the same browser/profile/tab | Only eligible safe reads, honoring response backoff; never replay uncertain mutations |
+| `TIMEOUT`                    | Inspect progress and current state for actions; narrow slow reads | At most one eligible safe-read retry when recovery permits |
+| `INTERNAL_ERROR`             | Inspect the specific recovery and execution evidence           | Safe reads only when recovery permits; local MCP uncertainty is non-retryable |
+| `CONNECTION_LOST`            | Restore connectivity; a lost reply does not prove no execution | Only a known-safe read may be retried; inspect mutations instead |
+| `BRIDGE_TIMEOUT`             | Narrow eligible reads; inspect postconditions for mutations    | No automatic replay of input, navigation, or sequences |
 
-Timeout on content-script request → use narrower `dom.query` or CDP fallback.
-Timeout on navigation → increase `timeoutMs`, set `waitForLoad:false`, or check `page.get_state`.
+Timeout on a read-only content-script request → when recovery permits, retry once with a narrower `dom.query` or equivalent read. Do not repeat input through CDP as a timeout fallback.
+Timeout on navigation → inspect `page.get_state` or use a read-only `page.wait_for_load_state` for the expected URL. Do not repeat navigate/reload/back/forward to recover a missing acknowledgment.
 Timeout on `dom.wait_for` → returns `{found: false}` (not an error); check selector/state logic.
