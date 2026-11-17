@@ -35,7 +35,7 @@ endif
 	vet-go coverage coverage-review coverage-check coverage-go coverage-go-check generate-protocol check-protocol \
 	check-release-version check check-extension-zip package-extension package-native \
 	package-native-all package-npm pack pack-dry-run release-check prepublish-check \
-	publish-native publish-release publish-npm fixture-browser fixture-interaction bench-interaction bench-comparative \
+	publish-native publish-release publish-update-feed renew-update-feed publish-npm fixture-browser fixture-interaction bench-interaction bench-comparative \
 	run status daemon install-manifest install sync-version bench-runtime bench-npm-launch test-visual-live test-inspection-live test-mcp-live test-workflows-live test-chaos-live test-arc-live test-input-live test-full-chain-live
 
 help: ## Show available tasks; the default when running make
@@ -186,6 +186,12 @@ publish-native: ## Publish and verify existing immutable native assets on GitHub
 
 publish-release: ## Publish and verify existing native assets and extension ZIP on GitHub
 	"$(NODE)" scripts/publish-native.mjs --include-extension
+
+publish-update-feed: ## Publish signed native update metadata after immutable release assets
+	"$(NODE)" scripts/publish-update-feed.mjs --include-release
+
+renew-update-feed: ## Renew signed native update metadata without changing release assets
+	"$(NODE)" scripts/publish-update-feed.mjs
 
 publish-npm: ## Publish the current-version tarball; optional TARBALL or ARGS
 	$(NPM) publish "$(TARBALL)" --access public $(ARGS)

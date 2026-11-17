@@ -151,6 +151,8 @@ npm install -g @browserbridge/bbx
 
 The npm package is a bootstrap and launcher with zero runtime npm dependencies. It downloads and verifies the latest stable Go executable independently of the npm package version, then registers the native host. Set `BBX_VERSION` to select a release line or exact native version. Local dependency installs do not register a browser; if install scripts were skipped, the first command downloads the executable, then run `bbx install` to register it. See the [native CLI guide](https://github.com/koltyakov/browser-bridge/blob/main/docs/native-cli.md).
 
+Release binaries automatically check for signed updates when the extension reconnects, including after an extension update. Extension `2.2.1` selects the newest `2.2.x` binary, even when that binary is `2.2.2`. This works for npm and standalone installs without overwriting running executables. Exact npm native-version pins opt out, as does `bbx config set auto-update off`. Older binaries without this support need a one-time reinstall.
+
 ## How it works
 
 - The extension is scoped to one explicitly enabled Chrome window at a time - no ambient browser access

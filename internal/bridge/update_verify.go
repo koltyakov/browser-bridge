@@ -281,12 +281,27 @@ func updateProtocolSupported(major uint64, supported []string) bool {
 	return false
 }
 
-func updateSelectRelease(feed updateVerifiedFeed, target, current string, supported, blocked []string, allowEqual bool, pinned string) (*updateRelease, error) {
+func updateSelectRelease(feed updateVerifiedFeed, target, current string, supported, blocked []string, allowEqual bool, pinned, line string) (*updateRelease, error) {
 	if _, err := updateParseVersion(current); err != nil {
 		return nil, err
 	}
+	var requested [3]uint64
+	if line != "" {
+		var err error
+		requested, err = updateParseVersion(line)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var selected *updateRelease
 	for _, release := range feed.Manifest.Releases {
+		candidate, err := updateParseVersion(release.Version)
+		if err != nil {
+			return nil, err
+		}
+		if line != "" && (candidate[0] != requested[0] || candidate[1] != requested[1]) {
+			continue
+		}
 		if pinned != "" && release.Version != pinned {
 			continue
 		}

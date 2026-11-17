@@ -19,6 +19,7 @@ import {
   createFailure,
   createRequest,
   createSuccess,
+  getSupportedProtocolVersions,
 } from '../../../protocol/src/index.js';
 import type { SetupStatus } from '../../../protocol/src/types.js';
 import {
@@ -93,7 +94,7 @@ test('native identity waits for Brave detection and never advertises it as Chrom
     const messages: unknown[] = [];
     const port = createNativePort(messages);
     const chromeObj = {
-      runtime: { id: 'store-extension' },
+      runtime: { id: 'store-extension', getManifest: () => ({ version: '2.2.1' }) },
       storage: {
         local: createStorageArea({ bb_profile_label: 'profile_existing' }),
         session: createStorageArea(),
@@ -106,6 +107,8 @@ test('native identity waits for Brave detection and never advertises it as Chrom
     await flushAsyncWork();
     assert.deepEqual(findMessage(messages, 'host.identity'), {
       type: 'host.identity',
+      extensionVersion: '2.2.1',
+      supported_versions: getSupportedProtocolVersions(),
       browserName: 'brave',
       profileLabel: 'profile_existing',
       browserExtensionId: 'store-extension',

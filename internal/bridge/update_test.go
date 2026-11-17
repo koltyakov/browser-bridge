@@ -472,19 +472,19 @@ func TestUpdatePlatformCompatibilityAndNoDowngrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	release, err := updateSelectRelease(feed, f.manager.Target, "1.0.0", []string{"1.9"}, nil, false, "")
+	release, err := updateSelectRelease(feed, f.manager.Target, "1.0.0", []string{"1.9"}, nil, false, "", "")
 	if err != nil || release == nil || release.Version != "1.10.0" {
 		t.Fatal(release, err)
 	}
-	release, err = updateSelectRelease(feed, f.manager.Target, "1.10.0", []string{"1.0"}, nil, false, "")
+	release, err = updateSelectRelease(feed, f.manager.Target, "1.10.0", []string{"1.0"}, nil, false, "", "")
 	if err != nil || release != nil {
 		t.Fatal("downgrade selected", release, err)
 	}
-	release, err = updateSelectRelease(feed, f.manager.Target, "1.10.0", []string{"2.0"}, nil, false, "")
+	release, err = updateSelectRelease(feed, f.manager.Target, "1.10.0", []string{"2.0"}, nil, false, "", "")
 	if err != nil || release == nil || release.Version != "2.0.0" {
 		t.Fatal(release, err)
 	}
-	release, err = updateSelectRelease(feed, "go-linux-arm64", "1.0.0", []string{"1.0"}, nil, false, "")
+	release, err = updateSelectRelease(feed, "go-linux-arm64", "1.0.0", []string{"1.0"}, nil, false, "", "")
 	if err != nil || release != nil {
 		t.Fatal("wrong-platform artifact selected")
 	}
@@ -587,7 +587,7 @@ func TestUpdateMetadataLimitsDuplicateKeysAndUnsafeURLs(t *testing.T) {
 
 func TestUpdateAutomaticThrottlePolicyAndNoTrustBypass(t *testing.T) {
 	f := updateTestNew(t)
-	f.publish(1, "1.1.0")
+	f.publish(1, "1.0.1")
 	f.manager.Automatic = true
 	if result := f.run("apply"); !result.boolean("updated") {
 		t.Fatal(result)
@@ -626,6 +626,85 @@ func TestUpdateAutomaticThrottlePolicyAndNoTrustBypass(t *testing.T) {
 	t.Cleanup(func() { nativeUpdateFeedURL, nativeUpdateKeysJSON = beforeFeed, beforeKeys })
 	if _, err := updateProductionTrust(); err == nil {
 		t.Fatal("environment bypassed compiled trust configuration")
+	}
+}
+
+func TestUpdateAutomaticFollowsExtensionReleaseLine(t *testing.T) {
+	for _, test := range []struct {
+		name, current, extension, want string
+		versions                       []string
+	}{
+		{"extension minor upgrade", "2.1.4", "2.2.1", "2.2.2", []string{"2.1.5", "2.2.1", "2.2.2", "2.3.9", "3.0.0"}},
+		{"binary newer than extension patch", "2.2.2", "2.2.1", "2.2.10", []string{"2.2.9", "2.2.10", "2.3.0"}},
+		{"no extension line release", "2.1.4", "2.2.1", "", []string{"2.1.9", "2.3.0"}},
+		{"never downgrade", "2.3.1", "2.2.1", "", []string{"2.2.99", "2.3.2"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := updateTestNew(t)
+			f.manager.Version = test.current
+			f.manager.Automatic = true
+			f.manager.ExtensionVersion = test.extension
+			f.publish(1, test.versions...)
+			result, err := f.manager.run(context.Background(), "apply", []string{"2.0", "3.0"})
+			if err != nil || result.text("version") != test.want || result.boolean("updated") != (test.want != "") {
+				t.Fatal(result, err)
+			}
+			if f.count("/2.3.9") != 0 || f.count("/3.0.0") != 0 {
+				t.Fatal("downloaded outside the extension release line")
+			}
+		})
+	}
+}
+
+func TestUpdateNewExtensionBypassesDailyCheckThrottleOnce(t *testing.T) {
+	f := updateTestNew(t)
+	f.manager.Version = "2.1.4"
+	f.manager.Automatic = true
+	f.manager.ExtensionVersion = "2.1.3"
+	f.publish(1, "2.1.4")
+	if result := f.run("apply"); result.text("reason") != "no_compatible_update" {
+		t.Fatal(result)
+	}
+	f.publish(2, "2.1.4", "2.2.2", "2.3.0")
+	f.manager.ExtensionVersion = "2.2.1"
+	if result := f.run("apply"); result.text("version") != "2.2.2" {
+		t.Fatal(result)
+	}
+	if result := f.run("apply"); result.text("reason") != "check_throttled" {
+		t.Fatal(result)
+	}
+	f.manager.ExtensionVersion = "2.1.3"
+	if result := f.run("apply"); result.text("reason") != "check_throttled" {
+		t.Fatal("an older profile bypassed the throttle", result)
+	}
+	f.manager.ExtensionVersion = "2.2.1"
+	if result := f.run("apply"); result.text("reason") != "check_throttled" {
+		t.Fatal("profile switching bypassed the throttle", result)
+	}
+	if f.count("/feed") != 2 {
+		t.Fatal("extension reconnect bypassed the throttle more than once")
+	}
+}
+
+func TestUpdatePolicyDefaultsToCompatibleAndRespectsOptOut(t *testing.T) {
+	c := config{home: t.TempDir()}
+	t.Setenv("BBX_AUTO_UPDATE", "compatible")
+	if err := os.Unsetenv("BBX_AUTO_UPDATE"); err != nil {
+		t.Fatal(err)
+	}
+	for _, settings := range []string{"", `{"custom":true}`, `{"autoUpdate":"off"}`} {
+		if settings != "" {
+			if err := os.WriteFile(filepath.Join(c.home, "config.json"), []byte(settings), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		want := "compatible"
+		if strings.Contains(settings, "off") {
+			want = "off"
+		}
+		if got, err := updateReadPolicy(c); err != nil || got != want {
+			t.Fatal(got, err)
+		}
 	}
 }
 

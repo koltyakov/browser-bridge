@@ -28,14 +28,15 @@ type updateInstalled struct {
 var updateInstancePattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 type updateState struct {
-	SchemaVersion   int              `json:"schemaVersion"`
-	RollbackFrom    string           `json:"rollbackFrom,omitempty"`
-	Current         *updateInstalled `json:"current,omitempty"`
-	Previous        *updateInstalled `json:"previous,omitempty"`
-	BlockedVersions []string         `json:"blockedVersions,omitempty"`
-	HighestSequence uint64           `json:"highestSequence"`
-	HighestDigest   string           `json:"highestDigest,omitempty"`
-	LastCheck       time.Time        `json:"lastCheck,omitempty"`
+	SchemaVersion        int              `json:"schemaVersion"`
+	RollbackFrom         string           `json:"rollbackFrom,omitempty"`
+	Current              *updateInstalled `json:"current,omitempty"`
+	Previous             *updateInstalled `json:"previous,omitempty"`
+	BlockedVersions      []string         `json:"blockedVersions,omitempty"`
+	HighestSequence      uint64           `json:"highestSequence"`
+	HighestDigest        string           `json:"highestDigest,omitempty"`
+	LastCheck            time.Time        `json:"lastCheck,omitempty"`
+	LastExtensionVersion string           `json:"lastExtensionVersion,omitempty"`
 }
 
 func updateEmptyState() updateState { return updateState{SchemaVersion: 1} }

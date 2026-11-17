@@ -192,6 +192,20 @@ test('npm bootstrap honors exact native versions without consulting npm metadata
   );
 });
 
+test('exact npm selectors retain a pin beside the binary for direct native and MCP launches', async (t) => {
+  const f = await fixture(t);
+  const rolling = await resolveNative(f.options);
+  const pinned = await resolveNative({
+    ...f.options,
+    env: { ...f.options.env, BBX_VERSION: '1.14.2' },
+  });
+  assert.notEqual(pinned.binary, rolling.binary);
+  assert.deepEqual(JSON.parse(await fs.readFile(`${pinned.binary}.update-pin`, 'utf8')), {
+    version: '1.14.2',
+  });
+  await assert.rejects(fs.stat(`${rolling.binary}.update-pin`), { code: 'ENOENT' });
+});
+
 test('npm bootstrap retains each installation selection without a persistent environment override', async (t) => {
   const f = await fixture(t);
   await loadRelease({ ...f.options, env: { ...f.options.env, BBX_VERSION: '1.14.2' } });

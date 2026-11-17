@@ -16,6 +16,9 @@ concurrency:
 jobs:
   package:
     runs-on: ubuntu-24.04
+    concurrency: native-release-publishing
+    env:
+      BBX_NATIVE_UPDATE_KEYS: ${{ vars.BBX_NATIVE_UPDATE_KEYS }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -48,6 +51,11 @@ jobs:
 
       - name: Resolve release version from Git tag
         run: make sync-version generate-protocol
+
+      - name: Verify native update signing configuration
+        run: node scripts/native-update-config.mjs
+        env:
+          BBX_NATIVE_UPDATE_PRIVATE_KEY: ${{ secrets.BBX_NATIVE_UPDATE_PRIVATE_KEY }}
 
       - name: Check release metadata and generated protocol
         run: make check-release-version check-protocol
@@ -87,6 +95,13 @@ jobs:
 
       - name: Pack dry-run
         run: make pack-dry-run
+
+      - name: Publish signed native update feed
+        run: make publish-update-feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BBX_NATIVE_UPDATE_PRIVATE_KEY: ${{ secrets.BBX_NATIVE_UPDATE_PRIVATE_KEY }}
+          BBX_NATIVE_UPDATE_INITIALIZE: ${{ vars.BBX_NATIVE_UPDATE_INITIALIZE }}
 
       - name: Create npm tarball
         run: make pack

@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import { nativePlatforms, nativeTargets, nativeMaxBytes } from './install-targets.js';
 
 /** @typedef {{asset: string, sha256: string, bytes: number}} Artifact */
-/** @typedef {{version: string, target: string, artifact: Artifact, url: string, binary: string}} Release */
+/** @typedef {{version: string, target: string, artifact: Artifact, url: string, binary: string, pinned?: boolean}} Release */
 /** @typedef {{root?: string, env?: NodeJS.ProcessEnv, platform?: string, arch?: string, fetchFn?: typeof fetch, probeFn?: typeof probeExecutable, refresh?: boolean}} InstallOptions */
 
 export const packageRoot = fileURLToPath(new URL('../../../', import.meta.url));
@@ -230,6 +230,7 @@ export async function loadRelease({
   if (cached !== installed) await writeSelection(installation, cached);
   return {
     version,
+    pinned: stableVersion.test(selector),
     target,
     artifact,
     url: `${downloads}/v${version}/${asset}`,
@@ -237,6 +238,7 @@ export async function loadRelease({
     // not try to replace a locked daemon executable. Versions never overwrite.
     binary: path.join(
       cacheDirectory(env, platform),
+      stableVersion.test(selector) ? 'pinned' : 'rolling',
       version,
       target,
       artifact.sha256,
@@ -369,6 +371,10 @@ async function downloadBinary(release, options) {
  */
 export async function resolveNative(options = {}) {
   const release = await loadRelease(options);
+  // Keep exact pins with the executable so direct MCP commands honor them too.
+  if (release.pinned) {
+    await writeSelection(`${release.binary}.update-pin`, { version: release.version });
+  }
   if (await cachedBinary(release)) return release;
   const directory = path.dirname(release.binary);
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });

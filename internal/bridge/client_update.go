@@ -37,7 +37,7 @@ func prepareNativeClient(ctx context.Context, c config, args []string) (bool, er
 }
 
 func prepareNativeClientUpdate(ctx context.Context, c config, update compatibleNativeUpdate) (bool, error) {
-	if c.remote || npmManagedRuntime() {
+	if c.remote {
 		return false, nil
 	}
 	policy, err := updateReadPolicy(c)
@@ -74,6 +74,9 @@ func prepareNativeClientUpdate(ctx context.Context, c config, update compatibleN
 		if _, err := startLocalDaemon(ctx, c); err != nil {
 			return true, err
 		}
+	}
+	if _, err := restartMCPProcesses(c); err != nil {
+		return true, err
 	}
 	return true, nil
 }

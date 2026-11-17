@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolveVersion } from './version.mjs';
 import { nativePlatforms, nativeMaxBytes } from '../packages/npm/src/install-targets.js';
+import { nativeUpdateLinkerFlags } from './native-update-config.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const { version } = resolveVersion({ root });
@@ -45,7 +46,7 @@ for (const target of targets) {
       '-ldflags',
       // Eight-byte function alignment reduces padding without removing code or
       // runtime checks. This runtime favors payload size over CPU throughput.
-      `-s -w -funcalign=8 -X github.com/koltyakov/browser-bridge/internal/bridge.version=${version} -X github.com/koltyakov/browser-bridge/internal/bridge.buildTarget=go-${target}`,
+      `-s -w -funcalign=8 -X github.com/koltyakov/browser-bridge/internal/bridge.version=${version} -X github.com/koltyakov/browser-bridge/internal/bridge.buildTarget=go-${target} ${nativeUpdateLinkerFlags()}`,
       '-o',
       output,
       './cmd/bbx',

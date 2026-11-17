@@ -143,16 +143,24 @@ func nativeHost(ctx context.Context, c config, input io.Reader, output io.Writer
 	defer stop()
 	toDaemon := &wireWriter{out: conn}
 	done := make(chan error, 2)
+	updateCtx, cancelUpdate := context.WithCancel(ctx)
+	defer cancelUpdate()
 	go func() {
+		updateStarted := false
 		for {
 			message, err := readNative(input)
 			if err != nil {
 				done <- err
 				return
 			}
+			isIdentity := message.text("type") == "host.identity" && message.text("extensionVersion") != ""
 			if _, err := toDaemon.sendPayloadContext(context.Background(), rawObject(nativeToDaemon(message))); err != nil {
 				done <- err
 				return
+			}
+			if !updateStarted && isIdentity {
+				updateStarted = true
+				go checkExtensionNativeUpdate(updateCtx, c, message, updateCompatibleNative, restartUpdatedNative)
 			}
 		}
 	}()

@@ -8,31 +8,48 @@ import (
 	"testing"
 )
 
-func TestNpmDistributionKeepsItsPinnedRuntime(t *testing.T) {
+func TestNpmDistributionSupportsSignedRuntimeUpdates(t *testing.T) {
 	t.Setenv("BBX_NPM_VERSION", version)
 	t.Setenv("BBX_AUTO_UPDATE", "compatible")
 	c := config{home: t.TempDir(), network: "invalid"}
-	if err := os.MkdirAll(filepath.Join(c.home, "native-update"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(c.home, "native-update", "state.json"), []byte("invalid native updater state"), 0600); err != nil {
-		t.Fatal(err)
-	}
 	if forwarded, err := forwardNativeUpdate(context.Background(), c, []string{"--version"}); forwarded || err != nil {
-		t.Fatalf("npm runtime read native update selection: %v", err)
+		t.Fatalf("unmanaged npm bootstrap forwarded: %v", err)
 	}
 	if forwarded, err := prepareNativeClient(context.Background(), c, []string{"status"}); forwarded || err != nil {
-		t.Fatalf("npm runtime attempted native self-update: %v", err)
+		t.Fatalf("unavailable local transport prevented npm startup: %v", err)
 	}
 	status, err := nativeUpdateStatus(c)
 	if err != nil || status.text("distribution") != "npm" || status.text("runningVersion") != version {
 		t.Fatalf("invalid npm update status: %v %v", status, err)
 	}
-	if handled, err := handleUpdateCommand(context.Background(), c, []string{"update", "apply"}); !handled || err == nil || !strings.Contains(err.Error(), "npm install") {
-		t.Fatal("native update accepted for npm-managed runtime")
+	if handled, err := handleUpdateCommand(context.Background(), c, []string{"update", "apply"}); !handled || err == nil || !strings.Contains(err.Error(), "pinned native update") {
+		t.Fatal("npm update bypassed signed trust requirements", handled, err)
 	}
 	_, launcher := installLauncher(c, filepath.Join(c.home, "bbx"))
 	if !strings.Contains(string(launcher), "BBX_NPM_VERSION") || !strings.Contains(string(launcher), version) {
 		t.Fatal("browser launcher lost npm version pin")
+	}
+}
+
+func TestNativeUpdateExactPinsSurviveDirectLaunches(t *testing.T) {
+	executable := filepath.Join(t.TempDir(), "bbx")
+	if pinned, err := updateExecutablePinned(executable, "2.2.2"); err != nil || pinned {
+		t.Fatal(pinned, err)
+	}
+	for _, test := range []struct {
+		raw                   string
+		wantPinned, wantError bool
+	}{
+		{`{"version":"2.2.2"}`, true, false},
+		{`{"version":"2.2.1"}`, false, true},
+		{`invalid`, false, true},
+	} {
+		if err := os.WriteFile(executable+".update-pin", []byte(test.raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+		pinned, err := updateExecutablePinned(executable, "2.2.2")
+		if pinned != test.wantPinned || (err != nil) != test.wantError {
+			t.Fatal(test.raw, pinned, err)
+		}
 	}
 }

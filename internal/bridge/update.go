@@ -19,16 +19,17 @@ import (
 )
 
 type updateManager struct {
-	Root           string
-	Executable     string
-	Version        string
-	Target         string
-	Trust          updateTrust
-	HTTP           updateHTTPClient
-	Now            func() time.Time
-	Probe          func(context.Context, string, string, string) error
-	BeforeActivate func(context.Context) error
-	Automatic      bool
+	Root             string
+	Executable       string
+	Version          string
+	Target           string
+	Trust            updateTrust
+	HTTP             updateHTTPClient
+	Now              func() time.Time
+	Probe            func(context.Context, string, string, string) error
+	BeforeActivate   func(context.Context) error
+	Automatic        bool
+	ExtensionVersion string
 }
 
 func newNativeUpdater(c config) (*updateManager, error) {
@@ -324,10 +325,25 @@ func (manager *updateManager) run(ctx context.Context, action string, supported 
 		return manager.activate(ctx, state, *state.Previous, false, true)
 	}
 	if manager.Automatic {
-		if !state.LastCheck.IsZero() && manager.Now().Sub(state.LastCheck) >= 0 && manager.Now().Sub(state.LastCheck) < 24*time.Hour {
+		newExtension := false
+		if manager.ExtensionVersion != "" {
+			if state.LastExtensionVersion == "" {
+				newExtension = true
+			} else {
+				comparison, err := updateCompareVersions(manager.ExtensionVersion, state.LastExtensionVersion)
+				if err != nil {
+					return nil, err
+				}
+				newExtension = comparison > 0
+			}
+		}
+		if !newExtension && !state.LastCheck.IsZero() && manager.Now().Sub(state.LastCheck) >= 0 && manager.Now().Sub(state.LastCheck) < 24*time.Hour {
 			return object{"updated": value(false), "reason": value("check_throttled"), "previousVersion": value(current)}, nil
 		}
 		state.LastCheck = manager.Now()
+		if newExtension {
+			state.LastExtensionVersion = manager.ExtensionVersion
+		}
 		if err := updateSaveState(manager.Root, state); err != nil {
 			return nil, err
 		}
@@ -348,7 +364,14 @@ func (manager *updateManager) run(ctx context.Context, action string, supported 
 	if action == "repair" {
 		pinned = current
 	}
-	selected, err := updateSelectRelease(feed, manager.Target, current, supported, state.BlockedVersions, allowEqual, pinned)
+	line := ""
+	if manager.Automatic {
+		line = manager.ExtensionVersion
+		if line == "" {
+			line = current
+		}
+	}
+	selected, err := updateSelectRelease(feed, manager.Target, current, supported, state.BlockedVersions, allowEqual, pinned, line)
 	if err != nil {
 		return nil, err
 	}
@@ -374,7 +397,7 @@ func (manager *updateManager) run(ctx context.Context, action string, supported 
 	// metadata authenticates its exact executable bytes. A locally built or
 	// otherwise unsigned bootstrap is retained but never becomes update trust.
 	if state.Current == nil && selected.Version != current && manager.Executable != "" {
-		baseline, err := updateSelectRelease(feed, manager.Target, current, updateDefaultProtocols(current), nil, true, current)
+		baseline, err := updateSelectRelease(feed, manager.Target, current, updateDefaultProtocols(current), nil, true, current, "")
 		if err != nil {
 			return nil, err
 		}
@@ -465,9 +488,6 @@ func handleUpdateCommand(ctx context.Context, c config, args []string) (bool, er
 	if len(args) == 0 || args[0] != "update" {
 		return false, nil
 	}
-	if npmManagedRuntime() && (len(args) != 2 || args[1] != "status") {
-		return true, errors.New("npm manages this runtime version; use `npm install -g @browserbridge/bbx@<version>` to update it")
-	}
 	if c.remote {
 		return true, errors.New("native update commands only manage the local installation")
 	}
@@ -490,6 +510,13 @@ func handleUpdateCommand(ctx context.Context, c config, args []string) (bool, er
 	default:
 		return true, errors.New("usage: bbx update [check|apply|install|repair|rollback|status]")
 	}
+	pinned, err := updateRuntimePinned()
+	if err != nil {
+		return true, err
+	}
+	if pinned {
+		return true, errors.New("this executable has an exact native version pin; reinstall without an exact BBX_VERSION selector to enable updates")
+	}
 	manager, err := newNativeUpdater(c)
 	if err != nil {
 		return true, err
@@ -502,10 +529,22 @@ func handleUpdateCommand(ctx context.Context, c config, args []string) (bool, er
 }
 
 func nativeUpdateStatus(c config) (object, error) {
-	if npmManagedRuntime() {
-		return object{"runtime": value("go"), "distribution": value("npm"), "runningVersion": value(version), "managed": value(true), "updateCommand": value("npm install -g @browserbridge/bbx@<version>")}, nil
-	}
 	result := object{"runtime": value("go"), "runningVersion": value(version), "configured": value(false), "managed": value(false)}
+	if npmManagedRuntime() {
+		result["distribution"] = value("npm")
+	}
+	policy, err := updateReadPolicy(c)
+	if err != nil {
+		result["policyError"] = value(err.Error())
+	} else {
+		result["autoUpdate"] = value(policy)
+	}
+	result["updateLine"] = value(strings.Join(strings.Split(version, ".")[:2], ".") + ".x")
+	pinned, err := updateRuntimePinned()
+	if err != nil {
+		return nil, err
+	}
+	result["pinned"] = value(pinned)
 	root := filepath.Join(c.home, "native-update")
 	state, err := updateLoadState(root)
 	if err != nil {
@@ -548,7 +587,7 @@ func updateReadPolicy(c config) (string, error) {
 	}
 	raw, err := os.ReadFile(filepath.Join(c.home, "config.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return "off", nil
+		return "compatible", nil
 	}
 	if err != nil {
 		return "", err
@@ -562,7 +601,7 @@ func updateReadPolicy(c config) (string, error) {
 		if _, present := settings["autoUpdate"]; present {
 			return "", errors.New("auto-update policy must be off or compatible")
 		}
-		policy = "off"
+		policy = "compatible"
 	}
 	if policy != "off" && policy != "compatible" {
 		return "", errors.New("auto-update policy must be off or compatible")
@@ -570,7 +609,7 @@ func updateReadPolicy(c config) (string, error) {
 	return policy, nil
 }
 
-// Call once after authenticated local health reports a newer extension. A
+// Call after authenticated local health or native identity reports an extension. A
 // successful activation returns restartRequired; the caller must start a fresh
 // process and reconnect rather than pretending its loaded code has changed.
 func updateCompatibleNative(ctx context.Context, c config, extensionVersion string, supportedVersions []string) (object, error) {
@@ -597,22 +636,29 @@ func updateCompatibleNative(ctx context.Context, c config, extensionVersion stri
 	if policy != "compatible" {
 		return unchanged("policy_off"), nil
 	}
+	pinned, err := updateRuntimePinned()
+	if err != nil {
+		return nil, err
+	}
+	if pinned {
+		return unchanged("version_pinned"), nil
+	}
 	extension, err := updateParseVersion(extensionVersion)
 	if err != nil || !updateProtocolSupported(extension[0], supportedVersions) {
 		return unchanged("invalid_extension_version"), nil
 	}
-	comparison, err := updateCompareVersions(extensionVersion, version)
-	if err != nil {
+	if _, err := updateParseVersion(version); err != nil {
 		return unchanged("invalid_installed_version"), nil
 	}
-	if comparison <= 0 {
-		return unchanged("extension_not_newer"), nil
+	if _, err := updateProductionTrust(); err != nil {
+		return unchanged("updates_unconfigured"), nil
 	}
 	manager, err := newNativeUpdater(c)
 	if err != nil {
 		return nil, err
 	}
 	manager.Automatic = true
+	manager.ExtensionVersion = extensionVersion
 	return manager.run(ctx, "apply", supportedVersions)
 }
 
@@ -620,10 +666,14 @@ func updateCompatibleNative(ctx context.Context, c config, extensionVersion stri
 // Management and self-test commands stay in the current executable so a damaged
 // active payload can be diagnosed or repaired from the untouched bootstrap.
 func forwardNativeUpdate(ctx context.Context, c config, args []string) (bool, error) {
-	if npmManagedRuntime() {
+	if len(args) > 0 && (args[0] == "update" || args[0] == "--self-test" || args[0] == "install-self") {
 		return false, nil
 	}
-	if len(args) > 0 && (args[0] == "update" || args[0] == "--self-test" || args[0] == "install-self") {
+	pinned, err := updateRuntimePinned()
+	if err != nil {
+		return true, err
+	}
+	if pinned {
 		return false, nil
 	}
 	root := filepath.Join(c.home, "native-update")

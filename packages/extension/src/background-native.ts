@@ -1,4 +1,9 @@
-import { BridgeError, ERROR_CODES, createRequest } from '../../../protocol/src/index.js';
+import {
+  BridgeError,
+  ERROR_CODES,
+  createRequest,
+  getSupportedProtocolVersions,
+} from '../../../protocol/src/index.js';
 import { createNativePortMessageListener } from './background-bridge.js';
 import { getBrowserName } from './background-browser.js';
 import { getErrorMessage } from './background-helpers.js';
@@ -161,7 +166,7 @@ async function loadProfileLabel(chromeObj: {
 export function sendIdentity(
   port: Pick<chrome.runtime.Port, 'postMessage'>,
   chromeObj: {
-    runtime?: { id?: string };
+    runtime?: { id?: string; getManifest?: () => { version: string } };
     storage: { local: ProfileStorage; session: ProfileStorage };
   }
 ): void {
@@ -170,6 +175,12 @@ export function sendIdentity(
       try {
         port.postMessage({
           type: 'host.identity',
+          ...(chromeObj.runtime?.getManifest
+            ? {
+                extensionVersion: chromeObj.runtime.getManifest().version,
+                supported_versions: getSupportedProtocolVersions(),
+              }
+            : {}),
           browserName,
           profileLabel,
           windowAccessUpdates: true,

@@ -82,6 +82,7 @@ For a manual fallback, run checks and build the extension first, then:
 ```bash
 make package-native-all
 make publish-release
+make publish-update-feed
 make pack-dry-run
 make pack
 make publish-npm ARGS=--provenance
@@ -93,7 +94,57 @@ The tag workflow publishes npm through trusted publishing with OIDC. Its token n
 
 Trusted publishing requires npm CLI `11.5.1+`. The release workflow upgrades npm explicitly before running `npm publish`; if publish fails with `E404` or authentication issues, verify the workflow still prints an npm version at or above that threshold.
 
-Native signed updates use a separate feed and embedded trust keys. Publishing GitHub assets and release checksums does not configure or sign that feed. See [native updates](../internal/bridge/README.md#native-updates).
+## Signed native updates
+
+The release workflow requires signing configuration before building binaries.
+It embeds the public keys, publishes immutable binaries, then signs and
+publishes `native-updates/stable.json` on a separate prerelease. The prerelease
+does not become GitHub's latest stable binary release.
+
+Configure these GitHub Actions values:
+
+- Repository variable `BBX_NATIVE_UPDATE_KEYS`, a JSON object with a `release`
+  key containing the base64 raw 32-byte Ed25519 public key.
+- Repository secret `BBX_NATIVE_UPDATE_PRIVATE_KEY`, the matching Ed25519
+  PKCS#8 PEM private key. Never commit this key.
+- For the first release only, repository variable
+  `BBX_NATIVE_UPDATE_INITIALIZE=1`. This creates the metadata prerelease.
+  Remove the variable after successful publication. Initialization refuses
+  to overwrite an existing metadata release.
+
+Generate the keys locally with Node, then store them securely:
+
+```sh
+node --input-type=module -e '
+import { generateKeyPairSync } from "node:crypto";
+import { writeFileSync } from "node:fs";
+const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+writeFileSync("native-update-private.pem", privateKey.export({type:"pkcs8",format:"pem"}), {mode:0o600,flag:"wx"});
+console.log(JSON.stringify({release:publicKey.export({type:"spki",format:"der"}).subarray(-32).toString("base64")}));
+'
+```
+
+Run this outside the checkout to avoid adding the private key to Git. Copy the
+printed JSON to the variable and the PEM contents to the secret, then remove
+the local private-key file when it is no longer needed.
+
+`make publish-update-feed` adds the current native release only after
+`make publish-release` has verified the public assets. It authenticates the
+previous feed before retaining its releases, increases the sequence, and
+refuses to change an existing signed version. Only the signed metadata asset
+uses `--clobber`; executable assets remain immutable. Publishing jobs share a
+concurrency group so scheduled renewal cannot race a release.
+
+The feed expires after 14 days. The weekly `native-update-feed.yml` workflow
+renews it without changing binary assets; `make renew-update-feed` does the
+same manually. Monitor that workflow. Expired or invalid metadata fails closed
+and leaves the installed version selected. Keep both old and new public keys
+embedded during signing-key rotation until existing installations can verify
+the new feed.
+
+Existing binaries without embedded trust and the native identity update hook
+need a one-time reinstall. An extension update cannot add updater code to an
+older binary. See [native updates](../internal/bridge/README.md#native-updates).
 
 ## Chrome Web Store Submission
 
