@@ -17,6 +17,7 @@ extension_id="${BBX_EXTENSION_ID:-jjjkmmcdkpcgamlopogicbnnhdgebhie}"
 # END GENERATED EXTENSION_ID
 browser="${BBX_BROWSER:-}"
 install_dir="${BBX_INSTALL_DIR:-$HOME/.local/bin}"
+case "$install_dir" in /*) ;; *) install_dir="$PWD/$install_dir";; esac
 if ! printf '%s\n' "$extension_id" | grep -Eq '^[a-z]{32}$'; then
   echo 'Invalid extension ID' >&2
   exit 1
@@ -145,7 +146,22 @@ if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
   exit 1
 fi
 chmod 700 "$tmp/bbx"
-if command -v npm >/dev/null 2>&1; then
+volta_status=absent
+if command -v volta >/dev/null 2>&1; then
+  if volta_packages="$(volta list --format plain @browserbridge/bbx 2>/dev/null)"; then
+    if printf '%s\n' "$volta_packages" | grep -Eq '^package @browserbridge/bbx@[^[:space:]]+ /'; then
+      volta_status=installed
+      echo 'Warning: Volta manages an existing @browserbridge/bbx installation. It has not been removed and may shadow the standalone CLI.' >&2
+      echo 'After installation, remove it manually with: volta uninstall @browserbridge/bbx' >&2
+      echo 'Then open a new terminal and run bbx --version to verify that the standalone CLI is selected.' >&2
+    fi
+  else
+    volta_status=unknown
+    echo 'Warning: could not inspect Volta packages. Skipping automatic npm removal to avoid deleting a Volta-managed installation.' >&2
+    echo 'Check with: volta list --format plain @browserbridge/bbx. If installed, remove it manually with: volta uninstall @browserbridge/bbx' >&2
+  fi
+fi
+if [ "$volta_status" = absent ] && command -v npm >/dev/null 2>&1; then
   if npm_root="$(npm root --global 2>/dev/null)"; then
     if [ -f "$npm_root/@browserbridge/bbx/package.json" ]; then
       echo 'Removing the legacy global npm package @browserbridge/bbx...'
@@ -171,30 +187,55 @@ fi
 BBX_AUTO_UPDATE=off "$install_dir/bbx" "$@"
 BBX_AUTO_UPDATE=off "$install_dir/bbx" restart
 echo "Installed Browser Bridge to $install_dir/bbx"
-path_configured=false
+
+# Prepend even when the directory is already present later in PATH, where a
+# package-manager shim could still win. Quote custom paths for shell startup files.
+if [ "$install_dir" = "$HOME/.local/bin" ]; then
+  path_entry='case "$PATH" in "$HOME/.local/bin"|"$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac'
+  path_command='export PATH="$HOME/.local/bin:$PATH"'
+else
+  quoted_install_dir="$(printf '%s' "$install_dir" | sed "s/'/'\\\\''/g")"
+  path_entry="case \"\$PATH\" in '$quoted_install_dir'|'$quoted_install_dir':*) ;; *) export PATH='$quoted_install_dir':\"\$PATH\" ;; esac"
+  path_command="export PATH='$quoted_install_dir':\"\$PATH\""
+fi
+configure_path() {
+  if [ -f "$1" ] && grep -Fqx "$path_entry" "$1"; then
+    return
+  fi
+  if printf '\n# Browser Bridge\n%s\n' "$path_entry" >> "$1"; then
+    printf 'Configured Browser Bridge PATH in %s for future terminals.\n' "$1"
+  else
+    printf 'Warning: could not update %s. Configure PATH manually with: %s\n' "$1" "$path_command" >&2
+    return 1
+  fi
+}
 case "${SHELL:-}" in
   */zsh|zsh)
-    if [ "$install_dir" = "$HOME/.local/bin" ]; then
-      zshrc="${ZDOTDIR:-$HOME}/.zshrc"
-      path_entry='case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac'
-      if [ -f "$zshrc" ] && grep -Fqx "$path_entry" "$zshrc"; then
-        path_configured=true
-      elif printf '\n# Browser Bridge\n%s\n' "$path_entry" >> "$zshrc"; then
-        path_configured=true
-        printf 'Added ~/.local/bin to the zsh PATH in %s for future terminals.\n' "$zshrc"
-      else
-        printf 'Warning: could not update %s.\n' "$zshrc" >&2
-      fi
-    fi
+    configure_path "${ZDOTDIR:-$HOME}/.zprofile"
+    configure_path "${ZDOTDIR:-$HOME}/.zshrc"
     ;;
-esac
-case ":$PATH:" in
-  *":$install_dir:"*) ;;
-  *)
-    if [ "$path_configured" = true ]; then
-      printf '%s\n' 'For this terminal, run: export PATH="$HOME/.local/bin:$PATH"'
+  */bash|bash)
+    configure_path "$HOME/.bashrc"
+    if [ -f "$HOME/.bash_profile" ]; then
+      configure_path "$HOME/.bash_profile"
+    elif [ -f "$HOME/.bash_login" ]; then
+      configure_path "$HOME/.bash_login"
     else
-      printf 'Add this directory to your shell profile PATH: %s\n' "$install_dir"
+      configure_path "$HOME/.profile"
     fi
     ;;
+  */sh|sh|*/dash|dash|*/ksh|ksh)
+    configure_path "$HOME/.profile"
+    ;;
+  *)
+    printf 'Warning: shell %s is not supported for automatic PATH configuration. Add this to its startup configuration: %s\n' "${SHELL:-unknown}" "$path_command" >&2
+    ;;
 esac
+if [ "$(command -v bbx || true)" != "$install_dir/bbx" ]; then
+  printf 'For this terminal, run: %s\n' "$path_command"
+fi
+export PATH="$install_dir:$PATH"
+if [ "$(command -v bbx)" != "$install_dir/bbx" ]; then
+  echo 'Could not select the installed bbx through PATH.' >&2
+  exit 1
+fi

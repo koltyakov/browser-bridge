@@ -1,5 +1,10 @@
 # Troubleshooting
 
+For agent-led diagnosis and repair, give your agent the
+[standalone troubleshooting skill](https://raw.githubusercontent.com/koltyakov/browser-bridge/main/docs/troubleshooting-skill.md).
+It is URL-loadable, is not bundled with `bbx`, and includes a sanitized issue
+template for unresolved problems.
+
 When Browser Bridge is not working, start with local validation before blaming
 the agent integration:
 

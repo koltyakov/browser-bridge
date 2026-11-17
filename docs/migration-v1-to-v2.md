@@ -60,13 +60,20 @@ registers supported browsers where the extension is detected, and restarts the
 daemon. It also tries to remove the old
 global `@browserbridge/bbx` npm package so its launchers do not shadow the new
 CLI. If that fails, follow the installer's warning to remove the old package.
+Volta-managed packages are detected separately and are never removed automatically.
+If the installer reports one, run `volta uninstall @browserbridge/bbx` after
+installation, then open a new terminal and check `bbx --version`.
 Do not remove Node.js if other tools still need it.
 
 v2.1.0 adds native Windows ARM64 support alongside Windows x64, macOS
 arm64/x64, and Linux arm64/x64. The installer selects your architecture.
 
-Keep `~/.local/bin` on your shell's `PATH` on macOS and Linux. Windows updates
-your user `PATH`; open a new terminal afterward. For another browser, custom
+On macOS and Linux, the installer configures zsh, bash, and POSIX login shell
+startup files to put its directory first on `PATH`, including when it was
+already listed after a package-manager shim. Unsupported shells receive manual
+setup instructions. Windows prepends the directory to your user `PATH`.
+Open a new terminal afterward, or use the command printed for your current
+terminal. For another browser, custom
 extension ID, or installation directory, use the [installer options](./native-cli.md#install-without-nodejs).
 
 ### Alternative: keep npm

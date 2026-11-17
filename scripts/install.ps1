@@ -13,6 +13,48 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+function Remove-LegacyNpmPackage {
+  $volta = Get-Command volta -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($volta) {
+    try {
+      $voltaPackages = & $volta.Source list --format plain '@browserbridge/bbx' 2>$null
+      if ($LASTEXITCODE -ne 0) { throw 'Could not list Volta packages' }
+      if ($voltaPackages -match '^package @browserbridge/bbx@\S+ /') {
+        Write-Warning 'Volta manages an existing @browserbridge/bbx installation. It has not been removed and may shadow the standalone CLI.'
+        Write-Warning 'After installation, remove it manually with: volta uninstall @browserbridge/bbx'
+        Write-Warning 'Then open a new terminal and run bbx --version to verify that the standalone CLI is selected.'
+        return
+      }
+    } catch {
+      Write-Warning 'Could not inspect Volta packages. Skipping automatic npm removal to avoid deleting a Volta-managed installation.'
+      Write-Warning 'Check with: volta list --format plain @browserbridge/bbx. If installed, remove it manually with: volta uninstall @browserbridge/bbx'
+      return
+    }
+  }
+  # Prefer npm.cmd so a PowerShell execution policy cannot block npm.ps1.
+  $npm = Get-Command npm.cmd, npm -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($npm) {
+    try {
+      $npmRoot = & $npm.Source root --global 2>$null
+      if ($LASTEXITCODE -ne 0) { throw 'Could not locate the global npm package directory' }
+      if (Test-Path -LiteralPath (Join-Path $npmRoot '@browserbridge\bbx\package.json')) {
+        Write-Host 'Removing the legacy global npm package @browserbridge/bbx...'
+        & $npm.Source uninstall --global '@browserbridge/bbx'
+        if ($LASTEXITCODE -ne 0) { throw 'npm uninstall failed' }
+      }
+    } catch {
+      Write-Warning "Could not check or remove the legacy npm package: $_. Run npm uninstall -g @browserbridge/bbx manually if it still shadows the standalone CLI. Continuing with standalone installation."
+    }
+  }
+}
+
+function Get-PathWithInstallDirectory {
+  param([string]$CurrentPath, [string]$Directory)
+  $remaining = @($CurrentPath -split ';' | Where-Object { $_ -and $_ -ne $Directory })
+  return (@($Directory) + $remaining) -join ';'
+}
+
 if ($Help) {
   Write-Host 'Install Browser Bridge from GitHub Releases. Detects supported browsers with the extension installed. -Version accepts a major-minor release line such as 2.0, or an exact version. Options: -ExtensionId, -Browser (one browser override), -InstallDir.'
   return
@@ -70,21 +112,7 @@ try {
   if ((Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash.ToLowerInvariant() -ne $expected) {
     throw 'Binary checksum mismatch'
   }
-  # Prefer npm.cmd so a PowerShell execution policy cannot block npm.ps1.
-  $npm = Get-Command npm.cmd, npm -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($npm) {
-    try {
-      $npmRoot = & $npm.Source root --global 2>$null
-      if ($LASTEXITCODE -ne 0) { throw 'Could not locate the global npm package directory' }
-      if (Test-Path -LiteralPath (Join-Path $npmRoot '@browserbridge\bbx\package.json')) {
-        Write-Host 'Removing the legacy global npm package @browserbridge/bbx...'
-        & $npm.Source uninstall --global '@browserbridge/bbx'
-        if ($LASTEXITCODE -ne 0) { throw 'npm uninstall failed' }
-      }
-    } catch {
-      Write-Warning "Could not check or remove the legacy npm package: $_. Run npm uninstall -g @browserbridge/bbx manually if it still shadows the standalone CLI. Continuing with standalone installation."
-    }
-  }
+  Remove-LegacyNpmPackage
   $env:BBX_AUTO_UPDATE = 'off'
   if ($Browser) { $env:BBX_BROWSER = $Browser }
   if ($PSBoundParameters.ContainsKey('ExtensionId')) { $env:BROWSER_BRIDGE_EXTENSION_ID = $ExtensionId }
@@ -99,10 +127,8 @@ try {
   & $installed restart
   if ($LASTEXITCODE -ne 0) { throw 'Daemon restart failed' }
   $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
-  if (($userPath -split ';') -notcontains $InstallDir) {
-    [Environment]::SetEnvironmentVariable('PATH', "$InstallDir;$userPath", 'User')
-  }
-  if (($env:Path -split ';') -notcontains $InstallDir) { $env:Path = "$InstallDir;$env:Path" }
+  [Environment]::SetEnvironmentVariable('PATH', (Get-PathWithInstallDirectory $userPath $InstallDir), 'User')
+  $env:Path = Get-PathWithInstallDirectory $env:Path $InstallDir
   Write-Host "Installed Browser Bridge to $installed. Open a new terminal to use bbx."
 } finally {
   $env:BBX_AUTO_UPDATE = $previousAutoUpdate

@@ -181,6 +181,7 @@ The npm package is a bootstrap and launcher with zero runtime npm dependencies. 
 - [CLI guide](https://github.com/koltyakov/browser-bridge/blob/main/docs/cli-guide.md)
 - [MCP vs CLI](https://github.com/koltyakov/browser-bridge/blob/main/docs/mcp-vs-cli.md)
 - [Troubleshooting](https://github.com/koltyakov/browser-bridge/blob/main/docs/troubleshooting.md)
+- [Standalone troubleshooting skill for agents](https://raw.githubusercontent.com/koltyakov/browser-bridge/main/docs/troubleshooting-skill.md)
 - [BridgeClient API](https://github.com/koltyakov/browser-bridge/blob/main/docs/api-reference.md)
 - [WebMCP website tools](https://github.com/koltyakov/browser-bridge/blob/main/docs/webmcp.md)
 - [Development and Make tasks](https://github.com/koltyakov/browser-bridge/blob/main/docs/development.md)

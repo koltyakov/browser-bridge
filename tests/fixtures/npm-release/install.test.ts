@@ -54,6 +54,18 @@ if (args[0] === 'root') {
     { mode: 0o755 }
   );
   await fs.writeFile(
+    path.join(bin, 'volta'),
+    `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.VOLTA_CALLS, JSON.stringify(args) + '\\n');
+if (JSON.stringify(args) !== JSON.stringify(['list', '--format', 'plain', '@browserbridge/bbx'])) process.exit(2);
+if (process.env.FAIL_VOLTA_LIST) process.exit(1);
+process.stdout.write(process.env.VOLTA_LIST);
+`,
+    { mode: 0o755 }
+  );
+  await fs.writeFile(
     path.join(bin, 'curl'),
     `#!/usr/bin/env node
 const fs = require('node:fs');
@@ -91,6 +103,9 @@ if (url.startsWith('https://api.github.com/')) {
     URLS: path.join(directory, 'urls.txt'),
     NPM_ROOT: path.join(directory, 'global npm/node_modules'),
     NPM_CALLS: path.join(directory, 'npm-calls.jsonl'),
+    VOLTA_CALLS: path.join(directory, 'volta-calls.jsonl'),
+    VOLTA_LIST: '',
+    FAIL_VOLTA_LIST: '',
     EVENTS: path.join(directory, 'events.txt'),
     RELEASE_PAGES: path.join(directory, 'releases'),
     FAIL_NPM_ROOT: '',
@@ -98,6 +113,7 @@ if (url.startsWith('https://api.github.com/')) {
     FAIL_DOWNLOAD: '',
     FAIL_COMMAND: '',
   };
+  await fs.mkdir(env.HOME!, { recursive: true });
   await fs.mkdir(env.RELEASE_PAGES!);
   const checksum = createHash('sha256').update(binary).digest('hex');
   return {
@@ -112,7 +128,6 @@ async function zshFixture(t: TestContext) {
   const setup = await fixture(t);
   setup.env.SHELL = '/bin/zsh';
   delete setup.env.BBX_INSTALL_DIR;
-  await fs.mkdir(setup.env.HOME!);
   await fs.writeFile(setup.env.CHECKSUMS!, `${setup.checksum}  bbx-linux-x64\n`);
   return setup;
 }
@@ -198,32 +213,115 @@ test(
 );
 
 test(
-  'Unix installer keeps manual PATH guidance for other shells and custom install directories',
+  'Unix installer configures bash and zsh startup files for custom install directories',
   { skip: process.platform === 'win32' },
   async (t) => {
-    for (const shell of ['/bin/bash', '', '/bin/zsh']) {
+    for (const shell of ['/bin/bash', '/bin/zsh']) {
       const { env, checksum, run } = await fixture(t);
       env.SHELL = shell;
-      if (shell !== '/bin/zsh') delete env.BBX_INSTALL_DIR;
       await fs.writeFile(env.CHECKSUMS!, `${checksum}  bbx-linux-x64\n`);
       const result = run();
       assert.equal(result.status, 0, result.stderr);
-      assert.match(result.stdout, /Add this directory to your shell profile PATH:/);
-      await assert.rejects(fs.access(path.join(env.HOME!, '.zshrc')));
+      assert.match(result.stdout, /For this terminal, run: export PATH=/);
+      const profiles = shell === '/bin/zsh' ? ['.zshrc', '.zprofile'] : ['.bashrc', '.profile'];
+      for (const profile of profiles) {
+        const startup = spawnSync('/bin/sh', ['-c', '. "$PROFILE"; command -v bbx'], {
+          env: { ...env, PROFILE: path.join(env.HOME!, profile) },
+          encoding: 'utf8',
+        });
+        assert.equal(startup.status, 0, startup.stderr);
+        assert.equal(startup.stdout.trim(), path.join(env.BBX_INSTALL_DIR!, 'bbx'));
+      }
     }
   }
 );
 
 test(
-  'Unix installer warns without failing installation when the zsh config cannot be updated',
+  'Unix installer puts the standalone CLI ahead of a Volta shim even when its directory is already on PATH',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const { directory, env, run } = await zshFixture(t);
+    const shimDir = path.join(directory, 'volta shims');
+    await fs.mkdir(shimDir);
+    await fs.writeFile(path.join(shimDir, 'bbx'), '#!/bin/sh\necho 1.14.2\n', { mode: 0o755 });
+    env.PATH = `${shimDir}:${env.HOME}/.local/bin:${env.PATH}`;
+    const oldEntry =
+      'case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac';
+    await fs.writeFile(path.join(env.HOME!, '.zshrc'), `${oldEntry}\n`);
+    const result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /For this terminal, run: export PATH=/);
+    for (const profile of ['.zshrc', '.zprofile']) {
+      const startup = spawnSync(
+        '/bin/sh',
+        ['-c', '. "$PROFILE"; . "$PROFILE"; command -v bbx; printf "%s" "$PATH"'],
+        { env: { ...env, PROFILE: path.join(env.HOME!, profile) }, encoding: 'utf8' }
+      );
+      assert.equal(startup.status, 0, startup.stderr);
+      assert.equal(
+        startup.stdout,
+        `${env.HOME}/.local/bin/bbx\n${env.HOME}/.local/bin:${env.PATH}`
+      );
+    }
+  }
+);
+
+test(
+  'Unix installer quotes custom PATH entries and preserves existing bash login settings',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    for (const login of ['.bash_profile', '.bash_login', '.profile']) {
+      const { directory, env, checksum, run } = await fixture(t);
+      env.BBX_INSTALL_DIR = path.join(directory, 'bin with \' "$` characters');
+      const profile = path.join(env.HOME!, login);
+      await fs.writeFile(profile, 'export EXISTING_SETTING=kept\n');
+      await fs.writeFile(env.CHECKSUMS!, `${checksum}  bbx-linux-x64\n`);
+      const result = run();
+      assert.equal(result.status, 0, result.stderr);
+      const startup = spawnSync(
+        '/bin/sh',
+        ['-c', '. "$PROFILE"; . "$PROFILE"; command -v bbx; printf "%s" "$EXISTING_SETTING"'],
+        { env: { ...env, PROFILE: profile }, encoding: 'utf8' }
+      );
+      assert.equal(startup.status, 0, startup.stderr);
+      assert.equal(startup.stdout, `${env.BBX_INSTALL_DIR}/bbx\nkept`);
+      if (login !== '.bash_profile')
+        await assert.rejects(fs.access(path.join(env.HOME!, '.bash_profile')));
+    }
+  }
+);
+
+test(
+  'Unix installer configures POSIX login shells and gives explicit guidance for unsupported shells',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    for (const shell of ['/bin/sh', '/bin/dash', '/bin/ksh', '/bin/fish', '']) {
+      const { env, checksum, run } = await fixture(t);
+      env.SHELL = shell;
+      await fs.writeFile(env.CHECKSUMS!, `${checksum}  bbx-linux-x64\n`);
+      const result = run();
+      assert.equal(result.status, 0, result.stderr);
+      if (shell === '/bin/fish' || shell === '') {
+        assert.match(result.stderr, /not supported for automatic PATH configuration/);
+        assert.match(result.stderr, /export PATH=/);
+        await assert.rejects(fs.access(path.join(env.HOME!, '.profile')));
+      } else {
+        assert.match(await fs.readFile(path.join(env.HOME!, '.profile'), 'utf8'), /Browser Bridge/);
+      }
+    }
+  }
+);
+
+test(
+  'Unix installer reports failure when the zsh PATH cannot be persisted',
   { skip: process.platform === 'win32' },
   async (t) => {
     const { env, run } = await zshFixture(t);
     await fs.mkdir(path.join(env.HOME!, '.zshrc'));
     const result = run();
-    assert.equal(result.status, 0, result.stderr);
+    assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Warning: could not update .*\.zshrc/);
-    assert.match(result.stdout, /Add this directory to your shell profile PATH:/);
+    assert.match(result.stderr, /Configure PATH manually with: export PATH=/);
     assert.match(await fs.readFile(env.CALLS!, 'utf8'), /restart/);
   }
 );
@@ -447,6 +545,79 @@ test(
 );
 
 test(
+  'Unix installer warns about a Volta package without removing it through Volta or npm',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    for (const npmVisible of [false, true]) {
+      const { env, checksum, run } = await fixture(t);
+      env.VOLTA_LIST =
+        'package @browserbridge/bbx@1.14.2 / bbx, bbx-daemon / node@22.0.0 npm@built-in (default)\n';
+      const legacy = path.join(env.NPM_ROOT!, '@browserbridge/bbx');
+      if (npmVisible) {
+        await fs.mkdir(legacy, { recursive: true });
+        await fs.writeFile(path.join(legacy, 'package.json'), '{}');
+      }
+      await fs.writeFile(env.CHECKSUMS!, `${checksum}  bbx-linux-x64\n`);
+      const result = run();
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stderr, /Volta manages an existing @browserbridge\/bbx/);
+      assert.match(result.stderr, /has not been removed and may shadow/);
+      assert.match(result.stderr, /volta uninstall @browserbridge\/bbx/);
+      assert.match(result.stderr, /new terminal.*bbx --version/);
+      assert.equal(
+        await fs.readFile(env.VOLTA_CALLS!, 'utf8'),
+        '["list","--format","plain","@browserbridge/bbx"]\n'
+      );
+      await assert.rejects(fs.access(env.NPM_CALLS!));
+      if (npmVisible)
+        assert.equal(await fs.readFile(path.join(legacy, 'package.json'), 'utf8'), '{}');
+      assert.match(await fs.readFile(env.CALLS!, 'utf8'), /restart/);
+    }
+  }
+);
+
+test(
+  'Unix installer does not mistake cached or unrelated Volta packages for an installed package',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    for (const output of [
+      '',
+      'package @browserbridge/bbx@1.14.2 (fetched)\n',
+      'package @browserbridge/bbx-other@1.14.2 / other / node@22.0.0 npm@built-in (default)\n',
+    ]) {
+      const { env, checksum, run } = await fixture(t);
+      env.VOLTA_LIST = output;
+      await fs.writeFile(env.CHECKSUMS!, `${checksum}  bbx-linux-x64\n`);
+      const result = run();
+      assert.equal(result.status, 0, result.stderr);
+      assert.doesNotMatch(result.stderr, /Volta/);
+      assert.equal(await fs.readFile(env.NPM_CALLS!, 'utf8'), '["root","--global"]\n');
+    }
+  }
+);
+
+test(
+  'Unix installer preserves packages and continues when the Volta query fails',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const { env, checksum, run } = await fixture(t);
+    env.FAIL_VOLTA_LIST = '1';
+    const legacy = path.join(env.NPM_ROOT!, '@browserbridge/bbx');
+    await fs.mkdir(legacy, { recursive: true });
+    await fs.writeFile(path.join(legacy, 'package.json'), '{}');
+    await fs.writeFile(env.CHECKSUMS!, `${checksum}  bbx-linux-x64\n`);
+    const result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /could not inspect Volta packages/);
+    assert.match(result.stderr, /Skipping automatic npm removal/);
+    assert.match(result.stderr, /volta uninstall @browserbridge\/bbx/);
+    await assert.rejects(fs.access(env.NPM_CALLS!));
+    assert.equal(await fs.readFile(path.join(legacy, 'package.json'), 'utf8'), '{}');
+    assert.match(await fs.readFile(env.CALLS!, 'utf8'), /restart/);
+  }
+);
+
+test(
   'Unix installer removes an existing global npm package before standalone installation',
   { skip: process.platform === 'win32' },
   async (t) => {
@@ -515,7 +686,7 @@ test(
     const bin = path.join(directory, 'bin');
     await fs.unlink(path.join(bin, 'npm'));
     await fs.symlink(process.execPath, path.join(bin, 'node'));
-    for (const name of ['grep', 'mktemp', 'awk', 'chmod', 'rm', 'sha256sum', 'shasum']) {
+    for (const name of ['grep', 'mktemp', 'awk', 'chmod', 'rm', 'sed', 'sha256sum', 'shasum']) {
       const located = spawnSync('/bin/sh', ['-c', `command -v ${name}`], { encoding: 'utf8' });
       if (located.status === 0) await fs.symlink(located.stdout.trim(), path.join(bin, name));
     }
