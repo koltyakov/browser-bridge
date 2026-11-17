@@ -35,7 +35,7 @@ endif
 	vet-go coverage coverage-review coverage-check coverage-go coverage-go-check generate-protocol check-protocol \
 	check-release-version check check-extension-zip package-extension package-native \
 	package-native-all package-npm pack pack-dry-run release-check prepublish-check \
-	publish-native publish-release publish-npm fixture-browser fixture-interaction bench-interaction \
+	publish-native publish-release publish-npm fixture-browser fixture-interaction bench-interaction bench-comparative \
 	run status daemon install-manifest install sync-version bench-runtime bench-npm-launch test-visual-live test-inspection-live test-mcp-live test-workflows-live test-chaos-live test-arc-live test-input-live test-full-chain-live
 
 help: ## Show available tasks; the default when running make
@@ -198,6 +198,9 @@ fixture-interaction: ## Start the agent interaction fixture
 
 bench-interaction: build-native ## Run the interaction benchmark
 	"$(NODE)" tests/fixtures/agent-interaction/bench.mjs $(ARGS)
+
+bench-comparative: build-extension build-native ## Isolated paired task benchmarks; set BBX_BENCH_CHROME, optional ARGS='--runs=30 --headed'
+	"$(NODE)" --import tsx tests/fixtures/comparative-benchmark/cli.ts $(ARGS)
 
 bench-runtime: ## Benchmark daemon routing while storage is blocked; optional ARGS='-benchtime=2s'
 	$(GO) test -run '^$$' -bench BenchmarkDaemonHealthWhileStorageBlocked -benchmem $(ARGS) ./internal/bridge

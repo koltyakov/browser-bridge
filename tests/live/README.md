@@ -1,5 +1,11 @@
 # Live browser verification
 
+For independent mutation-ledger scoring, paired task seeds, external comparator
+drivers, and agent usage accounting, see
+[comparative benchmarks](../../docs/comparative-benchmarks.md). Run
+`make bench-comparative` with `BBX_BENCH_CHROME` set to a disposable Chrome executable.
+The existing interaction microbenchmark remains available as `make bench-interaction`.
+
 ## Isolated native-input and observer regressions
 
 ```sh

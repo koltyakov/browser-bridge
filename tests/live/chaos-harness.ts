@@ -44,6 +44,7 @@ export class ChaosHarness {
   constructor(
     private readonly options: {
       portable?: boolean;
+      headless?: boolean;
       extensionDirectory?: string;
       outputDirectory?: string;
     } = {}
@@ -204,7 +205,7 @@ export class ChaosHarness {
         `--disable-extensions-except=${extensionPath}`,
         ...(this.options.portable
           ? [
-              '--headless=new',
+              ...(this.options.headless === false ? [] : ['--headless=new']),
               '--no-proxy-server',
               '--enable-logging=stderr',
               ...(process.platform === 'darwin'
@@ -234,13 +235,20 @@ export class ChaosHarness {
       architecture: process.arch,
       browser: await this.cdp.command('Browser.getVersion'),
     });
-    const opened = await this.cdp.command('Target.createTarget', {
-      url: `chrome-extension://${this.extension}/ui/sidepanel.html`,
-    });
-    const attached = await this.cdp.command('Target.attachToTarget', {
-      targetId: opened.targetId,
-      flatten: true,
-    });
+    // Cold extension startup may outlast the ordinary 3s command budget. These
+    // setup mutations get one bounded attempt, never an automatic replay.
+    const opened = await this.cdp.command(
+      'Target.createTarget',
+      { url: `chrome-extension://${this.extension}/ui/sidepanel.html` },
+      undefined,
+      10000
+    );
+    const attached = await this.cdp.command(
+      'Target.attachToTarget',
+      { targetId: opened.targetId, flatten: true },
+      undefined,
+      10000
+    );
     this.ui = String(attached.sessionId);
     await eventually('extension UI context', 10000, async (remaining) => {
       const context = object(

@@ -28,4 +28,5 @@ This index keeps those paths separate.
 
 ## Maintainers
 
+- [Comparative task benchmarks](./comparative-benchmarks.md): isolated fixtures, safety scoring, paired comparisons, and agent usage accounting
 - [Publishing](./publishing.md): npm and Chrome Web Store release flow
