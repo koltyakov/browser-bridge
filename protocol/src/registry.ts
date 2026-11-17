@@ -158,7 +158,9 @@ const BRIDGE_METHOD_DESCRIPTIONS: Readonly<Record<import('./types.js').BridgeMet
     'access.wait_for_change':
       'Read-only wait for a user access-setting revision change. Pass revision from health.ping accessSettings or a policy denial and timeoutMs=0..25000, default 25000. Returns changed plus current settings and settingsRevision. Never grants access or replays an action. Use the same extensionId.',
     'protocol.describe':
-      'Describe bridge method parameters and metadata by method or registry group.',
+      'Discover RPCs by literal query and optional group, or load one exact method schema and generated signature. Search is bounded and does not execute browser actions.',
+    'protocol.capabilities':
+      'Read advisory eligibility for up to 32 calls in the selected tab, execution mode, frame and current grant. Never grants access, activates tabs, attaches a debugger or dispatches the requested calls. Dispatch checks still apply.',
     'tabs.list':
       'List tabs in the enabled window. Agent-facing discovery defaults to 30 tabs; follow pagination.nextOffset until null before concluding a requested URL is not open.',
     'tabs.create':
@@ -313,8 +315,21 @@ export const BRIDGE_METHOD_REGISTRY: Readonly<
     'protocol.describe',
     'system',
     false,
-    ['method', 'group'],
+    ['method', 'group', 'query', 'limit', 'offset'],
     'trivial'
+  ),
+  'protocol.capabilities': createRegistryEntry(
+    'protocol.capabilities',
+    'system',
+    false,
+    ['calls', 'executionMode', 'frameId'],
+    'low',
+    METHOD_POLICIES.none,
+    {
+      paramsType: 'RuntimeCapabilitiesParams',
+      required: ['calls'],
+      example: { calls: [{ method: 'input.fill' }], executionMode: 'cdp', frameId: 0 },
+    }
   ),
   'skill.get_runtime_context': createRegistryEntry(
     'skill.get_runtime_context',
@@ -1326,6 +1341,7 @@ const BATCH_SAFE_METHODS = new Set([
   'webmcp.list_tools',
   'webmcp.get_tool',
   'health.ping',
+  'protocol.capabilities',
   'access.wait_for_change',
   'daemon.metrics',
   'tabs.list',

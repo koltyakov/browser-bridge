@@ -191,6 +191,19 @@ Browser Bridge does not need an embedded JavaScript engine for this composition.
 `page.evaluate` runs page JavaScript, `browser_batch` runs independent reads, and
 `input.perform` runs a known sequence. None of these calls other MCP servers.
 
+For method-level discovery, call `browser_call` with
+`method:"protocol.describe"` and `params:{query:"fill editable",limit:5}`.
+Results contain generated RPC signatures and pagination, without adding every RPC
+to the startup tool list. Load `params:{method:"input.fill"}` for the full input
+schema. Signatures describe RPCs, not additional callable host tools. Continue
+using the exact host-discovered `browser_call` path and preserve browser/tab
+selectors. Query matching is literal and uses trusted catalog metadata only.
+
+Call `protocol.capabilities` with a bounded `calls` array to inspect eligibility
+under the selected tab, mode, frame and grant. `unknown` is not support, and
+`available` is not permission or a guarantee that the target remains actionable.
+All dispatch-time checks remain in force. See [discovery contracts](./api-reference.md#runtime-capability-discovery).
+
 Keep the selected `destinationId`, `extensionId`, and `tabId` on follow-up calls.
 Inspect structured results and individual batch failures rather than assuming
 that a fulfilled tool call proves the browser task succeeded. Hosts may wrap MCP

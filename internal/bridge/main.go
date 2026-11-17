@@ -580,6 +580,13 @@ func printCLIUsage() {
 }
 
 func printCLIDescription(params object) error {
+	if _, hasQuery := params["query"]; hasQuery {
+		result := searchMethods(params)
+		if message := result.text("error"); message != "" {
+			return errors.New(message)
+		}
+		return printJSON(result)
+	}
 	_, hasMethod := params["method"]
 	_, hasGroup := params["group"]
 	if hasMethod && hasGroup {

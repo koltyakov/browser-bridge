@@ -48,6 +48,7 @@ export class TabDebuggerCoordinator {
   declare attach: DebuggerAttach;
   declare detach: DebuggerDetach;
   declare initialize: DebuggerInitialize;
+  declare ownsAttachment: (target: DebuggerTarget) => Promise<boolean>;
   declare protocolVersion: string;
   declare burstIdleMs: number;
   declare recordReattach: (outcome: 'success' | 'failure') => void;
@@ -78,6 +79,7 @@ export class TabDebuggerCoordinator {
     protocolVersion = '1.3',
     burstIdleMs = 5_000,
     recordReattach = () => {},
+    ownsAttachment = async () => false,
   }: {
     attach: DebuggerAttach;
     detach: DebuggerDetach;
@@ -85,6 +87,9 @@ export class TabDebuggerCoordinator {
     protocolVersion?: string;
     burstIdleMs?: number;
     recordReattach?: (outcome: 'success' | 'failure') => void;
+    /** Must use Chrome's extension-owned sendCommand boundary, never the
+     * getTargets attached flag, which includes other debuggers. */
+    ownsAttachment?: (target: DebuggerTarget) => Promise<boolean>;
   }) {
     this.attach = attach;
     this.detach = detach;
@@ -92,6 +97,7 @@ export class TabDebuggerCoordinator {
     this.protocolVersion = protocolVersion;
     this.burstIdleMs = burstIdleMs;
     this.recordReattach = recordReattach;
+    this.ownsAttachment = ownsAttachment;
 
     this.pendingByTab = new Map();
 
@@ -584,7 +590,27 @@ discarded the session and reconciled its domain-specific owners. */
     target: DebuggerTarget,
     generation = this._getCancellationGeneration(target.tabId)
   ): Promise<void> {
-    const attaching = this.attach(target, this.protocolVersion);
+    const attaching = (async () => {
+      try {
+        await this.attach(target, this.protocolVersion);
+      } catch (error) {
+        if (classifyDebuggerFailure(error) !== 'debugger_conflict') throw error;
+        this._assertCancellationGeneration(target.tabId, generation);
+        let owned = false;
+        try {
+          owned = await this.ownsAttachment(target);
+        } catch {
+          /* Foreign or gone. */
+        }
+        this._assertCancellationGeneration(target.tabId, generation);
+        if (!owned) throw error;
+        // A worker restart can orphan this extension's burst-retained session.
+        // Reset only a proven own session before the first task dispatch.
+        await this.detach(target);
+        this._assertCancellationGeneration(target.tabId, generation);
+        await this.attach(target, this.protocolVersion);
+      }
+    })();
     this.attachingByTab.set(target.tabId, attaching);
     try {
       await attaching;

@@ -1275,59 +1275,14 @@
     }
   },
   {
-    "type": "WebMcpTool",
+    "type": "ProtocolDescribeParams",
     "valid": true,
     "input": {
-      "toolRef": "wire-✓",
-      "name": "wire-✓",
-      "title": "wire-✓",
-      "description": "wire-✓",
-      "origin": "wire-✓",
-      "annotations": {
-        "future_extension": false
-      },
-      "inputSchema": {
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "WebMcpParams",
-    "valid": true,
-    "input": {
-      "toolRef": "wire-✓",
-      "arguments": {
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
+      "method": "session.start",
+      "group": "wire-✓",
+      "query": "wire-✓",
       "limit": 1.25,
       "offset": 1.25,
-      "query": "wire-✓",
-      "includeDebugging": false,
-      "maxBytes": 1.25,
-      "timeoutMs": 1.25,
-      "approvalTimeoutMs": 1.25,
       "future_extension": {
         "arbitrary": [
           null,
@@ -1339,11 +1294,2482 @@
     }
   },
   {
-    "type": "MutationReadyMessage",
+    "type": "ElementTarget",
     "valid": true,
     "input": {
-      "type": "host.mutation_ready",
-      "requestId": "wire-✓",
+      "elementRef": "wire-✓",
+      "target": {
+        "elementRef": "wire-✓",
+        "selector": "wire-✓",
+        "role": "wire-✓",
+        "name": "wire-✓",
+        "text": "wire-✓",
+        "label": "wire-✓",
+        "placeholder": "wire-✓",
+        "testId": "wire-✓",
+        "exact": false,
+        "nth": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "InputTarget",
+    "valid": true,
+    "input": {
+      "elementRef": "wire-✓",
+      "selector": "wire-✓",
+      "role": "wire-✓",
+      "name": "wire-✓",
+      "text": "wire-✓",
+      "label": "wire-✓",
+      "placeholder": "wire-✓",
+      "testId": "wire-✓",
+      "exact": false,
+      "nth": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "RuntimeCapabilityCall",
+    "valid": true,
+    "input": {
+      "method": "session.start",
+      "params": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "RuntimeCapabilitiesParams",
+    "valid": true,
+    "input": {
+      "calls": [
+        {
+          "method": "session.start",
+          "params": {
+            "future_extension": {
+              "arbitrary": [
+                null,
+                false,
+                0,
+                "JSON"
+              ]
+            }
+          },
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "executionMode": "dom",
+      "frameId": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "InputExecutionMode",
+    "valid": true,
+    "input": "dom"
+  },
+  {
+    "type": "RuntimeCapability",
+    "valid": true,
+    "input": {
+      "method": "session.start",
+      "executionMode": "dom",
+      "status": "available",
+      "reason": "wire-✓",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "RuntimeCapabilitiesResult",
+    "valid": true,
+    "input": {
+      "advisory": true,
+      "checkedAt": 1.25,
+      "tabId": 1.25,
+      "frameId": 1.25,
+      "active": false,
+      "grant": {
+        "status": "granted",
+        "reason": "wire-✓",
+        "settingsRevision": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "session.start",
+          "executionMode": "dom",
+          "status": "available",
+          "reason": "wire-✓",
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "BridgeMethodParams",
+    "valid": true,
+    "input": {
+      "access.request": {
+        "intent": "inspect",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "access.wait_for_change": {
+        "revision": "wire-✓",
+        "timeoutMs": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "protocol.describe": {
+        "method": "session.start",
+        "group": "wire-✓",
+        "query": "wire-✓",
+        "limit": 1.25,
+        "offset": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "protocol.capabilities": {
+        "calls": [
+          {
+            "method": "session.start",
+            "params": {
+              "future_extension": {
+                "arbitrary": [
+                  null,
+                  false,
+                  0,
+                  "JSON"
+                ]
+              }
+            },
+            "future_extension": {
+              "arbitrary": [
+                null,
+                false,
+                0,
+                "JSON"
+              ]
+            }
+          }
+        ],
+        "executionMode": "dom",
+        "frameId": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "skill.get_runtime_context": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "setup.get_status": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "setup.install": {
+        "action": "install",
+        "kind": "mcp",
+        "target": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "log.tail": {
+        "limit": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "health.ping": {
+        "diagnostics": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "daemon.metrics": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "tabs.list": {
+        "limit": 1.25,
+        "offset": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "tabs.create": {
+        "url": "wire-✓",
+        "active": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "tabs.close": {
+        "tabId": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "tabs.activate": {
+        "tabId": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "page.get_state": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "page.evaluate": {
+        "expression": "wire-✓",
+        "awaitPromise": false,
+        "timeoutMs": 1.25,
+        "returnByValue": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "page.get_console": {
+        "level": "wire-✓",
+        "clear": false,
+        "limit": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "page.handle_dialog": {
+        "action": "inspect",
+        "promptText": "wire-✓",
+        "expectedDialogId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "page.wait_for_load_state": {
+        "waitForLoad": false,
+        "timeoutMs": 1.25,
+        "url": "wire-✓",
+        "urlMatch": "exact",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "page.get_storage": {
+        "type": "local",
+        "keys": [
+          "wire-✓"
+        ],
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "sensitive.read": {
+        "source": "local_storage",
+        "key": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "page.get_text": {
+        "textBudget": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "page.extract_content": {
+        "format": "text",
+        "selector": "wire-✓",
+        "includeMetadata": false,
+        "consistency": "best_effort",
+        "textBudget": 1.25,
+        "settleTimeoutMs": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "page.get_network": {
+        "clear": false,
+        "limit": 1.25,
+        "urlPattern": "wire-✓",
+        "source": "fetch-xhr",
+        "capture": "read",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "network.export_har": {
+        "limit": 1.25,
+        "urlPattern": "wire-✓",
+        "delivery": "auto",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "network.intercept.add": {
+        "urlPattern": "wire-✓",
+        "action": "fulfill",
+        "statusCode": 1.25,
+        "body": "wire-✓",
+        "headers": {
+          "future_extension": "wire-✓"
+        },
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "network.intercept.remove": {
+        "ruleId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "network.intercept.list": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "network.intercept.clear": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "navigation.navigate": {
+        "url": "wire-✓",
+        "waitForLoad": false,
+        "timeoutMs": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "navigation.reload": {
+        "url": "wire-✓",
+        "waitForLoad": false,
+        "timeoutMs": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "navigation.go_back": {
+        "url": "wire-✓",
+        "waitForLoad": false,
+        "timeoutMs": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "navigation.go_forward": {
+        "url": "wire-✓",
+        "waitForLoad": false,
+        "timeoutMs": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "dom.query": {
+        "maxNodes": 1.25,
+        "maxDepth": 1.25,
+        "textBudget": 1.25,
+        "includeBbox": false,
+        "attributeAllowlist": [
+          "wire-✓"
+        ],
+        "selector": "wire-✓",
+        "withinRef": "wire-✓",
+        "budget": {
+          "maxNodes": 1.25,
+          "maxDepth": 1.25,
+          "textBudget": 1.25,
+          "includeBbox": false,
+          "attributeAllowlist": [
+            "wire-✓"
+          ],
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "dom.baseline.create": {
+        "selector": "wire-✓",
+        "maxNodes": 1.25,
+        "maxDepth": 1.25,
+        "textBudget": 1.25,
+        "attributeAllowlist": [
+          "wire-✓"
+        ],
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "dom.baseline.compare": {
+        "baselineId": "wire-✓",
+        "maxChanges": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "dom.baseline.describe": {
+        "baselineId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "dom.baseline.release": {
+        "baselineId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "dom.describe": {
+        "elementRef": "wire-✓",
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "dom.get_text": {
+        "elementRef": "wire-✓",
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "textBudget": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "dom.get_attributes": {
+        "elementRef": "wire-✓",
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "attributes": [
+          "wire-✓"
+        ],
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "dom.wait_for": {
+        "selector": "wire-✓",
+        "text": "wire-✓",
+        "state": "attached",
+        "timeoutMs": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "dom.find_by_text": {
+        "text": "wire-✓",
+        "exact": false,
+        "selector": "wire-✓",
+        "maxResults": 1.25,
+        "includeHidden": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "dom.find_by_role": {
+        "role": "wire-✓",
+        "name": "wire-✓",
+        "exact": false,
+        "selector": "wire-✓",
+        "maxResults": 1.25,
+        "includeHidden": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "dom.get_html": {
+        "elementRef": "wire-✓",
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "outer": false,
+        "maxLength": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "dom.get_accessibility_tree": {
+        "selector": "wire-✓",
+        "maxDepth": 1.25,
+        "maxNodes": 1.25,
+        "compact": false,
+        "interactiveOnly": false,
+        "source": "cdp",
+        "format": "tree",
+        "scope": "auto",
+        "find": "wire-✓",
+        "context": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "layout.get_box_model": {
+        "elementRef": "wire-✓",
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "layout.hit_test": {
+        "x": 1.25,
+        "y": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "styles.get_computed": {
+        "elementRef": "wire-✓",
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "properties": [
+          "wire-✓"
+        ],
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "styles.get_matched_rules": {
+        "elementRef": "wire-✓",
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "properties": [
+          "wire-✓"
+        ],
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "viewport.scroll": {
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "top": 1.25,
+        "left": 1.25,
+        "behavior": "auto",
+        "relative": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "viewport.resize": {
+        "width": 1.25,
+        "height": 1.25,
+        "deviceScaleFactor": 1.25,
+        "reset": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "input.click": {
+        "timeoutMs": 1.25,
+        "observe": false,
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "button": "left",
+        "clickCount": 1.25,
+        "text": "wire-✓",
+        "value": "wire-✓",
+        "mode": "auto",
+        "clear": false,
+        "submit": false,
+        "key": "wire-✓",
+        "modifiers": [
+          "wire-✓"
+        ],
+        "holdMs": 1.25,
+        "executionMode": "dom",
+        "recoverStale": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "input.focus": {
+        "timeoutMs": 1.25,
+        "observe": false,
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "button": "left",
+        "clickCount": 1.25,
+        "text": "wire-✓",
+        "value": "wire-✓",
+        "mode": "auto",
+        "clear": false,
+        "submit": false,
+        "key": "wire-✓",
+        "modifiers": [
+          "wire-✓"
+        ],
+        "holdMs": 1.25,
+        "executionMode": "dom",
+        "recoverStale": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "input.type": {
+        "timeoutMs": 1.25,
+        "observe": false,
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "button": "left",
+        "clickCount": 1.25,
+        "text": "wire-✓",
+        "value": "wire-✓",
+        "mode": "auto",
+        "clear": false,
+        "submit": false,
+        "key": "wire-✓",
+        "modifiers": [
+          "wire-✓"
+        ],
+        "holdMs": 1.25,
+        "executionMode": "dom",
+        "recoverStale": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "input.fill": {
+        "timeoutMs": 1.25,
+        "observe": false,
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "button": "left",
+        "clickCount": 1.25,
+        "text": "wire-✓",
+        "value": "wire-✓",
+        "mode": "auto",
+        "clear": false,
+        "submit": false,
+        "key": "wire-✓",
+        "modifiers": [
+          "wire-✓"
+        ],
+        "holdMs": 1.25,
+        "executionMode": "dom",
+        "recoverStale": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "input.press_key": {
+        "timeoutMs": 1.25,
+        "observe": false,
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "button": "left",
+        "clickCount": 1.25,
+        "text": "wire-✓",
+        "value": "wire-✓",
+        "mode": "auto",
+        "clear": false,
+        "submit": false,
+        "key": "wire-✓",
+        "modifiers": [
+          "wire-✓"
+        ],
+        "holdMs": 1.25,
+        "executionMode": "dom",
+        "recoverStale": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "input.set_checked": {
+        "timeoutMs": 1.25,
+        "observe": false,
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "checked": false,
+        "executionMode": "dom",
+        "recoverStale": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "input.select_option": {
+        "timeoutMs": 1.25,
+        "observe": false,
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "values": [
+          "wire-✓"
+        ],
+        "labels": [
+          "wire-✓"
+        ],
+        "indexes": [
+          1.25
+        ],
+        "executionMode": "dom",
+        "recoverStale": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "input.hover": {
+        "timeoutMs": 1.25,
+        "observe": false,
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "duration": 1.25,
+        "modifiers": [
+          "wire-✓"
+        ],
+        "executionMode": "dom",
+        "recoverStale": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "input.drag": {
+        "timeoutMs": 1.25,
+        "observe": false,
+        "source": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "destination": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "offsetX": 1.25,
+        "offsetY": 1.25,
+        "executionMode": "dom",
+        "recoverStale": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "input.touch": {
+        "points": [
+          {
+            "target": {
+              "elementRef": "wire-✓",
+              "selector": "wire-✓",
+              "role": "wire-✓",
+              "name": "wire-✓",
+              "text": "wire-✓",
+              "label": "wire-✓",
+              "placeholder": "wire-✓",
+              "testId": "wire-✓",
+              "exact": false,
+              "nth": 1.25,
+              "future_extension": {
+                "arbitrary": [
+                  null,
+                  false,
+                  0,
+                  "JSON"
+                ]
+              }
+            },
+            "x": 1.25,
+            "y": 1.25,
+            "to": {
+              "target": {
+                "elementRef": "wire-✓",
+                "selector": "wire-✓",
+                "role": "wire-✓",
+                "name": "wire-✓",
+                "text": "wire-✓",
+                "label": "wire-✓",
+                "placeholder": "wire-✓",
+                "testId": "wire-✓",
+                "exact": false,
+                "nth": 1.25,
+                "future_extension": {
+                  "arbitrary": [
+                    null,
+                    false,
+                    0,
+                    "JSON"
+                  ]
+                }
+              },
+              "x": 1.25,
+              "y": 1.25,
+              "future_extension": {
+                "arbitrary": [
+                  null,
+                  false,
+                  0,
+                  "JSON"
+                ]
+              }
+            },
+            "future_extension": {
+              "arbitrary": [
+                null,
+                false,
+                0,
+                "JSON"
+              ]
+            }
+          }
+        ],
+        "holdMs": 1.25,
+        "moveSteps": 1.25,
+        "executionMode": "dom",
+        "recoverStale": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "input.perform": {
+        "steps": [
+          {
+            "method": "wire-✓",
+            "params": {
+              "future_extension": {
+                "arbitrary": [
+                  null,
+                  false,
+                  0,
+                  "JSON"
+                ]
+              }
+            },
+            "delayMs": 1.25,
+            "atMs": 1.25,
+            "future_extension": {
+              "arbitrary": [
+                null,
+                false,
+                0,
+                "JSON"
+              ]
+            }
+          }
+        ],
+        "executionMode": "dom",
+        "timeoutMs": 1.25,
+        "continueOnError": false,
+        "returnLastResult": false,
+        "outcomes": [
+          {
+            "kind": "dom",
+            "selector": "wire-✓",
+            "text": "wire-✓",
+            "state": "attached",
+            "timeoutMs": 1.25,
+            "future_extension": {
+              "arbitrary": [
+                null,
+                false,
+                0,
+                "JSON"
+              ]
+            }
+          }
+        ],
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "input.scroll_into_view": {
+        "timeoutMs": 1.25,
+        "observe": false,
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "button": "left",
+        "clickCount": 1.25,
+        "text": "wire-✓",
+        "value": "wire-✓",
+        "mode": "auto",
+        "clear": false,
+        "submit": false,
+        "key": "wire-✓",
+        "modifiers": [
+          "wire-✓"
+        ],
+        "holdMs": 1.25,
+        "executionMode": "dom",
+        "recoverStale": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "screenshot.capture_region": {
+        "format": "png",
+        "quality": 1.25,
+        "delivery": "auto",
+        "scale": 1.25,
+        "x": 1.25,
+        "y": 1.25,
+        "width": 1.25,
+        "height": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "screenshot.capture_element": {
+        "format": "png",
+        "quality": 1.25,
+        "delivery": "auto",
+        "scale": 1.25,
+        "elementRef": "wire-✓",
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "screenshot.capture_full_page": {
+        "format": "png",
+        "quality": 1.25,
+        "delivery": "auto",
+        "scale": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "screenshot.baseline.create": {
+        "selector": "wire-✓",
+        "rect": {
+          "x": 1.25,
+          "y": 1.25,
+          "width": 1.25,
+          "height": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "screenshot.baseline.compare": {
+        "baselineId": "wire-✓",
+        "advance": false,
+        "includeBefore": false,
+        "fallback": "summary",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "screenshot.baseline.release": {
+        "baselineId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "artifact.read": {
+        "artifactId": "wire-✓",
+        "offset": 1.25,
+        "maxBytes": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "artifact.delete": {
+        "artifactId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "patch.apply_styles": {
+        "patchId": "wire-✓",
+        "target": {
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "operation": "wire-✓",
+        "name": "wire-✓",
+        "declarations": {
+          "future_extension": "wire-✓"
+        },
+        "value": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        },
+        "important": false,
+        "verify": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "patch.apply_dom": {
+        "patchId": "wire-✓",
+        "target": {
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "operation": "wire-✓",
+        "name": "wire-✓",
+        "declarations": {
+          "future_extension": "wire-✓"
+        },
+        "value": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        },
+        "important": false,
+        "verify": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "patch.list": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "patch.rollback": {
+        "patchId": "wire-✓",
+        "target": {
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "operation": "wire-✓",
+        "name": "wire-✓",
+        "declarations": {
+          "future_extension": "wire-✓"
+        },
+        "value": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        },
+        "important": false,
+        "verify": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "patch.commit_session_baseline": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "cdp.get_document": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "cdp.get_dom_snapshot": {
+        "computedStyles": [
+          "wire-✓"
+        ],
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "cdp.get_box_model": {
+        "nodeId": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "cdp.get_computed_styles_for_node": {
+        "nodeId": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "cdp.dispatch_key_event": {
+        "key": "wire-✓",
+        "code": "wire-✓",
+        "modifiers": [
+          "wire-✓"
+        ],
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "performance.get_metrics": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "webmcp.list_tools": {
+        "toolRef": "wire-✓",
+        "arguments": {
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "limit": 1.25,
+        "offset": 1.25,
+        "query": "wire-✓",
+        "includeDebugging": false,
+        "maxBytes": 1.25,
+        "timeoutMs": 1.25,
+        "approvalTimeoutMs": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "webmcp.get_tool": {
+        "toolRef": "wire-✓",
+        "arguments": {
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "limit": 1.25,
+        "offset": 1.25,
+        "query": "wire-✓",
+        "includeDebugging": false,
+        "maxBytes": 1.25,
+        "timeoutMs": 1.25,
+        "approvalTimeoutMs": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "webmcp.execute_tool": {
+        "toolRef": "wire-✓",
+        "arguments": {
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "limit": 1.25,
+        "offset": 1.25,
+        "query": "wire-✓",
+        "includeDebugging": false,
+        "maxBytes": 1.25,
+        "timeoutMs": 1.25,
+        "approvalTimeoutMs": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "emulation.apply": {
+        "device": "wire-✓",
+        "network": "wire-✓",
+        "cpuRate": 1.25,
+        "locale": "wire-✓",
+        "timezoneId": "wire-✓",
+        "geolocation": {
+          "latitude": 1.25,
+          "longitude": 1.25,
+          "accuracy": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "emulation.status": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "emulation.reset": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "files.stage": {
+        "name": "wire-✓",
+        "mimeType": "wire-✓",
+        "size": 1.25,
+        "transferId": "wire-✓",
+        "offset": 1.25,
+        "data": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "files.release": {
+        "transferId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "input.set_files": {
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "files": [
+          "wire-✓"
+        ],
+        "paths": [
+          "wire-✓"
+        ],
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "input.paste_image": {
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "transferId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "download.resource": {
+        "url": "wire-✓",
+        "maxBytes": 1.25,
+        "timeoutMs": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "download.start": {
+        "url": "wire-✓",
+        "filename": "wire-✓",
+        "saveAs": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "download.status": {
+        "downloadId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "download.pause": {
+        "downloadId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "download.resume": {
+        "downloadId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "download.cancel": {
+        "downloadId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "download.release": {
+        "downloadId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "session.start": {
+        "activity": false,
+        "network": false,
+        "bodies": false,
+        "messages": false,
+        "visual": false,
+        "durationMs": 1.25,
+        "followTabs": false,
+        "durable": false,
+        "replay": false,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "session.journal_read": {
+        "journalId": "wire-✓",
+        "offset": 1.25,
+        "maxBytes": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "session.journal_delete": {
+        "journalId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "session.status": {
+        "sessionId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "session.read": {
+        "sessionId": "wire-✓",
+        "cursor": 1.25,
+        "limit": 1.25,
+        "waitMs": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "session.stop": {
+        "sessionId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "session.export": {
+        "sessionId": "wire-✓",
+        "format": "json",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "session.release": {
+        "sessionId": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "SetupInstallParams",
+    "valid": true,
+    "input": {
+      "action": "install",
+      "kind": "mcp",
+      "target": "wire-✓",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "LogTailParams",
+    "valid": true,
+    "input": {
+      "limit": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "HealthPingParams",
+    "valid": true,
+    "input": {
+      "diagnostics": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "TabCreateParams",
+    "valid": true,
+    "input": {
+      "url": "wire-✓",
+      "active": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "TabCloseParams",
+    "valid": true,
+    "input": {
       "tabId": 1.25,
       "future_extension": {
         "arbitrary": [
@@ -1356,11 +3782,13 @@
     }
   },
   {
-    "type": "MutationGrantedMessage",
+    "type": "EvaluateParams",
     "valid": true,
     "input": {
-      "type": "host.mutation_granted",
-      "requestId": "wire-✓",
+      "expression": "wire-✓",
+      "awaitPromise": false,
+      "timeoutMs": 1.25,
+      "returnByValue": false,
       "future_extension": {
         "arbitrary": [
           null,
@@ -1372,14 +3800,68 @@
     }
   },
   {
-    "type": "BudgetOptions",
+    "type": "ConsoleParams",
     "valid": true,
     "input": {
-      "maxNodes": 1.25,
-      "maxDepth": 1.25,
-      "textBudget": 1.25,
-      "includeBbox": false,
-      "attributeAllowlist": [
+      "level": "wire-✓",
+      "clear": false,
+      "limit": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "HandleDialogParams",
+    "valid": true,
+    "input": {
+      "action": "inspect",
+      "promptText": "wire-✓",
+      "expectedDialogId": "wire-✓",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "DialogAction",
+    "valid": true,
+    "input": "inspect"
+  },
+  {
+    "type": "WaitForLoadStateParams",
+    "valid": true,
+    "input": {
+      "waitForLoad": false,
+      "timeoutMs": 1.25,
+      "url": "wire-✓",
+      "urlMatch": "exact",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "StorageParams",
+    "valid": true,
+    "input": {
+      "type": "local",
+      "keys": [
         "wire-✓"
       ],
       "future_extension": {
@@ -1393,16 +3875,155 @@
     }
   },
   {
-    "type": "Budget",
+    "type": "SensitiveReadParams",
     "valid": true,
     "input": {
-      "maxNodes": 1.25,
-      "maxDepth": 1.25,
+      "source": "local_storage",
+      "key": "wire-✓",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "SensitiveStorageSource",
+    "valid": true,
+    "input": "local_storage"
+  },
+  {
+    "type": "PageTextParams",
+    "valid": true,
+    "input": {
       "textBudget": 1.25,
-      "includeBbox": false,
-      "attributeAllowlist": [
-        "wire-✓"
-      ],
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "ExtractContentParams",
+    "valid": true,
+    "input": {
+      "format": "text",
+      "selector": "wire-✓",
+      "includeMetadata": false,
+      "consistency": "best_effort",
+      "textBudget": 1.25,
+      "settleTimeoutMs": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "ExtractContentFormat",
+    "valid": true,
+    "input": "text"
+  },
+  {
+    "type": "ExtractContentConsistency",
+    "valid": true,
+    "input": "best_effort"
+  },
+  {
+    "type": "NetworkParams",
+    "valid": true,
+    "input": {
+      "clear": false,
+      "limit": 1.25,
+      "urlPattern": "wire-✓",
+      "source": "fetch-xhr",
+      "capture": "read",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "NetworkSource",
+    "valid": true,
+    "input": "fetch-xhr"
+  },
+  {
+    "type": "NetworkCaptureAction",
+    "valid": true,
+    "input": "read"
+  },
+  {
+    "type": "HarExportParams",
+    "valid": true,
+    "input": {
+      "limit": 1.25,
+      "urlPattern": "wire-✓",
+      "delivery": "auto",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "HarDelivery",
+    "valid": true,
+    "input": "auto"
+  },
+  {
+    "type": "NetworkInterceptAddParams",
+    "valid": true,
+    "input": {
+      "urlPattern": "wire-✓",
+      "action": "fulfill",
+      "statusCode": 1.25,
+      "body": "wire-✓",
+      "headers": {
+        "future_extension": "wire-✓"
+      },
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "NetworkInterceptAction",
+    "valid": true,
+    "input": "fulfill"
+  },
+  {
+    "type": "NavigationActionParams",
+    "valid": true,
+    "input": {
+      "url": "wire-✓",
+      "waitForLoad": false,
+      "timeoutMs": 1.25,
       "future_extension": {
         "arbitrary": [
           null,
@@ -1454,46 +4075,13 @@
     }
   },
   {
-    "type": "NormalizedDomQuery",
+    "type": "BudgetOptions",
     "valid": true,
     "input": {
-      "selector": "wire-✓",
-      "withinRef": "wire-✓",
-      "budget": {
-        "maxNodes": 1.25,
-        "maxDepth": 1.25,
-        "textBudget": 1.25,
-        "includeBbox": false,
-        "attributeAllowlist": [
-          "wire-✓"
-        ],
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "DomBaselineCreateParams",
-    "valid": true,
-    "input": {
-      "selector": "wire-✓",
       "maxNodes": 1.25,
       "maxDepth": 1.25,
       "textBudget": 1.25,
+      "includeBbox": false,
       "attributeAllowlist": [
         "wire-✓"
       ],
@@ -1508,7 +4096,7 @@
     }
   },
   {
-    "type": "NormalizedDomBaselineCreateParams",
+    "type": "DomBaselineCreateParams",
     "valid": true,
     "input": {
       "selector": "wire-✓",
@@ -1545,11 +4133,10 @@
     }
   },
   {
-    "type": "NormalizedDomBaselineCompareParams",
+    "type": "DomBaselineHandleParams",
     "valid": true,
     "input": {
       "baselineId": "wire-✓",
-      "maxChanges": 1.25,
       "future_extension": {
         "arbitrary": [
           null,
@@ -1561,10 +4148,1179 @@
     }
   },
   {
-    "type": "DomBaselineHandleParams",
+    "type": "WaitForParams",
+    "valid": true,
+    "input": {
+      "selector": "wire-✓",
+      "text": "wire-✓",
+      "state": "attached",
+      "timeoutMs": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "FindByTextParams",
+    "valid": true,
+    "input": {
+      "text": "wire-✓",
+      "exact": false,
+      "selector": "wire-✓",
+      "maxResults": 1.25,
+      "includeHidden": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "FindByRoleParams",
+    "valid": true,
+    "input": {
+      "role": "wire-✓",
+      "name": "wire-✓",
+      "exact": false,
+      "selector": "wire-✓",
+      "maxResults": 1.25,
+      "includeHidden": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "GetHtmlParams",
+    "valid": true,
+    "input": {
+      "elementRef": "wire-✓",
+      "target": {
+        "elementRef": "wire-✓",
+        "selector": "wire-✓",
+        "role": "wire-✓",
+        "name": "wire-✓",
+        "text": "wire-✓",
+        "label": "wire-✓",
+        "placeholder": "wire-✓",
+        "testId": "wire-✓",
+        "exact": false,
+        "nth": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "outer": false,
+      "maxLength": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "AccessibilityTreeParams",
+    "valid": true,
+    "input": {
+      "selector": "wire-✓",
+      "maxDepth": 1.25,
+      "maxNodes": 1.25,
+      "compact": false,
+      "interactiveOnly": false,
+      "source": "cdp",
+      "format": "tree",
+      "scope": "auto",
+      "find": "wire-✓",
+      "context": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "StyleQueryParams",
+    "valid": true,
+    "input": {
+      "elementRef": "wire-✓",
+      "target": {
+        "elementRef": "wire-✓",
+        "selector": "wire-✓",
+        "role": "wire-✓",
+        "name": "wire-✓",
+        "text": "wire-✓",
+        "label": "wire-✓",
+        "placeholder": "wire-✓",
+        "testId": "wire-✓",
+        "exact": false,
+        "nth": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "properties": [
+        "wire-✓"
+      ],
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "ViewportActionParams",
+    "valid": true,
+    "input": {
+      "target": {
+        "elementRef": "wire-✓",
+        "selector": "wire-✓",
+        "role": "wire-✓",
+        "name": "wire-✓",
+        "text": "wire-✓",
+        "label": "wire-✓",
+        "placeholder": "wire-✓",
+        "testId": "wire-✓",
+        "exact": false,
+        "nth": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "top": 1.25,
+      "left": 1.25,
+      "behavior": "auto",
+      "relative": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "ViewportResizeParams",
+    "valid": true,
+    "input": {
+      "width": 1.25,
+      "height": 1.25,
+      "deviceScaleFactor": 1.25,
+      "reset": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "InputActionParams",
+    "valid": true,
+    "input": {
+      "timeoutMs": 1.25,
+      "observe": false,
+      "target": {
+        "elementRef": "wire-✓",
+        "selector": "wire-✓",
+        "role": "wire-✓",
+        "name": "wire-✓",
+        "text": "wire-✓",
+        "label": "wire-✓",
+        "placeholder": "wire-✓",
+        "testId": "wire-✓",
+        "exact": false,
+        "nth": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "button": "left",
+      "clickCount": 1.25,
+      "text": "wire-✓",
+      "value": "wire-✓",
+      "mode": "auto",
+      "clear": false,
+      "submit": false,
+      "key": "wire-✓",
+      "modifiers": [
+        "wire-✓"
+      ],
+      "holdMs": 1.25,
+      "executionMode": "dom",
+      "recoverStale": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "InputWaitObserveParams",
+    "valid": true,
+    "input": {
+      "timeoutMs": 1.25,
+      "observe": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "CheckedActionParams",
+    "valid": true,
+    "input": {
+      "timeoutMs": 1.25,
+      "observe": false,
+      "target": {
+        "elementRef": "wire-✓",
+        "selector": "wire-✓",
+        "role": "wire-✓",
+        "name": "wire-✓",
+        "text": "wire-✓",
+        "label": "wire-✓",
+        "placeholder": "wire-✓",
+        "testId": "wire-✓",
+        "exact": false,
+        "nth": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "checked": false,
+      "executionMode": "dom",
+      "recoverStale": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "SelectActionParams",
+    "valid": true,
+    "input": {
+      "timeoutMs": 1.25,
+      "observe": false,
+      "target": {
+        "elementRef": "wire-✓",
+        "selector": "wire-✓",
+        "role": "wire-✓",
+        "name": "wire-✓",
+        "text": "wire-✓",
+        "label": "wire-✓",
+        "placeholder": "wire-✓",
+        "testId": "wire-✓",
+        "exact": false,
+        "nth": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "values": [
+        "wire-✓"
+      ],
+      "labels": [
+        "wire-✓"
+      ],
+      "indexes": [
+        1.25
+      ],
+      "executionMode": "dom",
+      "recoverStale": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "HoverParams",
+    "valid": true,
+    "input": {
+      "timeoutMs": 1.25,
+      "observe": false,
+      "target": {
+        "elementRef": "wire-✓",
+        "selector": "wire-✓",
+        "role": "wire-✓",
+        "name": "wire-✓",
+        "text": "wire-✓",
+        "label": "wire-✓",
+        "placeholder": "wire-✓",
+        "testId": "wire-✓",
+        "exact": false,
+        "nth": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "duration": 1.25,
+      "modifiers": [
+        "wire-✓"
+      ],
+      "executionMode": "dom",
+      "recoverStale": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "DragParams",
+    "valid": true,
+    "input": {
+      "timeoutMs": 1.25,
+      "observe": false,
+      "source": {
+        "elementRef": "wire-✓",
+        "selector": "wire-✓",
+        "role": "wire-✓",
+        "name": "wire-✓",
+        "text": "wire-✓",
+        "label": "wire-✓",
+        "placeholder": "wire-✓",
+        "testId": "wire-✓",
+        "exact": false,
+        "nth": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "destination": {
+        "elementRef": "wire-✓",
+        "selector": "wire-✓",
+        "role": "wire-✓",
+        "name": "wire-✓",
+        "text": "wire-✓",
+        "label": "wire-✓",
+        "placeholder": "wire-✓",
+        "testId": "wire-✓",
+        "exact": false,
+        "nth": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "offsetX": 1.25,
+      "offsetY": 1.25,
+      "executionMode": "dom",
+      "recoverStale": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "TouchParams",
+    "valid": true,
+    "input": {
+      "points": [
+        {
+          "target": {
+            "elementRef": "wire-✓",
+            "selector": "wire-✓",
+            "role": "wire-✓",
+            "name": "wire-✓",
+            "text": "wire-✓",
+            "label": "wire-✓",
+            "placeholder": "wire-✓",
+            "testId": "wire-✓",
+            "exact": false,
+            "nth": 1.25,
+            "future_extension": {
+              "arbitrary": [
+                null,
+                false,
+                0,
+                "JSON"
+              ]
+            }
+          },
+          "x": 1.25,
+          "y": 1.25,
+          "to": {
+            "target": {
+              "elementRef": "wire-✓",
+              "selector": "wire-✓",
+              "role": "wire-✓",
+              "name": "wire-✓",
+              "text": "wire-✓",
+              "label": "wire-✓",
+              "placeholder": "wire-✓",
+              "testId": "wire-✓",
+              "exact": false,
+              "nth": 1.25,
+              "future_extension": {
+                "arbitrary": [
+                  null,
+                  false,
+                  0,
+                  "JSON"
+                ]
+              }
+            },
+            "x": 1.25,
+            "y": 1.25,
+            "future_extension": {
+              "arbitrary": [
+                null,
+                false,
+                0,
+                "JSON"
+              ]
+            }
+          },
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "holdMs": 1.25,
+      "moveSteps": 1.25,
+      "executionMode": "dom",
+      "recoverStale": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "TouchPointParams",
+    "valid": true,
+    "input": {
+      "target": {
+        "elementRef": "wire-✓",
+        "selector": "wire-✓",
+        "role": "wire-✓",
+        "name": "wire-✓",
+        "text": "wire-✓",
+        "label": "wire-✓",
+        "placeholder": "wire-✓",
+        "testId": "wire-✓",
+        "exact": false,
+        "nth": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "x": 1.25,
+      "y": 1.25,
+      "to": {
+        "target": {
+          "elementRef": "wire-✓",
+          "selector": "wire-✓",
+          "role": "wire-✓",
+          "name": "wire-✓",
+          "text": "wire-✓",
+          "label": "wire-✓",
+          "placeholder": "wire-✓",
+          "testId": "wire-✓",
+          "exact": false,
+          "nth": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
+        "x": 1.25,
+        "y": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "TouchPositionParams",
+    "valid": true,
+    "input": {
+      "target": {
+        "elementRef": "wire-✓",
+        "selector": "wire-✓",
+        "role": "wire-✓",
+        "name": "wire-✓",
+        "text": "wire-✓",
+        "label": "wire-✓",
+        "placeholder": "wire-✓",
+        "testId": "wire-✓",
+        "exact": false,
+        "nth": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "x": 1.25,
+      "y": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "PerformParams",
+    "valid": true,
+    "input": {
+      "steps": [
+        {
+          "method": "wire-✓",
+          "params": {
+            "future_extension": {
+              "arbitrary": [
+                null,
+                false,
+                0,
+                "JSON"
+              ]
+            }
+          },
+          "delayMs": 1.25,
+          "atMs": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "executionMode": "dom",
+      "timeoutMs": 1.25,
+      "continueOnError": false,
+      "returnLastResult": false,
+      "outcomes": [
+        {
+          "kind": "dom",
+          "selector": "wire-✓",
+          "text": "wire-✓",
+          "state": "attached",
+          "timeoutMs": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "PerformStepParams",
+    "valid": true,
+    "input": {
+      "method": "wire-✓",
+      "params": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "delayMs": 1.25,
+      "atMs": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "PerformOutcomeParams",
+    "valid": true,
+    "input": {
+      "kind": "dom",
+      "selector": "wire-✓",
+      "text": "wire-✓",
+      "state": "attached",
+      "timeoutMs": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "ScreenshotParams",
+    "valid": true,
+    "input": {
+      "format": "png",
+      "quality": 1.25,
+      "delivery": "auto",
+      "scale": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "ScreenshotFormat",
+    "valid": true,
+    "input": "png"
+  },
+  {
+    "type": "ScreenshotDelivery",
+    "valid": true,
+    "input": "auto"
+  },
+  {
+    "type": "VisualRect",
+    "valid": true,
+    "input": {
+      "x": 1.25,
+      "y": 1.25,
+      "width": 1.25,
+      "height": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "VisualBaselineCreateParams",
+    "valid": true,
+    "input": {
+      "selector": "wire-✓",
+      "rect": {
+        "x": 1.25,
+        "y": 1.25,
+        "width": 1.25,
+        "height": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "VisualBaselineCompareParams",
     "valid": true,
     "input": {
       "baselineId": "wire-✓",
+      "advance": false,
+      "includeBefore": false,
+      "fallback": "summary",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "VisualBaselineFallback",
+    "valid": true,
+    "input": "summary"
+  },
+  {
+    "type": "VisualBaselineReleaseParams",
+    "valid": true,
+    "input": {
+      "baselineId": "wire-✓",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "ArtifactReadParams",
+    "valid": true,
+    "input": {
+      "artifactId": "wire-✓",
+      "offset": 1.25,
+      "maxBytes": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "ArtifactDeleteParams",
+    "valid": true,
+    "input": {
+      "artifactId": "wire-✓",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "PatchOperationParams",
+    "valid": true,
+    "input": {
+      "patchId": "wire-✓",
+      "target": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "operation": "wire-✓",
+      "name": "wire-✓",
+      "declarations": {
+        "future_extension": "wire-✓"
+      },
+      "value": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      },
+      "important": false,
+      "verify": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "CdpDomSnapshotParams",
+    "valid": true,
+    "input": {
+      "computedStyles": [
+        "wire-✓"
+      ],
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "CdpNodeIdParams",
+    "valid": true,
+    "input": {
+      "nodeId": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "CdpDispatchKeyEventParams",
+    "valid": true,
+    "input": {
+      "key": "wire-✓",
+      "code": "wire-✓",
+      "modifiers": [
+        "wire-✓"
+      ],
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "WebMcpParams",
+    "valid": true,
+    "input": {
+      "toolRef": "wire-✓",
+      "arguments": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "limit": 1.25,
+      "offset": 1.25,
+      "query": "wire-✓",
+      "includeDebugging": false,
+      "maxBytes": 1.25,
+      "timeoutMs": 1.25,
+      "approvalTimeoutMs": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "WebMcpTool",
+    "valid": true,
+    "input": {
+      "toolRef": "wire-✓",
+      "name": "wire-✓",
+      "title": "wire-✓",
+      "description": "wire-✓",
+      "origin": "wire-✓",
+      "annotations": {
+        "future_extension": false
+      },
+      "inputSchema": {
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "MutationReadyMessage",
+    "valid": true,
+    "input": {
+      "type": "host.mutation_ready",
+      "requestId": "wire-✓",
+      "tabId": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "MutationGrantedMessage",
+    "valid": true,
+    "input": {
+      "type": "host.mutation_granted",
+      "requestId": "wire-✓",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "Budget",
+    "valid": true,
+    "input": {
+      "maxNodes": 1.25,
+      "maxDepth": 1.25,
+      "textBudget": 1.25,
+      "includeBbox": false,
+      "attributeAllowlist": [
+        "wire-✓"
+      ],
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "NormalizedDomQuery",
+    "valid": true,
+    "input": {
+      "selector": "wire-✓",
+      "withinRef": "wire-✓",
+      "budget": {
+        "maxNodes": 1.25,
+        "maxDepth": 1.25,
+        "textBudget": 1.25,
+        "includeBbox": false,
+        "attributeAllowlist": [
+          "wire-✓"
+        ],
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "NormalizedDomBaselineCreateParams",
+    "valid": true,
+    "input": {
+      "selector": "wire-✓",
+      "maxNodes": 1.25,
+      "maxDepth": 1.25,
+      "textBudget": 1.25,
+      "attributeAllowlist": [
+        "wire-✓"
+      ],
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "NormalizedDomBaselineCompareParams",
+    "valid": true,
+    "input": {
+      "baselineId": "wire-✓",
+      "maxChanges": 1.25,
       "future_extension": {
         "arbitrary": [
           null,
@@ -2564,68 +6320,6 @@
     }
   },
   {
-    "type": "StyleQueryParams",
-    "valid": true,
-    "input": {
-      "elementRef": "wire-✓",
-      "target": {
-        "elementRef": "wire-✓",
-        "selector": "wire-✓",
-        "role": "wire-✓",
-        "name": "wire-✓",
-        "text": "wire-✓",
-        "label": "wire-✓",
-        "placeholder": "wire-✓",
-        "testId": "wire-✓",
-        "exact": false,
-        "nth": 1.25,
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "properties": [
-        "wire-✓"
-      ],
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "InputTarget",
-    "valid": true,
-    "input": {
-      "elementRef": "wire-✓",
-      "selector": "wire-✓",
-      "role": "wire-✓",
-      "name": "wire-✓",
-      "text": "wire-✓",
-      "label": "wire-✓",
-      "placeholder": "wire-✓",
-      "testId": "wire-✓",
-      "exact": false,
-      "nth": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedStyleQuery",
     "valid": true,
     "input": {
@@ -2662,27 +6356,6 @@
         ]
       }
     }
-  },
-  {
-    "type": "InputWaitObserveParams",
-    "valid": true,
-    "input": {
-      "timeoutMs": 1.25,
-      "observe": false,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "InputExecutionMode",
-    "valid": true,
-    "input": "dom"
   },
   {
     "type": "InputResolutionMetadata",
@@ -2810,56 +6483,6 @@
     }
   },
   {
-    "type": "InputActionParams",
-    "valid": true,
-    "input": {
-      "timeoutMs": 1.25,
-      "observe": false,
-      "target": {
-        "elementRef": "wire-✓",
-        "selector": "wire-✓",
-        "role": "wire-✓",
-        "name": "wire-✓",
-        "text": "wire-✓",
-        "label": "wire-✓",
-        "placeholder": "wire-✓",
-        "testId": "wire-✓",
-        "exact": false,
-        "nth": 1.25,
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "button": "left",
-      "clickCount": 1.25,
-      "text": "wire-✓",
-      "value": "wire-✓",
-      "mode": "auto",
-      "clear": false,
-      "submit": false,
-      "key": "wire-✓",
-      "modifiers": [
-        "wire-✓"
-      ],
-      "holdMs": 1.25,
-      "executionMode": "dom",
-      "recoverStale": false,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedInputAction",
     "valid": true,
     "input": {
@@ -2895,194 +6518,6 @@
         "wire-✓"
       ],
       "holdMs": 1.25,
-      "executionMode": "dom",
-      "recoverStale": false,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "TouchPositionParams",
-    "valid": true,
-    "input": {
-      "target": {
-        "elementRef": "wire-✓",
-        "selector": "wire-✓",
-        "role": "wire-✓",
-        "name": "wire-✓",
-        "text": "wire-✓",
-        "label": "wire-✓",
-        "placeholder": "wire-✓",
-        "testId": "wire-✓",
-        "exact": false,
-        "nth": 1.25,
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "x": 1.25,
-      "y": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "TouchPointParams",
-    "valid": true,
-    "input": {
-      "target": {
-        "elementRef": "wire-✓",
-        "selector": "wire-✓",
-        "role": "wire-✓",
-        "name": "wire-✓",
-        "text": "wire-✓",
-        "label": "wire-✓",
-        "placeholder": "wire-✓",
-        "testId": "wire-✓",
-        "exact": false,
-        "nth": 1.25,
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "x": 1.25,
-      "y": 1.25,
-      "to": {
-        "target": {
-          "elementRef": "wire-✓",
-          "selector": "wire-✓",
-          "role": "wire-✓",
-          "name": "wire-✓",
-          "text": "wire-✓",
-          "label": "wire-✓",
-          "placeholder": "wire-✓",
-          "testId": "wire-✓",
-          "exact": false,
-          "nth": 1.25,
-          "future_extension": {
-            "arbitrary": [
-              null,
-              false,
-              0,
-              "JSON"
-            ]
-          }
-        },
-        "x": 1.25,
-        "y": 1.25,
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "TouchParams",
-    "valid": true,
-    "input": {
-      "points": [
-        {
-          "target": {
-            "elementRef": "wire-✓",
-            "selector": "wire-✓",
-            "role": "wire-✓",
-            "name": "wire-✓",
-            "text": "wire-✓",
-            "label": "wire-✓",
-            "placeholder": "wire-✓",
-            "testId": "wire-✓",
-            "exact": false,
-            "nth": 1.25,
-            "future_extension": {
-              "arbitrary": [
-                null,
-                false,
-                0,
-                "JSON"
-              ]
-            }
-          },
-          "x": 1.25,
-          "y": 1.25,
-          "to": {
-            "target": {
-              "elementRef": "wire-✓",
-              "selector": "wire-✓",
-              "role": "wire-✓",
-              "name": "wire-✓",
-              "text": "wire-✓",
-              "label": "wire-✓",
-              "placeholder": "wire-✓",
-              "testId": "wire-✓",
-              "exact": false,
-              "nth": 1.25,
-              "future_extension": {
-                "arbitrary": [
-                  null,
-                  false,
-                  0,
-                  "JSON"
-                ]
-              }
-            },
-            "x": 1.25,
-            "y": 1.25,
-            "future_extension": {
-              "arbitrary": [
-                null,
-                false,
-                0,
-                "JSON"
-              ]
-            }
-          },
-          "future_extension": {
-            "arbitrary": [
-              null,
-              false,
-              0,
-              "JSON"
-            ]
-          }
-        }
-      ],
-      "holdMs": 1.25,
-      "moveSteps": 1.25,
       "executionMode": "dom",
       "recoverStale": false,
       "future_extension": {
@@ -3287,148 +6722,6 @@
     "type": "PerformStepMethod",
     "valid": true,
     "input": "input.click"
-  },
-  {
-    "type": "PerformStepParams",
-    "valid": true,
-    "input": {
-      "method": "wire-✓",
-      "params": {
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "delayMs": 1.25,
-      "atMs": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "PerformParams",
-    "valid": true,
-    "input": {
-      "steps": [
-        {
-          "method": "wire-✓",
-          "params": {
-            "future_extension": {
-              "arbitrary": [
-                null,
-                false,
-                0,
-                "JSON"
-              ]
-            }
-          },
-          "delayMs": 1.25,
-          "atMs": 1.25,
-          "future_extension": {
-            "arbitrary": [
-              null,
-              false,
-              0,
-              "JSON"
-            ]
-          }
-        }
-      ],
-      "executionMode": "dom",
-      "timeoutMs": 1.25,
-      "continueOnError": false,
-      "returnLastResult": false,
-      "outcomes": [
-        {
-          "kind": "dom",
-          "selector": "wire-✓",
-          "text": "wire-✓",
-          "state": "attached",
-          "timeoutMs": 1.25,
-          "future_extension": {
-            "arbitrary": [
-              null,
-              false,
-              0,
-              "JSON"
-            ]
-          }
-        }
-      ],
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "PerformOutcomeParams",
-    "valid": true,
-    "input": {
-      "kind": "dom",
-      "selector": "wire-✓",
-      "text": "wire-✓",
-      "state": "attached",
-      "timeoutMs": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "WaitForParams",
-    "valid": true,
-    "input": {
-      "selector": "wire-✓",
-      "text": "wire-✓",
-      "state": "attached",
-      "timeoutMs": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "WaitForLoadStateParams",
-    "valid": true,
-    "input": {
-      "waitForLoad": false,
-      "timeoutMs": 1.25,
-      "url": "wire-✓",
-      "urlMatch": "exact",
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
   },
   {
     "type": "NormalizedPerformOutcome",
@@ -3744,57 +7037,6 @@
     }
   },
   {
-    "type": "CdpDispatchKeyEventParams",
-    "valid": true,
-    "input": {
-      "key": "wire-✓",
-      "code": "wire-✓",
-      "modifiers": [
-        "wire-✓"
-      ],
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "CdpNodeIdParams",
-    "valid": true,
-    "input": {
-      "nodeId": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "CdpDomSnapshotParams",
-    "valid": true,
-    "input": {
-      "computedStyles": [
-        "wire-✓"
-      ],
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedCdpDispatchKeyEventParams",
     "valid": true,
     "input": {
@@ -3846,45 +7088,6 @@
     }
   },
   {
-    "type": "CheckedActionParams",
-    "valid": true,
-    "input": {
-      "timeoutMs": 1.25,
-      "observe": false,
-      "target": {
-        "elementRef": "wire-✓",
-        "selector": "wire-✓",
-        "role": "wire-✓",
-        "name": "wire-✓",
-        "text": "wire-✓",
-        "label": "wire-✓",
-        "placeholder": "wire-✓",
-        "testId": "wire-✓",
-        "exact": false,
-        "nth": 1.25,
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "checked": false,
-      "executionMode": "dom",
-      "recoverStale": false,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedCheckedAction",
     "valid": true,
     "input": {
@@ -3909,53 +7112,6 @@
         }
       },
       "checked": false,
-      "executionMode": "dom",
-      "recoverStale": false,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "SelectActionParams",
-    "valid": true,
-    "input": {
-      "timeoutMs": 1.25,
-      "observe": false,
-      "target": {
-        "elementRef": "wire-✓",
-        "selector": "wire-✓",
-        "role": "wire-✓",
-        "name": "wire-✓",
-        "text": "wire-✓",
-        "label": "wire-✓",
-        "placeholder": "wire-✓",
-        "testId": "wire-✓",
-        "exact": false,
-        "nth": 1.25,
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "values": [
-        "wire-✓"
-      ],
-      "labels": [
-        "wire-✓"
-      ],
-      "indexes": [
-        1.25
-      ],
       "executionMode": "dom",
       "recoverStale": false,
       "future_extension": {
@@ -4014,44 +7170,6 @@
     }
   },
   {
-    "type": "ViewportActionParams",
-    "valid": true,
-    "input": {
-      "target": {
-        "elementRef": "wire-✓",
-        "selector": "wire-✓",
-        "role": "wire-✓",
-        "name": "wire-✓",
-        "text": "wire-✓",
-        "label": "wire-✓",
-        "placeholder": "wire-✓",
-        "testId": "wire-✓",
-        "exact": false,
-        "nth": 1.25,
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "top": 1.25,
-      "left": 1.25,
-      "behavior": "auto",
-      "relative": false,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedViewportAction",
     "valid": true,
     "input": {
@@ -4090,69 +7208,12 @@
     }
   },
   {
-    "type": "NavigationActionParams",
-    "valid": true,
-    "input": {
-      "url": "wire-✓",
-      "waitForLoad": false,
-      "timeoutMs": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedNavigationAction",
     "valid": true,
     "input": {
       "url": "wire-✓",
       "waitForLoad": false,
       "timeoutMs": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "PatchOperationParams",
-    "valid": true,
-    "input": {
-      "patchId": "wire-✓",
-      "target": {
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "operation": "wire-✓",
-      "name": "wire-✓",
-      "declarations": {
-        "future_extension": "wire-✓"
-      },
-      "value": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      },
-      "important": false,
-      "verify": false,
       "future_extension": {
         "arbitrary": [
           null,
@@ -4204,23 +7265,6 @@
     }
   },
   {
-    "type": "SetupInstallParams",
-    "valid": true,
-    "input": {
-      "action": "install",
-      "kind": "mcp",
-      "target": "wire-✓",
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "SetupInstallResult",
     "valid": true,
     "input": {
@@ -4241,24 +7285,6 @@
     }
   },
   {
-    "type": "EvaluateParams",
-    "valid": true,
-    "input": {
-      "expression": "wire-✓",
-      "awaitPromise": false,
-      "timeoutMs": 1.25,
-      "returnByValue": false,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedEvaluateParams",
     "valid": true,
     "input": {
@@ -4266,45 +7292,6 @@
       "awaitPromise": false,
       "timeoutMs": 1.25,
       "returnByValue": true,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "ConsoleParams",
-    "valid": true,
-    "input": {
-      "level": "wire-✓",
-      "clear": false,
-      "limit": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "DialogAction",
-    "valid": true,
-    "input": "inspect"
-  },
-  {
-    "type": "HandleDialogParams",
-    "valid": true,
-    "input": {
-      "action": "inspect",
-      "promptText": "wire-✓",
-      "expectedDialogId": "wire-✓",
       "future_extension": {
         "arbitrary": [
           null,
@@ -4350,49 +7337,10 @@
     }
   },
   {
-    "type": "FindByTextParams",
-    "valid": true,
-    "input": {
-      "text": "wire-✓",
-      "exact": false,
-      "selector": "wire-✓",
-      "maxResults": 1.25,
-      "includeHidden": false,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedFindByTextParams",
     "valid": true,
     "input": {
       "text": "wire-✓",
-      "exact": false,
-      "selector": "wire-✓",
-      "maxResults": 1.25,
-      "includeHidden": false,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "FindByRoleParams",
-    "valid": true,
-    "input": {
-      "role": "wire-✓",
-      "name": "wire-✓",
       "exact": false,
       "selector": "wire-✓",
       "maxResults": 1.25,
@@ -4417,43 +7365,6 @@
       "selector": "wire-✓",
       "maxResults": 1.25,
       "includeHidden": false,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "GetHtmlParams",
-    "valid": true,
-    "input": {
-      "elementRef": "wire-✓",
-      "target": {
-        "elementRef": "wire-✓",
-        "selector": "wire-✓",
-        "role": "wire-✓",
-        "name": "wire-✓",
-        "text": "wire-✓",
-        "label": "wire-✓",
-        "placeholder": "wire-✓",
-        "testId": "wire-✓",
-        "exact": false,
-        "nth": 1.25,
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "outer": false,
-      "maxLength": 1.25,
       "future_extension": {
         "arbitrary": [
           null,
@@ -4502,48 +7413,6 @@
     }
   },
   {
-    "type": "HoverParams",
-    "valid": true,
-    "input": {
-      "timeoutMs": 1.25,
-      "observe": false,
-      "target": {
-        "elementRef": "wire-✓",
-        "selector": "wire-✓",
-        "role": "wire-✓",
-        "name": "wire-✓",
-        "text": "wire-✓",
-        "label": "wire-✓",
-        "placeholder": "wire-✓",
-        "testId": "wire-✓",
-        "exact": false,
-        "nth": 1.25,
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "duration": 1.25,
-      "modifiers": [
-        "wire-✓"
-      ],
-      "executionMode": "dom",
-      "recoverStale": false,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedHoverParams",
     "valid": true,
     "input": {
@@ -4571,66 +7440,6 @@
       "modifiers": [
         "wire-✓"
       ],
-      "executionMode": "dom",
-      "recoverStale": false,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "DragParams",
-    "valid": true,
-    "input": {
-      "timeoutMs": 1.25,
-      "observe": false,
-      "source": {
-        "elementRef": "wire-✓",
-        "selector": "wire-✓",
-        "role": "wire-✓",
-        "name": "wire-✓",
-        "text": "wire-✓",
-        "label": "wire-✓",
-        "placeholder": "wire-✓",
-        "testId": "wire-✓",
-        "exact": false,
-        "nth": 1.25,
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "destination": {
-        "elementRef": "wire-✓",
-        "selector": "wire-✓",
-        "role": "wire-✓",
-        "name": "wire-✓",
-        "text": "wire-✓",
-        "label": "wire-✓",
-        "placeholder": "wire-✓",
-        "testId": "wire-✓",
-        "exact": false,
-        "nth": 1.25,
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "offsetX": 1.25,
-      "offsetY": 1.25,
       "executionMode": "dom",
       "recoverStale": false,
       "future_extension": {
@@ -4702,24 +7511,6 @@
     }
   },
   {
-    "type": "StorageParams",
-    "valid": true,
-    "input": {
-      "type": "local",
-      "keys": [
-        "wire-✓"
-      ],
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedStorageParams",
     "valid": true,
     "input": {
@@ -4727,27 +7518,6 @@
       "keys": [
         "wire-✓"
       ],
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "SensitiveStorageSource",
-    "valid": true,
-    "input": "local_storage"
-  },
-  {
-    "type": "SensitiveReadParams",
-    "valid": true,
-    "input": {
-      "source": "local_storage",
-      "key": "wire-✓",
       "future_extension": {
         "arbitrary": [
           null,
@@ -4793,54 +7563,14 @@
     }
   },
   {
-    "type": "ExtractContentFormat",
-    "valid": true,
-    "input": "text"
-  },
-  {
-    "type": "ExtractContentConsistency",
-    "valid": true,
-    "input": "best_effort"
-  },
-  {
     "type": "ExtractContentSource",
     "valid": true,
     "input": "readability"
   },
   {
-    "type": "ScreenshotFormat",
-    "valid": true,
-    "input": "png"
-  },
-  {
-    "type": "ScreenshotDelivery",
-    "valid": true,
-    "input": "auto"
-  },
-  {
     "type": "ArtifactKind",
     "valid": true,
     "input": "screenshot"
-  },
-  {
-    "type": "ExtractContentParams",
-    "valid": true,
-    "input": {
-      "format": "text",
-      "selector": "wire-✓",
-      "includeMetadata": false,
-      "consistency": "best_effort",
-      "textBudget": 1.25,
-      "settleTimeoutMs": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
   },
   {
     "type": "NormalizedExtractContentParams",
@@ -4863,114 +7593,11 @@
     }
   },
   {
-    "type": "ScreenshotParams",
-    "valid": true,
-    "input": {
-      "format": "png",
-      "quality": 1.25,
-      "delivery": "auto",
-      "scale": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "VisualRect",
-    "valid": true,
-    "input": {
-      "x": 1.25,
-      "y": 1.25,
-      "width": 1.25,
-      "height": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "VisualBaselineInvalidationMessage",
     "valid": true,
     "input": {
       "type": "host.visual_baseline_invalidated",
       "tabId": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "VisualBaselineCreateParams",
-    "valid": true,
-    "input": {
-      "selector": "wire-✓",
-      "rect": {
-        "x": 1.25,
-        "y": 1.25,
-        "width": 1.25,
-        "height": 1.25,
-        "future_extension": {
-          "arbitrary": [
-            null,
-            false,
-            0,
-            "JSON"
-          ]
-        }
-      },
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "VisualBaselineFallback",
-    "valid": true,
-    "input": "summary"
-  },
-  {
-    "type": "VisualBaselineCompareParams",
-    "valid": true,
-    "input": {
-      "baselineId": "wire-✓",
-      "advance": false,
-      "includeBefore": false,
-      "fallback": "summary",
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "VisualBaselineReleaseParams",
-    "valid": true,
-    "input": {
-      "baselineId": "wire-✓",
       "future_extension": {
         "arbitrary": [
           null,
@@ -5545,44 +8172,12 @@
     }
   },
   {
-    "type": "ArtifactReadParams",
-    "valid": true,
-    "input": {
-      "artifactId": "wire-✓",
-      "offset": 1.25,
-      "maxBytes": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedArtifactReadParams",
     "valid": true,
     "input": {
       "artifactId": "wire-✓",
       "offset": 1.25,
       "maxBytes": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "ArtifactDeleteParams",
-    "valid": true,
-    "input": {
-      "artifactId": "wire-✓",
       "future_extension": {
         "arbitrary": [
           null,
@@ -5643,22 +8238,6 @@
     }
   },
   {
-    "type": "TabCreateParams",
-    "valid": true,
-    "input": {
-      "url": "wire-✓",
-      "active": false,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedTabCreateParams",
     "valid": true,
     "input": {
@@ -5675,49 +8254,10 @@
     }
   },
   {
-    "type": "TabCloseParams",
-    "valid": true,
-    "input": {
-      "tabId": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedTabCloseParams",
     "valid": true,
     "input": {
       "tabId": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "AccessibilityTreeParams",
-    "valid": true,
-    "input": {
-      "selector": "wire-✓",
-      "maxDepth": 1.25,
-      "maxNodes": 1.25,
-      "compact": false,
-      "interactiveOnly": false,
-      "source": "cdp",
-      "format": "tree",
-      "scope": "auto",
-      "find": "wire-✓",
-      "context": 1.25,
       "future_extension": {
         "arbitrary": [
           null,
@@ -6023,35 +8563,6 @@
     }
   },
   {
-    "type": "NetworkSource",
-    "valid": true,
-    "input": "fetch-xhr"
-  },
-  {
-    "type": "NetworkCaptureAction",
-    "valid": true,
-    "input": "read"
-  },
-  {
-    "type": "NetworkParams",
-    "valid": true,
-    "input": {
-      "clear": false,
-      "limit": 1.25,
-      "urlPattern": "wire-✓",
-      "source": "fetch-xhr",
-      "capture": "read",
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedNetworkParams",
     "valid": true,
     "input": {
@@ -6289,31 +8800,9 @@
     }
   },
   {
-    "type": "HarDelivery",
-    "valid": true,
-    "input": "auto"
-  },
-  {
     "type": "HarCaptureState",
     "valid": true,
     "input": "armed"
-  },
-  {
-    "type": "HarExportParams",
-    "valid": true,
-    "input": {
-      "limit": 1.25,
-      "urlPattern": "wire-✓",
-      "delivery": "auto",
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
   },
   {
     "type": "NormalizedHarExportParams",
@@ -8113,32 +10602,6 @@
     }
   },
   {
-    "type": "NetworkInterceptAction",
-    "valid": true,
-    "input": "fulfill"
-  },
-  {
-    "type": "NetworkInterceptAddParams",
-    "valid": true,
-    "input": {
-      "urlPattern": "wire-✓",
-      "action": "fulfill",
-      "statusCode": 1.25,
-      "body": "wire-✓",
-      "headers": {
-        "future_extension": "wire-✓"
-      },
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedNetworkInterceptAddParams",
     "valid": true,
     "input": {
@@ -8149,21 +10612,6 @@
       "headers": {
         "future_extension": "wire-✓"
       },
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "PageTextParams",
-    "valid": true,
-    "input": {
-      "textBudget": 1.25,
       "future_extension": {
         "arbitrary": [
           null,
@@ -8190,21 +10638,6 @@
     }
   },
   {
-    "type": "LogTailParams",
-    "valid": true,
-    "input": {
-      "limit": 1.25,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedLogTailParams",
     "valid": true,
     "input": {
@@ -8220,43 +10653,10 @@
     }
   },
   {
-    "type": "HealthPingParams",
-    "valid": true,
-    "input": {
-      "diagnostics": false,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
     "type": "NormalizedHealthPingParams",
     "valid": true,
     "input": {
       "diagnostics": false,
-      "future_extension": {
-        "arbitrary": [
-          null,
-          false,
-          0,
-          "JSON"
-        ]
-      }
-    }
-  },
-  {
-    "type": "ViewportResizeParams",
-    "valid": true,
-    "input": {
-      "width": 1.25,
-      "height": 1.25,
-      "deviceScaleFactor": 1.25,
-      "reset": false,
       "future_extension": {
         "arbitrary": [
           null,

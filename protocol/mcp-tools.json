@@ -1600,7 +1600,7 @@
         "properties": {
           "method": {
             "type": "string",
-            "description": "Bridge method name (e.g., \"dom.query\", \"input.click\")"
+            "description": "RPC name. Discover with protocol.describe params {query,limit:5}; exact {method} loads its schema/signature. protocol.capabilities probes selected-tab eligibility without acting."
           },
           "params": {
             "description": "Method parameters as object",

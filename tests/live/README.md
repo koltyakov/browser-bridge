@@ -37,6 +37,55 @@ adapters; this is not a test of installed extension grants, native messaging,
 the Go daemon, or OpenCode MCP integration. Do not run builds that rewrite
 `dist/ext` concurrently. The target is excluded from `make test`.
 
+## Full MCP/native/extension chain
+
+```sh
+BBX_CHAIN_CHROME="/absolute/path/to/Chrome for Testing" \
+BBX_CHAIN_LEGACY_EXTENSION="/absolute/path/to/older-built-extension" \
+make test-full-chain-live
+```
+
+This opt-in macOS/Linux suite installs a private-ID copy of the actual built
+extension in a disposable headless Chrome profile. It redirects HOME, macOS
+`CFFIXED_USER_HOME`, XDG directories, native-host manifests and the bridge home.
+No personal profile or system native registration is changed. Chrome must
+support unpacked extensions and native messaging; sandboxed packages and Windows
+are unsupported. Native-host lookup must succeed inside the isolated home.
+There is no fallback to the user's normal registration.
+The private browser bypasses inherited proxies for its loopback fixture and uses
+Chrome's mock-keychain/basic password-store test options on macOS. It never
+opens the user's keychain or disables browser origin/TLS checks.
+
+Each request under test travels through real MCP stdio, the current Go
+server/client/daemon, Chrome Native Messaging and the installed extension.
+The private debugging pipe is only for fixture observation, initial private
+access setup and worker termination, not an adapter for requests under test.
+
+Coverage includes both MCP protocol eras, an actual MV3 worker replacement
+and native-host reconnection, MCP cancellation between native input steps,
+disconnecting/reconnecting MCP during a sequence, independent exact-once page
+verification, and settled request/scheduler/connection counts.
+Worker recovery also covers a debugger session retained across termination.
+The new worker resets it only after Chrome's extension-owned `sendCommand`
+boundary proves ownership, before dispatching any input.
+
+Mixed-version coverage runs the current Go/MCP build with a genuinely older,
+protocol-compatible extension as well as the current extension. Supply an
+already built older directory containing `manifest.json`, `src/background.js`
+and `src/content-input.js`. Its manifest version must differ from the current
+build. Do not relabel the current build or fabricate legacy responses.
+The suite does not fetch, build or install an old release automatically.
+The old extension must predate `protocol.capabilities`; that RPC must fail
+explicitly, while Go-local signature search and existing browser actions work.
+The suite tests each version in its own isolated browser/daemon, not simultaneous
+mixed-version peers.
+
+Missing prerequisites fail rather than skip. Evidence includes original
+extension versions and file hashes, actual responses and cleanup status under
+`dist/full-chain-live/`. Only owned process groups are stopped. No mutation is
+automatically retried after interruption. This target is excluded from
+`make test`; do not run builds that rewrite `dist/ext` concurrently.
+
 ## Isolated macOS Arc verification
 
 The original browser-matrix runner was a disposable diagnostic. Its maintained

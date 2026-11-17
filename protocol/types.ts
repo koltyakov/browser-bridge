@@ -221,6 +221,7 @@ export type BridgeMethod =
   | 'access.request'
   | 'access.wait_for_change'
   | 'protocol.describe'
+  | 'protocol.capabilities'
   | 'tabs.list'
   | 'tabs.create'
   | 'tabs.close'
@@ -390,6 +391,187 @@ export interface RecoveryTelemetrySummary {
 
 export interface BridgeParams {
   [key: string]: unknown;
+}
+
+export interface ProtocolDescribeParams {
+  method?: BridgeMethod;
+  group?: string;
+  /** Literal, case-insensitive terms, not a regular expression. */
+  query?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ElementTarget {
+  elementRef?: string;
+  target?: InputTarget;
+}
+
+export interface RuntimeCapabilityCall {
+  method: BridgeMethod;
+  params?: BridgeParams;
+}
+
+export interface RuntimeCapabilitiesParams {
+  calls: RuntimeCapabilityCall[];
+  executionMode?: InputExecutionMode;
+  /** Chrome frame ID. Omission selects the top document. */
+  frameId?: number;
+}
+
+export interface RuntimeCapability {
+  method: BridgeMethod;
+  executionMode: InputExecutionMode;
+  status: 'available' | 'unavailable' | 'unknown';
+  reason: string;
+}
+
+export interface RuntimeCapabilitiesResult {
+  advisory: true;
+  checkedAt: number;
+  tabId: number | null;
+  frameId: number;
+  active: boolean | null;
+  grant: { status: 'granted' | 'denied'; reason: string; settingsRevision: string };
+  /** Eligibility only. Targets, arguments, ownership and dispatch checks still apply. */
+  operations: RuntimeCapability[];
+}
+
+/** Canonical RPC input bindings. The catalog generator selects registry params
+ * from these types; this does not create additional MCP tools or a JS runtime. */
+export interface BridgeMethodParams {
+  'access.request': AccessRequestParams;
+  'access.wait_for_change': AccessWaitForChangeParams;
+  'protocol.describe': ProtocolDescribeParams;
+  'protocol.capabilities': RuntimeCapabilitiesParams;
+  'skill.get_runtime_context': {};
+  'setup.get_status': {};
+  'setup.install': SetupInstallParams;
+  'log.tail': LogTailParams;
+  'health.ping': HealthPingParams;
+  'daemon.metrics': {};
+  'tabs.list': { limit?: number; offset?: number };
+  'tabs.create': TabCreateParams;
+  'tabs.close': TabCloseParams;
+  'tabs.activate': TabCloseParams;
+  'page.get_state': {};
+  'page.evaluate': EvaluateParams;
+  'page.get_console': ConsoleParams;
+  'page.handle_dialog': HandleDialogParams;
+  'page.wait_for_load_state': WaitForLoadStateParams;
+  'page.get_storage': StorageParams;
+  'sensitive.read': SensitiveReadParams;
+  'page.get_text': PageTextParams;
+  'page.extract_content': ExtractContentParams;
+  'page.get_network': NetworkParams;
+  'network.export_har': HarExportParams;
+  'network.intercept.add': NetworkInterceptAddParams;
+  'network.intercept.remove': { ruleId: string };
+  'network.intercept.list': {};
+  'network.intercept.clear': {};
+  'navigation.navigate': NavigationActionParams;
+  'navigation.reload': NavigationActionParams;
+  'navigation.go_back': NavigationActionParams;
+  'navigation.go_forward': NavigationActionParams;
+  'dom.query': DomQueryParams;
+  'dom.baseline.create': DomBaselineCreateParams;
+  'dom.baseline.compare': DomBaselineCompareParams;
+  'dom.baseline.describe': DomBaselineHandleParams;
+  'dom.baseline.release': DomBaselineHandleParams;
+  'dom.describe': ElementTarget;
+  'dom.get_text': ElementTarget & PageTextParams;
+  'dom.get_attributes': ElementTarget & { attributes?: string[] };
+  'dom.wait_for': WaitForParams;
+  'dom.find_by_text': FindByTextParams;
+  'dom.find_by_role': FindByRoleParams;
+  'dom.get_html': GetHtmlParams;
+  'dom.get_accessibility_tree': AccessibilityTreeParams;
+  'layout.get_box_model': ElementTarget;
+  'layout.hit_test': { x: number; y: number };
+  'styles.get_computed': StyleQueryParams;
+  'styles.get_matched_rules': StyleQueryParams;
+  'viewport.scroll': ViewportActionParams;
+  'viewport.resize': ViewportResizeParams;
+  'input.click': InputActionParams;
+  'input.focus': InputActionParams;
+  'input.type': InputActionParams;
+  'input.fill': InputActionParams;
+  'input.press_key': InputActionParams;
+  'input.set_checked': CheckedActionParams;
+  'input.select_option': SelectActionParams;
+  'input.hover': HoverParams;
+  'input.drag': DragParams;
+  'input.touch': TouchParams;
+  'input.perform': PerformParams;
+  'input.scroll_into_view': InputActionParams;
+  'screenshot.capture_region': ScreenshotParams & VisualRect;
+  'screenshot.capture_element': ScreenshotParams & ElementTarget;
+  'screenshot.capture_full_page': ScreenshotParams;
+  'screenshot.baseline.create': VisualBaselineCreateParams;
+  'screenshot.baseline.compare': VisualBaselineCompareParams;
+  'screenshot.baseline.release': VisualBaselineReleaseParams;
+  'artifact.read': ArtifactReadParams;
+  'artifact.delete': ArtifactDeleteParams;
+  'patch.apply_styles': PatchOperationParams;
+  'patch.apply_dom': PatchOperationParams;
+  'patch.list': {};
+  'patch.rollback': PatchOperationParams;
+  'patch.commit_session_baseline': {};
+  'cdp.get_document': {};
+  'cdp.get_dom_snapshot': CdpDomSnapshotParams;
+  'cdp.get_box_model': CdpNodeIdParams;
+  'cdp.get_computed_styles_for_node': CdpNodeIdParams;
+  'cdp.dispatch_key_event': CdpDispatchKeyEventParams;
+  'performance.get_metrics': {};
+  'webmcp.list_tools': Partial<WebMcpParams>;
+  'webmcp.get_tool': Partial<WebMcpParams>;
+  'webmcp.execute_tool': Partial<WebMcpParams>;
+  'emulation.apply': {
+    device?: string | BridgeParams;
+    network?: string | BridgeParams;
+    cpuRate?: number;
+    locale?: string;
+    timezoneId?: string;
+    geolocation?: { latitude: number; longitude: number; accuracy?: number };
+  };
+  'emulation.status': {};
+  'emulation.reset': {};
+  'files.stage': {
+    name?: string;
+    mimeType?: string;
+    size?: number;
+    transferId?: string;
+    offset?: number;
+    data?: string;
+  };
+  'files.release': { transferId: string };
+  'input.set_files': { target: InputTarget; files?: string[]; paths?: string[] };
+  'input.paste_image': { target?: InputTarget; transferId: string };
+  'download.resource': { url: string; maxBytes?: number; timeoutMs?: number };
+  'download.start': { url: string; filename?: string; saveAs?: boolean };
+  'download.status': { downloadId: string };
+  'download.pause': { downloadId: string };
+  'download.resume': { downloadId: string };
+  'download.cancel': { downloadId: string };
+  'download.release': { downloadId: string };
+  'session.start': {
+    activity?: boolean;
+    network?: boolean;
+    bodies?: boolean;
+    messages?: boolean;
+    visual?: boolean;
+    durationMs?: number;
+    followTabs?: boolean;
+    durable?: boolean;
+    replay?: boolean;
+  };
+  'session.journal_read': { journalId: string; offset?: number; maxBytes?: number };
+  'session.journal_delete': { journalId: string };
+  'session.status': { sessionId: string };
+  'session.read': { sessionId: string; cursor?: number; limit?: number; waitMs?: number };
+  'session.stop': { sessionId: string };
+  'session.export': { sessionId: string; format?: 'json' | 'html' };
+  'session.release': { sessionId: string };
 }
 
 /** Website metadata and outputs are untrusted, including safety annotations. */

@@ -27,6 +27,65 @@ print `{ok, summary, evidence}`. For automation, parse JSON stdout and check
 `ok`; keep diagnostics on stderr separate. Use `bbx batch` for independent
 reads and `input.perform` for ordered browser actions. See [CLI guide](./cli-guide.md).
 
+## Searchable RPC discovery
+
+```sh
+bbx call protocol.describe '{"query":"fill editable","limit":5}'
+bbx call protocol.describe '{"query":"read","group":"session","limit":5,"offset":0}'
+bbx call protocol.describe '{"method":"input.fill"}'
+bbx protocol.describe '{"query":"input.fill","limit":1}'
+```
+
+The last form searches the local executable's catalog without a browser or daemon.
+
+Search matches literal case-insensitive terms against trusted method names,
+descriptions and groups. Exact names rank first. `limit` is 1..20, default 5;
+follow `pagination.nextOffset`. Queries are nonblank and at most 256 UTF-8 bytes.
+Search returns generated RPC signatures and the `browser_call` invocation name,
+not executable code or invented host tool paths. An exact method read adds its
+input schema and an example when one is maintained. Group indexes omit schemas
+and signatures.
+
+Signatures come from `BridgeMethodParams` in `protocol/types.ts` and the
+parameter selection in `protocol/src/registry.ts`. Generation fails if any
+method or exposed parameter lacks a canonical type binding. This describes the
+current Go runtime, not proof that an older connected extension implements a
+method.
+
+## Runtime capability discovery
+
+```sh
+bbx call --extension '<connection ID>' --tab 123 protocol.capabilities \
+  '{"executionMode":"cdp","frameId":0,"calls":[{"method":"input.fill"},{"method":"input.type","params":{"clear":false,"submit":false}}]}'
+```
+
+Request 1..32 calls. `executionMode` defaults to `dom`; each call may override it.
+`frameId` defaults to the top document, 0. For child-frame actions, continue to
+use frame-owned refs or the ordinary locator routing. Discovery does not add a
+new frame-targeting option to action methods.
+
+Results include the selected tab, frame, activity, grant/settings revision and
+an operation status with an explicit reason:
+
+- `available` means eligible under the observed restrictions, not action success.
+- `unavailable` reports a known blocker, such as inactive native keyboard input,
+  native iframe input, a disabled policy, or an unavailable browser API.
+- `unknown` means discovery could not establish support, for example a failed
+  frame probe, target-dependent auto mode, or a sequence needing per-step checks.
+
+The snapshot is advisory and can become stale immediately. It does not validate
+all arguments, target actionability, staged handles or resource ownership.
+Dispatch still checks access, activity, frame support and operation-specific
+conditions. Discovery never grants access, changes the working-tab lease,
+activates a tab, injects content modules, attaches a debugger, or runs a requested
+operation. It may execute a bounded, content-free feature probe in an already
+authorized frame. A revoked or changed grant invalidates the snapshot.
+
+On MV3 restart, a debugger attachment may outlive its coordinator. Recovery
+resets such a session only after a read-only command proves this extension
+still owns it. Another debugger's attachment is neither detached nor adopted;
+input is not replayed.
+
 ## Daemon wire protocol
 
 The Go transport implementation lives in `internal/bridge/client.go` and

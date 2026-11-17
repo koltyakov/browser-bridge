@@ -31,13 +31,26 @@ Use `bbx protocol describe <method|group>` for a compact local signature lookup.
 call `browser_call` with method `protocol.describe` and params containing `method` or `group`;
 omit both for the group index.
 
+Use `protocol.describe` with `{query:"fill editable",limit:5}` to search trusted
+RPC names/descriptions. Optional `group` filters results; follow
+`pagination.nextOffset`. Search returns canonical generated RPC signatures,
+not additional host tool paths. Load one exact method for its schema.
+
+Use `protocol.capabilities` with `{calls:[{method:"input.fill"}],executionMode:"cdp",frameId:0}`
+and the selected extensionId/tabId for an advisory eligibility snapshot.
+`available` is not actionability, permission or success. `unavailable` includes
+a known reason; `unknown` requires further inspection. It never activates tabs
+or attaches the debugger, and all dispatch-time checks still apply. Child-frame
+actions still use frame-owned refs or ordinary locator routing.
+
 ## All methods
 
 | Method                             | Tab? | CDP?       | Group       | Capability           | Notes                                                                                      |
 | ---------------------------------- | ---- | ---------- | ----------- | -------------------- | ------------------------------------------------------------------------------------------ |
 | `access.request`                   | No   | -          | system      | `intent?`            | Request window access with bounded operation context in the extension UI                    |
 | `access.wait_for_change`           | No   | -          | system      | `revision, timeoutMs?` | Wait up to 25 seconds for a user access-setting revision change, without replaying an action |
-| `protocol.describe`                | No   | -          | system      | `-`                  | Local compact method/group parameters and metadata                                          |
+| `protocol.describe`                | No   | -          | system      | `-`                  | Bounded literal RPC search; exact method loads schema and generated signature |
+| `protocol.capabilities`            | No   | -          | system      | `-`                  | Advisory eligibility for 1..32 calls under the selected tab, mode, frame and grant |
 | `tabs.list`                        | No   | -          | tabs        | `-`                  | Discover tabs in the enabled window                                                        |
 | `tabs.create`                      | No   | -          | tabs        | `tabs.manage`        | Open a new tab; optional `url` and `active`                                                |
 | `tabs.close`                       | No   | -          | tabs        | `tabs.manage`        | Close a tab by `tabId`                                                                     |

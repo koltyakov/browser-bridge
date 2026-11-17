@@ -14,11 +14,13 @@ func TestMethodDiscoveryIncludesOnDemandSchemasAndExamples(t *testing.T) {
 		mcp := mcpDescribe(object{"method": value(method)}).object("structuredContent")
 		for _, result := range []object{detail, mcp} {
 			schema := result.object("inputSchema")
-			if schema.text("type") != "object" || result.object("example") == nil {
+			if schema.text("type") != "object" || result.text("signature") == "" {
 				t.Fatalf("%s missing actionable discovery: %s", method, value(result))
 			}
-			if err := validateSchema(result["example"], schema, method); err != nil {
-				t.Fatalf("%s example does not match its schema: %v", method, err)
+			if result["example"] != nil {
+				if err := validateSchema(result["example"], schema, method); err != nil {
+					t.Fatalf("%s example does not match its schema: %v", method, err)
+				}
 			}
 			if !jsonEqual(detail["inputSchema"], mcp["inputSchema"]) {
 				t.Fatalf("CLI and MCP schemas differ for %s", method)

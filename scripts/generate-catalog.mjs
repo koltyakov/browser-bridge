@@ -46,22 +46,43 @@ function inlineSchema(value, definitions, parents = []) {
  * @returns {Record<string, unknown>}
  */
 function createMethodInputs(definitions) {
+  const bindings = record(
+    record(definitions.BridgeMethodParams, 'BridgeMethodParams').properties,
+    'BridgeMethodParams.properties'
+  );
+  assert.deepEqual(
+    Object.keys(bindings).sort(),
+    [...BRIDGE_METHODS].sort(),
+    'RPC type bindings must cover exactly the registry'
+  );
   return Object.fromEntries(
-    BRIDGE_METHODS.flatMap((method) => {
+    BRIDGE_METHODS.map((method) => {
       const entry = BRIDGE_METHOD_REGISTRY[method];
       const detail = entry.discovery;
-      if (!detail) return [];
-      assert(
-        Object.hasOwn(definitions, detail.paramsType),
-        `Missing input type: ${detail.paramsType}`
-      );
-      const schema = record(inlineSchema(definitions[detail.paramsType], definitions), method);
+      const schema = record(inlineSchema(bindings[method], definitions), method);
       const properties = record(schema.properties, `${method}.properties`);
+      if (detail) {
+        assert(
+          Object.hasOwn(definitions, detail.paramsType),
+          `Missing input type: ${detail.paramsType}`
+        );
+        const declared = record(
+          inlineSchema(definitions[detail.paramsType], definitions),
+          detail.paramsType
+        );
+        const declaredProperties = record(declared.properties, `${detail.paramsType}.properties`);
+        for (const key of entry.params)
+          assert.deepEqual(
+            properties[key],
+            declaredProperties[key],
+            `${method}: canonical binding differs from ${detail.paramsType}.${key}`
+          );
+      }
       const selected = Object.fromEntries(
         entry.params.map((key) => {
           assert(
             Object.hasOwn(properties, key),
-            `${method}: ${key} missing from ${detail.paramsType}`
+            `${method}: ${key} missing from canonical RPC input binding`
           );
           return [key, properties[key]];
         })
@@ -69,13 +90,54 @@ function createMethodInputs(definitions) {
       const inputSchema = {
         type: 'object',
         properties: selected,
-        required: detail.required ?? [],
-        additionalProperties: schema.additionalProperties,
+        required:
+          detail?.required ??
+          (Array.isArray(schema.required)
+            ? schema.required.filter((key) => entry.params.includes(String(key)))
+            : []),
+        additionalProperties: false,
       };
       validateSchema(inputSchema, method);
-      return [[method, { inputSchema, example: detail.example }]];
+      return [
+        method,
+        {
+          inputSchema,
+          ...(detail ? { example: detail.example } : {}),
+          signature: `call(method: ${JSON.stringify(method)}, params: ${schemaSignature(inputSchema)}): Promise<BridgeResponse>`,
+          invocation: { tool: 'browser_call', method },
+        },
+      ];
     })
   );
+}
+
+/** Render a JSON-compatible TypeScript RPC signature, not a host tool path.
+ * @param {unknown} value
+ * @returns {string}
+ */
+function schemaSignature(value) {
+  const schema = record(value, 'signature');
+  if (Array.isArray(schema.enum))
+    return schema.enum.map((item) => JSON.stringify(item)).join(' | ');
+  if (Array.isArray(schema.anyOf)) return schema.anyOf.map(schemaSignature).join(' | ');
+  if (schema.type === 'array') return `Array<${schemaSignature(schema.items)}>`;
+  if (schema.type === 'object') {
+    const required = Array.isArray(schema.required) ? schema.required : [];
+    const properties = schema.properties ? record(schema.properties, 'signature.properties') : {};
+    const fields = Object.entries(properties).map(
+      ([key, child]) =>
+        `${JSON.stringify(key)}${required.includes(key) ? '' : '?'}: ${schemaSignature(child)}`
+    );
+    if (schema.additionalProperties && typeof schema.additionalProperties === 'object')
+      fields.push(`[key: string]: ${schemaSignature(schema.additionalProperties)}`);
+    else if (schema.additionalProperties === true) fields.push('[key: string]: unknown');
+    return `{ ${fields.join('; ')} }`;
+  }
+  return typeof schema.type === 'string'
+    ? schema.type === 'integer'
+      ? 'number'
+      : schema.type
+    : 'unknown';
 }
 
 /** @param {unknown} value @param {string} location @returns {Record<string, unknown>} */

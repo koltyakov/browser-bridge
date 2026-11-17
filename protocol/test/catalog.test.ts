@@ -29,14 +29,20 @@ test('on-demand discovery schemas inline wire types and examples normalize succe
   const catalog = createCatalog('2.0.0', source, wire.$defs) as {
     methodInputs: Record<
       string,
-      { inputSchema: { properties: Record<string, unknown> }; example: Record<string, unknown> }
+      {
+        inputSchema: { properties: Record<string, unknown> };
+        example?: Record<string, unknown>;
+        signature: string;
+      }
     >;
   };
-  assert.ok(Object.keys(catalog.methodInputs).length >= 20);
+  assert.equal(Object.keys(catalog.methodInputs).length, BRIDGE_METHODS.length);
   for (const method of BRIDGE_METHODS) {
     const detail = catalog.methodInputs[method];
-    if (!detail) continue;
-    assert.doesNotThrow(() => normalizeRequestParams(method, detail.example), method);
+    assert.ok(detail, `${method} needs a canonical signature`);
+    const example = detail.example;
+    if (example) assert.doesNotThrow(() => normalizeRequestParams(method, example), method);
+    assert.match(detail.signature, /^call\(method: "/);
     assert.ok(!JSON.stringify(detail.inputSchema).includes('"$ref"'), method);
     assert.ok(JSON.stringify(detail).length < 8000, `${method} details are too large`);
   }
@@ -44,7 +50,7 @@ test('on-demand discovery schemas inline wire types and examples normalize succe
   assert.ok(properties.timeoutMs);
   assert.ok(properties.observe);
   assert.ok(!properties.value, 'click schema includes unrelated fill fields');
-  assert.throws(() => createCatalog('2.0.0', source, {}), /Missing input type/);
+  assert.throws(() => createCatalog('2.0.0', source, {}), /BridgeMethodParams/);
 });
 
 test('mutation scheduling excludes read-only methods and file transfer bookkeeping', async () => {

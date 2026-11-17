@@ -43,6 +43,9 @@ func init() {
 }
 
 func describe(params object) object {
+	if _, exists := params["query"]; exists {
+		return searchMethods(params)
+	}
 	if method := params.text("method"); method != "" {
 		if entry, ok := catalog.Methods[method]; ok {
 			return describeMethod(method, entry)

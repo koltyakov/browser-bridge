@@ -10,6 +10,13 @@ import (
 )
 
 func mcpDescribe(params object) object {
+	if _, exists := params["query"]; exists {
+		result := searchMethods(params)
+		if message := result.text("error"); message != "" {
+			return mcpErrorResult("INVALID_REQUEST", message)
+		}
+		return mcpResult("Matching RPC signatures loaded. Invoke through browser_call using the host-discovered tool path; these are not additional tools.", result, false)
+	}
 	if params["method"] != nil && params["group"] != nil {
 		return mcpErrorResult("INVALID_REQUEST", "protocol.describe accepts either method or group, not both.")
 	}

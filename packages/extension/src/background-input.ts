@@ -2,6 +2,9 @@ import { BridgeError, ERROR_CODES } from '../../../protocol/src/index.js';
 import {
   assertNativeKeyboardTargetActive,
   createCdpKeyPressEventPair,
+  NATIVE_INPUT_METHODS,
+  requiresNativeKeyboard,
+  requiresNativePointer,
 } from './background-helpers.js';
 import { requestLifetimes } from './background-request-lifetime.js';
 import {
@@ -31,16 +34,6 @@ export type NativeDragResult = {
   resolution: { source: InputResolutionMetadata; destination: InputResolutionMetadata };
   execution: Record<string, unknown>;
 };
-
-const CDP_INPUT_METHODS = new Set([
-  'input.click',
-  'input.hover',
-  'input.drag',
-  'input.type',
-  'input.fill',
-  'input.press_key',
-  'input.touch',
-]);
 
 /** Physical releases must survive cancellation and dialog interruption. */
 export function isNativeInputRelease(method: string, params: Record<string, unknown>): boolean {
@@ -162,7 +155,7 @@ export function createBackgroundInputController(dependencies: {
       assertActive();
       assertGrant();
     };
-    if (!CDP_INPUT_METHODS.has(request.method)) {
+    if (!NATIVE_INPUT_METHODS.has(request.method)) {
       throw new BridgeError(
         ERROR_CODES.INPUT_UNSUPPORTED,
         `${request.method} does not support executionMode=cdp.`,
@@ -170,21 +163,14 @@ export function createBackgroundInputController(dependencies: {
       );
     }
 
-    if (
-      ['input.click', 'input.hover', 'input.drag', 'input.touch'].includes(request.method) &&
-      !(await dependencies.getTab(tab.tabId)).active
-    ) {
+    if (requiresNativePointer(request.method) && !(await dependencies.getTab(tab.tabId)).active) {
       throw new BridgeError(
         ERROR_CODES.INPUT_UNSUPPORTED,
         'Chrome does not deliver native pointer input to an inactive tab. Use executionMode=dom when trusted input is unnecessary, or ask permission to activate this tab before using CDP input.',
         { reason: 'inactive_native_pointer_target', tabId: tab.tabId }
       );
     }
-    if (
-      request.method === 'input.press_key' ||
-      request.method === 'input.fill' ||
-      (request.method === 'input.type' && (params.clear === true || params.submit === true))
-    ) {
+    if (requiresNativeKeyboard(request.method, params)) {
       // Reject key-dependent flows before even focusing a target or inserting
       // text. Plain insertText does not use Chrome's keyboard-event path.
       await assertNativeKeyboardTargetActive(tab.tabId, dependencies.getTab);

@@ -289,6 +289,7 @@
         "access.request",
         "access.wait_for_change",
         "protocol.describe",
+        "protocol.capabilities",
         "tabs.list",
         "tabs.create",
         "tabs.close",
@@ -1288,43 +1289,2776 @@
       ],
       "additionalProperties": true
     },
-    "WebMcpTool": {
+    "ProtocolDescribeParams": {
       "type": "object",
       "properties": {
-        "toolRef": {
+        "method": {
+          "$ref": "#/$defs/BridgeMethod"
+        },
+        "group": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "offset": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "ElementTarget": {
+      "type": "object",
+      "properties": {
+        "elementRef": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/InputTarget"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "InputTarget": {
+      "type": "object",
+      "properties": {
+        "elementRef": {
+          "type": "string"
+        },
+        "selector": {
+          "type": "string"
+        },
+        "role": {
           "type": "string"
         },
         "name": {
           "type": "string"
         },
-        "title": {
+        "text": {
           "type": "string"
         },
-        "description": {
+        "label": {
           "type": "string"
         },
-        "origin": {
+        "placeholder": {
           "type": "string"
         },
-        "annotations": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "boolean"
-          }
+        "testId": {
+          "type": "string"
         },
-        "inputSchema": {
-          "type": "object",
-          "additionalProperties": {}
+        "exact": {
+          "type": "boolean"
+        },
+        "nth": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "RuntimeCapabilityCall": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "$ref": "#/$defs/BridgeMethod"
+        },
+        "params": {
+          "$ref": "#/$defs/BridgeParams"
         }
       },
       "required": [
-        "toolRef",
-        "name",
-        "title",
-        "description",
-        "origin",
-        "annotations"
+        "method"
       ],
+      "additionalProperties": true
+    },
+    "RuntimeCapabilitiesParams": {
+      "type": "object",
+      "properties": {
+        "calls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RuntimeCapabilityCall"
+          }
+        },
+        "executionMode": {
+          "$ref": "#/$defs/InputExecutionMode"
+        },
+        "frameId": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "calls"
+      ],
+      "additionalProperties": true
+    },
+    "InputExecutionMode": {
+      "type": "string",
+      "enum": [
+        "dom",
+        "cdp",
+        "auto"
+      ]
+    },
+    "RuntimeCapability": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "$ref": "#/$defs/BridgeMethod"
+        },
+        "executionMode": {
+          "$ref": "#/$defs/InputExecutionMode"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "available",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "executionMode",
+        "status",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "RuntimeCapabilitiesResult": {
+      "type": "object",
+      "properties": {
+        "advisory": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "checkedAt": {
+          "type": "number"
+        },
+        "tabId": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "frameId": {
+          "type": "number"
+        },
+        "active": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "grant": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "granted",
+                "denied"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            },
+            "settingsRevision": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason",
+            "settingsRevision"
+          ],
+          "additionalProperties": true
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RuntimeCapability"
+          }
+        }
+      },
+      "required": [
+        "advisory",
+        "checkedAt",
+        "tabId",
+        "frameId",
+        "active",
+        "grant",
+        "operations"
+      ],
+      "additionalProperties": true
+    },
+    "BridgeMethodParams": {
+      "type": "object",
+      "properties": {
+        "access.request": {
+          "$ref": "#/$defs/AccessRequestParams"
+        },
+        "access.wait_for_change": {
+          "$ref": "#/$defs/AccessWaitForChangeParams"
+        },
+        "protocol.describe": {
+          "$ref": "#/$defs/ProtocolDescribeParams"
+        },
+        "protocol.capabilities": {
+          "$ref": "#/$defs/RuntimeCapabilitiesParams"
+        },
+        "skill.get_runtime_context": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "setup.get_status": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "setup.install": {
+          "$ref": "#/$defs/SetupInstallParams"
+        },
+        "log.tail": {
+          "$ref": "#/$defs/LogTailParams"
+        },
+        "health.ping": {
+          "$ref": "#/$defs/HealthPingParams"
+        },
+        "daemon.metrics": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "tabs.list": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "number"
+            },
+            "offset": {
+              "type": "number"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "tabs.create": {
+          "$ref": "#/$defs/TabCreateParams"
+        },
+        "tabs.close": {
+          "$ref": "#/$defs/TabCloseParams"
+        },
+        "tabs.activate": {
+          "$ref": "#/$defs/TabCloseParams"
+        },
+        "page.get_state": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "page.evaluate": {
+          "$ref": "#/$defs/EvaluateParams"
+        },
+        "page.get_console": {
+          "$ref": "#/$defs/ConsoleParams"
+        },
+        "page.handle_dialog": {
+          "$ref": "#/$defs/HandleDialogParams"
+        },
+        "page.wait_for_load_state": {
+          "$ref": "#/$defs/WaitForLoadStateParams"
+        },
+        "page.get_storage": {
+          "$ref": "#/$defs/StorageParams"
+        },
+        "sensitive.read": {
+          "$ref": "#/$defs/SensitiveReadParams"
+        },
+        "page.get_text": {
+          "$ref": "#/$defs/PageTextParams"
+        },
+        "page.extract_content": {
+          "$ref": "#/$defs/ExtractContentParams"
+        },
+        "page.get_network": {
+          "$ref": "#/$defs/NetworkParams"
+        },
+        "network.export_har": {
+          "$ref": "#/$defs/HarExportParams"
+        },
+        "network.intercept.add": {
+          "$ref": "#/$defs/NetworkInterceptAddParams"
+        },
+        "network.intercept.remove": {
+          "type": "object",
+          "properties": {
+            "ruleId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ruleId"
+          ],
+          "additionalProperties": true
+        },
+        "network.intercept.list": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "network.intercept.clear": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "navigation.navigate": {
+          "$ref": "#/$defs/NavigationActionParams"
+        },
+        "navigation.reload": {
+          "$ref": "#/$defs/NavigationActionParams"
+        },
+        "navigation.go_back": {
+          "$ref": "#/$defs/NavigationActionParams"
+        },
+        "navigation.go_forward": {
+          "$ref": "#/$defs/NavigationActionParams"
+        },
+        "dom.query": {
+          "$ref": "#/$defs/DomQueryParams"
+        },
+        "dom.baseline.create": {
+          "$ref": "#/$defs/DomBaselineCreateParams"
+        },
+        "dom.baseline.compare": {
+          "$ref": "#/$defs/DomBaselineCompareParams"
+        },
+        "dom.baseline.describe": {
+          "$ref": "#/$defs/DomBaselineHandleParams"
+        },
+        "dom.baseline.release": {
+          "$ref": "#/$defs/DomBaselineHandleParams"
+        },
+        "dom.describe": {
+          "$ref": "#/$defs/ElementTarget"
+        },
+        "dom.get_text": {
+          "type": "object",
+          "properties": {
+            "elementRef": {
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/$defs/InputTarget"
+            },
+            "textBudget": {
+              "type": "number"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "dom.get_attributes": {
+          "type": "object",
+          "properties": {
+            "elementRef": {
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/$defs/InputTarget"
+            },
+            "attributes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "dom.wait_for": {
+          "$ref": "#/$defs/WaitForParams"
+        },
+        "dom.find_by_text": {
+          "$ref": "#/$defs/FindByTextParams"
+        },
+        "dom.find_by_role": {
+          "$ref": "#/$defs/FindByRoleParams"
+        },
+        "dom.get_html": {
+          "$ref": "#/$defs/GetHtmlParams"
+        },
+        "dom.get_accessibility_tree": {
+          "$ref": "#/$defs/AccessibilityTreeParams"
+        },
+        "layout.get_box_model": {
+          "$ref": "#/$defs/ElementTarget"
+        },
+        "layout.hit_test": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "additionalProperties": true
+        },
+        "styles.get_computed": {
+          "$ref": "#/$defs/StyleQueryParams"
+        },
+        "styles.get_matched_rules": {
+          "$ref": "#/$defs/StyleQueryParams"
+        },
+        "viewport.scroll": {
+          "$ref": "#/$defs/ViewportActionParams"
+        },
+        "viewport.resize": {
+          "$ref": "#/$defs/ViewportResizeParams"
+        },
+        "input.click": {
+          "$ref": "#/$defs/InputActionParams"
+        },
+        "input.focus": {
+          "$ref": "#/$defs/InputActionParams"
+        },
+        "input.type": {
+          "$ref": "#/$defs/InputActionParams"
+        },
+        "input.fill": {
+          "$ref": "#/$defs/InputActionParams"
+        },
+        "input.press_key": {
+          "$ref": "#/$defs/InputActionParams"
+        },
+        "input.set_checked": {
+          "$ref": "#/$defs/CheckedActionParams"
+        },
+        "input.select_option": {
+          "$ref": "#/$defs/SelectActionParams"
+        },
+        "input.hover": {
+          "$ref": "#/$defs/HoverParams"
+        },
+        "input.drag": {
+          "$ref": "#/$defs/DragParams"
+        },
+        "input.touch": {
+          "$ref": "#/$defs/TouchParams"
+        },
+        "input.perform": {
+          "$ref": "#/$defs/PerformParams"
+        },
+        "input.scroll_into_view": {
+          "$ref": "#/$defs/InputActionParams"
+        },
+        "screenshot.capture_region": {
+          "type": "object",
+          "properties": {
+            "format": {
+              "$ref": "#/$defs/ScreenshotFormat"
+            },
+            "quality": {
+              "type": "number"
+            },
+            "delivery": {
+              "$ref": "#/$defs/ScreenshotDelivery"
+            },
+            "scale": {
+              "type": "number"
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "width": {
+              "type": "number"
+            },
+            "height": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "additionalProperties": true
+        },
+        "screenshot.capture_element": {
+          "type": "object",
+          "properties": {
+            "format": {
+              "$ref": "#/$defs/ScreenshotFormat"
+            },
+            "quality": {
+              "type": "number"
+            },
+            "delivery": {
+              "$ref": "#/$defs/ScreenshotDelivery"
+            },
+            "scale": {
+              "type": "number"
+            },
+            "elementRef": {
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/$defs/InputTarget"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "screenshot.capture_full_page": {
+          "$ref": "#/$defs/ScreenshotParams"
+        },
+        "screenshot.baseline.create": {
+          "$ref": "#/$defs/VisualBaselineCreateParams"
+        },
+        "screenshot.baseline.compare": {
+          "$ref": "#/$defs/VisualBaselineCompareParams"
+        },
+        "screenshot.baseline.release": {
+          "$ref": "#/$defs/VisualBaselineReleaseParams"
+        },
+        "artifact.read": {
+          "$ref": "#/$defs/ArtifactReadParams"
+        },
+        "artifact.delete": {
+          "$ref": "#/$defs/ArtifactDeleteParams"
+        },
+        "patch.apply_styles": {
+          "$ref": "#/$defs/PatchOperationParams"
+        },
+        "patch.apply_dom": {
+          "$ref": "#/$defs/PatchOperationParams"
+        },
+        "patch.list": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "patch.rollback": {
+          "$ref": "#/$defs/PatchOperationParams"
+        },
+        "patch.commit_session_baseline": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "cdp.get_document": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "cdp.get_dom_snapshot": {
+          "$ref": "#/$defs/CdpDomSnapshotParams"
+        },
+        "cdp.get_box_model": {
+          "$ref": "#/$defs/CdpNodeIdParams"
+        },
+        "cdp.get_computed_styles_for_node": {
+          "$ref": "#/$defs/CdpNodeIdParams"
+        },
+        "cdp.dispatch_key_event": {
+          "$ref": "#/$defs/CdpDispatchKeyEventParams"
+        },
+        "performance.get_metrics": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "webmcp.list_tools": {
+          "type": "object",
+          "properties": {
+            "toolRef": {
+              "type": "string"
+            },
+            "arguments": {
+              "type": "object",
+              "additionalProperties": {}
+            },
+            "limit": {
+              "type": "number"
+            },
+            "offset": {
+              "type": "number"
+            },
+            "query": {
+              "type": "string"
+            },
+            "includeDebugging": {
+              "type": "boolean"
+            },
+            "maxBytes": {
+              "type": "number"
+            },
+            "timeoutMs": {
+              "type": "number"
+            },
+            "approvalTimeoutMs": {
+              "type": "number"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "webmcp.get_tool": {
+          "type": "object",
+          "properties": {
+            "toolRef": {
+              "type": "string"
+            },
+            "arguments": {
+              "type": "object",
+              "additionalProperties": {}
+            },
+            "limit": {
+              "type": "number"
+            },
+            "offset": {
+              "type": "number"
+            },
+            "query": {
+              "type": "string"
+            },
+            "includeDebugging": {
+              "type": "boolean"
+            },
+            "maxBytes": {
+              "type": "number"
+            },
+            "timeoutMs": {
+              "type": "number"
+            },
+            "approvalTimeoutMs": {
+              "type": "number"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "webmcp.execute_tool": {
+          "type": "object",
+          "properties": {
+            "toolRef": {
+              "type": "string"
+            },
+            "arguments": {
+              "type": "object",
+              "additionalProperties": {}
+            },
+            "limit": {
+              "type": "number"
+            },
+            "offset": {
+              "type": "number"
+            },
+            "query": {
+              "type": "string"
+            },
+            "includeDebugging": {
+              "type": "boolean"
+            },
+            "maxBytes": {
+              "type": "number"
+            },
+            "timeoutMs": {
+              "type": "number"
+            },
+            "approvalTimeoutMs": {
+              "type": "number"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "emulation.apply": {
+          "type": "object",
+          "properties": {
+            "device": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/BridgeParams"
+                }
+              ]
+            },
+            "network": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/BridgeParams"
+                }
+              ]
+            },
+            "cpuRate": {
+              "type": "number"
+            },
+            "locale": {
+              "type": "string"
+            },
+            "timezoneId": {
+              "type": "string"
+            },
+            "geolocation": {
+              "type": "object",
+              "properties": {
+                "latitude": {
+                  "type": "number"
+                },
+                "longitude": {
+                  "type": "number"
+                },
+                "accuracy": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "latitude",
+                "longitude"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "emulation.status": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "emulation.reset": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "files.stage": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "mimeType": {
+              "type": "string"
+            },
+            "size": {
+              "type": "number"
+            },
+            "transferId": {
+              "type": "string"
+            },
+            "offset": {
+              "type": "number"
+            },
+            "data": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "files.release": {
+          "type": "object",
+          "properties": {
+            "transferId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "transferId"
+          ],
+          "additionalProperties": true
+        },
+        "input.set_files": {
+          "type": "object",
+          "properties": {
+            "target": {
+              "$ref": "#/$defs/InputTarget"
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "target"
+          ],
+          "additionalProperties": true
+        },
+        "input.paste_image": {
+          "type": "object",
+          "properties": {
+            "target": {
+              "$ref": "#/$defs/InputTarget"
+            },
+            "transferId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "transferId"
+          ],
+          "additionalProperties": true
+        },
+        "download.resource": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string"
+            },
+            "maxBytes": {
+              "type": "number"
+            },
+            "timeoutMs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "additionalProperties": true
+        },
+        "download.start": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string"
+            },
+            "filename": {
+              "type": "string"
+            },
+            "saveAs": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "additionalProperties": true
+        },
+        "download.status": {
+          "type": "object",
+          "properties": {
+            "downloadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "downloadId"
+          ],
+          "additionalProperties": true
+        },
+        "download.pause": {
+          "type": "object",
+          "properties": {
+            "downloadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "downloadId"
+          ],
+          "additionalProperties": true
+        },
+        "download.resume": {
+          "type": "object",
+          "properties": {
+            "downloadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "downloadId"
+          ],
+          "additionalProperties": true
+        },
+        "download.cancel": {
+          "type": "object",
+          "properties": {
+            "downloadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "downloadId"
+          ],
+          "additionalProperties": true
+        },
+        "download.release": {
+          "type": "object",
+          "properties": {
+            "downloadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "downloadId"
+          ],
+          "additionalProperties": true
+        },
+        "session.start": {
+          "type": "object",
+          "properties": {
+            "activity": {
+              "type": "boolean"
+            },
+            "network": {
+              "type": "boolean"
+            },
+            "bodies": {
+              "type": "boolean"
+            },
+            "messages": {
+              "type": "boolean"
+            },
+            "visual": {
+              "type": "boolean"
+            },
+            "durationMs": {
+              "type": "number"
+            },
+            "followTabs": {
+              "type": "boolean"
+            },
+            "durable": {
+              "type": "boolean"
+            },
+            "replay": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "session.journal_read": {
+          "type": "object",
+          "properties": {
+            "journalId": {
+              "type": "string"
+            },
+            "offset": {
+              "type": "number"
+            },
+            "maxBytes": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "journalId"
+          ],
+          "additionalProperties": true
+        },
+        "session.journal_delete": {
+          "type": "object",
+          "properties": {
+            "journalId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "journalId"
+          ],
+          "additionalProperties": true
+        },
+        "session.status": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": true
+        },
+        "session.read": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            },
+            "cursor": {
+              "type": "number"
+            },
+            "limit": {
+              "type": "number"
+            },
+            "waitMs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": true
+        },
+        "session.stop": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": true
+        },
+        "session.export": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            },
+            "format": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html"
+              ]
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": true
+        },
+        "session.release": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "access.request",
+        "access.wait_for_change",
+        "protocol.describe",
+        "protocol.capabilities",
+        "skill.get_runtime_context",
+        "setup.get_status",
+        "setup.install",
+        "log.tail",
+        "health.ping",
+        "daemon.metrics",
+        "tabs.list",
+        "tabs.create",
+        "tabs.close",
+        "tabs.activate",
+        "page.get_state",
+        "page.evaluate",
+        "page.get_console",
+        "page.handle_dialog",
+        "page.wait_for_load_state",
+        "page.get_storage",
+        "sensitive.read",
+        "page.get_text",
+        "page.extract_content",
+        "page.get_network",
+        "network.export_har",
+        "network.intercept.add",
+        "network.intercept.remove",
+        "network.intercept.list",
+        "network.intercept.clear",
+        "navigation.navigate",
+        "navigation.reload",
+        "navigation.go_back",
+        "navigation.go_forward",
+        "dom.query",
+        "dom.baseline.create",
+        "dom.baseline.compare",
+        "dom.baseline.describe",
+        "dom.baseline.release",
+        "dom.describe",
+        "dom.get_text",
+        "dom.get_attributes",
+        "dom.wait_for",
+        "dom.find_by_text",
+        "dom.find_by_role",
+        "dom.get_html",
+        "dom.get_accessibility_tree",
+        "layout.get_box_model",
+        "layout.hit_test",
+        "styles.get_computed",
+        "styles.get_matched_rules",
+        "viewport.scroll",
+        "viewport.resize",
+        "input.click",
+        "input.focus",
+        "input.type",
+        "input.fill",
+        "input.press_key",
+        "input.set_checked",
+        "input.select_option",
+        "input.hover",
+        "input.drag",
+        "input.touch",
+        "input.perform",
+        "input.scroll_into_view",
+        "screenshot.capture_region",
+        "screenshot.capture_element",
+        "screenshot.capture_full_page",
+        "screenshot.baseline.create",
+        "screenshot.baseline.compare",
+        "screenshot.baseline.release",
+        "artifact.read",
+        "artifact.delete",
+        "patch.apply_styles",
+        "patch.apply_dom",
+        "patch.list",
+        "patch.rollback",
+        "patch.commit_session_baseline",
+        "cdp.get_document",
+        "cdp.get_dom_snapshot",
+        "cdp.get_box_model",
+        "cdp.get_computed_styles_for_node",
+        "cdp.dispatch_key_event",
+        "performance.get_metrics",
+        "webmcp.list_tools",
+        "webmcp.get_tool",
+        "webmcp.execute_tool",
+        "emulation.apply",
+        "emulation.status",
+        "emulation.reset",
+        "files.stage",
+        "files.release",
+        "input.set_files",
+        "input.paste_image",
+        "download.resource",
+        "download.start",
+        "download.status",
+        "download.pause",
+        "download.resume",
+        "download.cancel",
+        "download.release",
+        "session.start",
+        "session.journal_read",
+        "session.journal_delete",
+        "session.status",
+        "session.read",
+        "session.stop",
+        "session.export",
+        "session.release"
+      ],
+      "additionalProperties": true
+    },
+    "SetupInstallParams": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "install",
+            "uninstall"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "mcp",
+            "skill"
+          ]
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "LogTailParams": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "HealthPingParams": {
+      "type": "object",
+      "properties": {
+        "diagnostics": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "TabCreateParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "active": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "TabCloseParams": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "EvaluateParams": {
+      "type": "object",
+      "properties": {
+        "expression": {
+          "type": "string"
+        },
+        "awaitPromise": {
+          "type": "boolean"
+        },
+        "timeoutMs": {
+          "type": "number"
+        },
+        "returnByValue": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "ConsoleParams": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string"
+        },
+        "clear": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "HandleDialogParams": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/DialogAction"
+        },
+        "promptText": {
+          "type": "string"
+        },
+        "expectedDialogId": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "DialogAction": {
+      "type": "string",
+      "enum": [
+        "inspect",
+        "accept",
+        "dismiss"
+      ]
+    },
+    "WaitForLoadStateParams": {
+      "type": "object",
+      "properties": {
+        "waitForLoad": {
+          "type": "boolean"
+        },
+        "timeoutMs": {
+          "type": "number"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "urlMatch": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "exact"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "contains"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "regex"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "StorageParams": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "local",
+            "session"
+          ]
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "SensitiveReadParams": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/SensitiveStorageSource"
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "key"
+      ],
+      "additionalProperties": true
+    },
+    "SensitiveStorageSource": {
+      "type": "string",
+      "enum": [
+        "local_storage",
+        "session_storage"
+      ]
+    },
+    "PageTextParams": {
+      "type": "object",
+      "properties": {
+        "textBudget": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "ExtractContentParams": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "$ref": "#/$defs/ExtractContentFormat"
+        },
+        "selector": {
+          "type": "string"
+        },
+        "includeMetadata": {
+          "type": "boolean"
+        },
+        "consistency": {
+          "$ref": "#/$defs/ExtractContentConsistency"
+        },
+        "textBudget": {
+          "type": "number"
+        },
+        "settleTimeoutMs": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "ExtractContentFormat": {
+      "type": "string",
+      "enum": [
+        "text",
+        "markdown"
+      ]
+    },
+    "ExtractContentConsistency": {
+      "type": "string",
+      "enum": [
+        "best_effort",
+        "settled"
+      ]
+    },
+    "NetworkParams": {
+      "type": "object",
+      "properties": {
+        "clear": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "urlPattern": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/NetworkSource"
+        },
+        "capture": {
+          "$ref": "#/$defs/NetworkCaptureAction"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "NetworkSource": {
+      "type": "string",
+      "enum": [
+        "fetch-xhr",
+        "cdp"
+      ]
+    },
+    "NetworkCaptureAction": {
+      "type": "string",
+      "enum": [
+        "read",
+        "start",
+        "clear",
+        "stop"
+      ]
+    },
+    "HarExportParams": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "number"
+        },
+        "urlPattern": {
+          "type": "string"
+        },
+        "delivery": {
+          "$ref": "#/$defs/HarDelivery"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "HarDelivery": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "inline",
+        "artifact"
+      ]
+    },
+    "NetworkInterceptAddParams": {
+      "type": "object",
+      "properties": {
+        "urlPattern": {
+          "type": "string"
+        },
+        "action": {
+          "$ref": "#/$defs/NetworkInterceptAction"
+        },
+        "statusCode": {
+          "type": "number"
+        },
+        "body": {
+          "type": "string"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "NetworkInterceptAction": {
+      "type": "string",
+      "enum": [
+        "fulfill",
+        "continue",
+        "block"
+      ]
+    },
+    "NavigationActionParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "waitForLoad": {
+          "type": "boolean"
+        },
+        "timeoutMs": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "DomQueryParams": {
+      "type": "object",
+      "properties": {
+        "maxNodes": {
+          "type": "number"
+        },
+        "maxDepth": {
+          "type": "number"
+        },
+        "textBudget": {
+          "type": "number"
+        },
+        "includeBbox": {
+          "type": "boolean"
+        },
+        "attributeAllowlist": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "selector": {
+          "type": "string"
+        },
+        "withinRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "budget": {
+          "$ref": "#/$defs/BudgetOptions"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "BudgetOptions": {
+      "type": "object",
+      "properties": {
+        "maxNodes": {
+          "type": "number"
+        },
+        "maxDepth": {
+          "type": "number"
+        },
+        "textBudget": {
+          "type": "number"
+        },
+        "includeBbox": {
+          "type": "boolean"
+        },
+        "attributeAllowlist": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "DomBaselineCreateParams": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string"
+        },
+        "maxNodes": {
+          "type": "number"
+        },
+        "maxDepth": {
+          "type": "number"
+        },
+        "textBudget": {
+          "type": "number"
+        },
+        "attributeAllowlist": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "DomBaselineCompareParams": {
+      "type": "object",
+      "properties": {
+        "baselineId": {
+          "type": "string"
+        },
+        "maxChanges": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "DomBaselineHandleParams": {
+      "type": "object",
+      "properties": {
+        "baselineId": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "WaitForParams": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "attached",
+            "detached",
+            "visible",
+            "hidden"
+          ]
+        },
+        "timeoutMs": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "FindByTextParams": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "exact": {
+          "type": "boolean"
+        },
+        "selector": {
+          "type": "string"
+        },
+        "maxResults": {
+          "type": "number"
+        },
+        "includeHidden": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "FindByRoleParams": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "exact": {
+          "type": "boolean"
+        },
+        "selector": {
+          "type": "string"
+        },
+        "maxResults": {
+          "type": "number"
+        },
+        "includeHidden": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "GetHtmlParams": {
+      "type": "object",
+      "properties": {
+        "elementRef": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/InputTarget"
+        },
+        "outer": {
+          "type": "boolean"
+        },
+        "maxLength": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "AccessibilityTreeParams": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string"
+        },
+        "maxDepth": {
+          "type": "number"
+        },
+        "maxNodes": {
+          "type": "number"
+        },
+        "compact": {
+          "type": "boolean"
+        },
+        "interactiveOnly": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "cdp",
+            "dom"
+          ]
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "tree",
+            "outline"
+          ]
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "modal",
+            "main",
+            "document"
+          ]
+        },
+        "find": {
+          "type": "string"
+        },
+        "context": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "StyleQueryParams": {
+      "type": "object",
+      "properties": {
+        "elementRef": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/InputTarget"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "ViewportActionParams": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/InputTarget"
+        },
+        "top": {
+          "type": "number"
+        },
+        "left": {
+          "type": "number"
+        },
+        "behavior": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "smooth"
+          ]
+        },
+        "relative": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "ViewportResizeParams": {
+      "type": "object",
+      "properties": {
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        },
+        "deviceScaleFactor": {
+          "type": "number"
+        },
+        "reset": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "InputActionParams": {
+      "type": "object",
+      "properties": {
+        "timeoutMs": {
+          "type": "number"
+        },
+        "observe": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "settleMs": {
+                  "type": "number"
+                }
+              },
+              "required": [],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/InputTarget"
+        },
+        "button": {
+          "type": "string",
+          "enum": [
+            "left",
+            "middle",
+            "right"
+          ]
+        },
+        "clickCount": {
+          "type": "number"
+        },
+        "text": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "setter",
+            "keystrokes"
+          ]
+        },
+        "clear": {
+          "type": "boolean"
+        },
+        "submit": {
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        },
+        "modifiers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "holdMs": {
+          "type": "number"
+        },
+        "executionMode": {
+          "$ref": "#/$defs/InputExecutionMode"
+        },
+        "recoverStale": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "InputWaitObserveParams": {
+      "type": "object",
+      "properties": {
+        "timeoutMs": {
+          "type": "number"
+        },
+        "observe": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "settleMs": {
+                  "type": "number"
+                }
+              },
+              "required": [],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "CheckedActionParams": {
+      "type": "object",
+      "properties": {
+        "timeoutMs": {
+          "type": "number"
+        },
+        "observe": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "settleMs": {
+                  "type": "number"
+                }
+              },
+              "required": [],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/InputTarget"
+        },
+        "checked": {
+          "type": "boolean"
+        },
+        "executionMode": {
+          "$ref": "#/$defs/InputExecutionMode"
+        },
+        "recoverStale": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "SelectActionParams": {
+      "type": "object",
+      "properties": {
+        "timeoutMs": {
+          "type": "number"
+        },
+        "observe": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "settleMs": {
+                  "type": "number"
+                }
+              },
+              "required": [],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/InputTarget"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "indexes": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "executionMode": {
+          "$ref": "#/$defs/InputExecutionMode"
+        },
+        "recoverStale": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "HoverParams": {
+      "type": "object",
+      "properties": {
+        "timeoutMs": {
+          "type": "number"
+        },
+        "observe": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "settleMs": {
+                  "type": "number"
+                }
+              },
+              "required": [],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/InputTarget"
+        },
+        "duration": {
+          "type": "number"
+        },
+        "modifiers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "executionMode": {
+          "$ref": "#/$defs/InputExecutionMode"
+        },
+        "recoverStale": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "DragParams": {
+      "type": "object",
+      "properties": {
+        "timeoutMs": {
+          "type": "number"
+        },
+        "observe": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "settleMs": {
+                  "type": "number"
+                }
+              },
+              "required": [],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/InputTarget"
+        },
+        "destination": {
+          "$ref": "#/$defs/InputTarget"
+        },
+        "offsetX": {
+          "type": "number"
+        },
+        "offsetY": {
+          "type": "number"
+        },
+        "executionMode": {
+          "$ref": "#/$defs/InputExecutionMode"
+        },
+        "recoverStale": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "TouchParams": {
+      "type": "object",
+      "properties": {
+        "points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TouchPointParams"
+          }
+        },
+        "holdMs": {
+          "type": "number"
+        },
+        "moveSteps": {
+          "type": "number"
+        },
+        "executionMode": {
+          "$ref": "#/$defs/InputExecutionMode"
+        },
+        "recoverStale": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "TouchPointParams": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InputTarget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "x": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "y": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "to": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TouchPositionParams"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "TouchPositionParams": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InputTarget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "x": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "y": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "PerformParams": {
+      "type": "object",
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PerformStepParams"
+          }
+        },
+        "executionMode": {
+          "$ref": "#/$defs/InputExecutionMode"
+        },
+        "timeoutMs": {
+          "type": "number"
+        },
+        "continueOnError": {
+          "type": "boolean"
+        },
+        "returnLastResult": {
+          "type": "boolean"
+        },
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PerformOutcomeParams"
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "PerformStepParams": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "delayMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "atMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "PerformOutcomeParams": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "dom"
+              ]
+            },
+            "selector": {
+              "type": "string"
+            },
+            "text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "attached",
+                "detached",
+                "visible",
+                "hidden"
+              ]
+            },
+            "timeoutMs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "url"
+              ]
+            },
+            "url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "urlMatch": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "exact"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "contains"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "regex"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "network"
+              ]
+            },
+            "urlPattern": {
+              "type": "string"
+            },
+            "method": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "statusMin": {
+              "type": "number"
+            },
+            "statusMax": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "urlPattern"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "ScreenshotParams": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "$ref": "#/$defs/ScreenshotFormat"
+        },
+        "quality": {
+          "type": "number"
+        },
+        "delivery": {
+          "$ref": "#/$defs/ScreenshotDelivery"
+        },
+        "scale": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "ScreenshotFormat": {
+      "type": "string",
+      "enum": [
+        "png",
+        "jpeg",
+        "webp"
+      ]
+    },
+    "ScreenshotDelivery": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "inline",
+        "artifact"
+      ]
+    },
+    "VisualRect": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "additionalProperties": true
+    },
+    "VisualBaselineCreateParams": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string"
+        },
+        "rect": {
+          "$ref": "#/$defs/VisualRect"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "VisualBaselineCompareParams": {
+      "type": "object",
+      "properties": {
+        "baselineId": {
+          "type": "string"
+        },
+        "advance": {
+          "type": "boolean"
+        },
+        "includeBefore": {
+          "type": "boolean"
+        },
+        "fallback": {
+          "$ref": "#/$defs/VisualBaselineFallback"
+        }
+      },
+      "required": [
+        "baselineId"
+      ],
+      "additionalProperties": true
+    },
+    "VisualBaselineFallback": {
+      "type": "string",
+      "enum": [
+        "summary",
+        "current"
+      ]
+    },
+    "VisualBaselineReleaseParams": {
+      "type": "object",
+      "properties": {
+        "baselineId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "baselineId"
+      ],
+      "additionalProperties": true
+    },
+    "ArtifactReadParams": {
+      "type": "object",
+      "properties": {
+        "artifactId": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "number"
+        },
+        "maxBytes": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "ArtifactDeleteParams": {
+      "type": "object",
+      "properties": {
+        "artifactId": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "PatchOperationParams": {
+      "type": "object",
+      "properties": {
+        "patchId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "declarations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "value": {},
+        "important": {
+          "type": "boolean"
+        },
+        "verify": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "CdpDomSnapshotParams": {
+      "type": "object",
+      "properties": {
+        "computedStyles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "CdpNodeIdParams": {
+      "type": "object",
+      "properties": {
+        "nodeId": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "CdpDispatchKeyEventParams": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "modifiers": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "required": [],
       "additionalProperties": true
     },
     "WebMcpParams": {
@@ -1368,6 +4102,45 @@
         "maxBytes",
         "timeoutMs",
         "approvalTimeoutMs"
+      ],
+      "additionalProperties": true
+    },
+    "WebMcpTool": {
+      "type": "object",
+      "properties": {
+        "toolRef": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "origin": {
+          "type": "string"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "inputSchema": {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "toolRef",
+        "name",
+        "title",
+        "description",
+        "origin",
+        "annotations"
       ],
       "additionalProperties": true
     },
@@ -1415,31 +4188,6 @@
       ],
       "additionalProperties": true
     },
-    "BudgetOptions": {
-      "type": "object",
-      "properties": {
-        "maxNodes": {
-          "type": "number"
-        },
-        "maxDepth": {
-          "type": "number"
-        },
-        "textBudget": {
-          "type": "number"
-        },
-        "includeBbox": {
-          "type": "boolean"
-        },
-        "attributeAllowlist": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "Budget": {
       "type": "object",
       "properties": {
@@ -1471,47 +4219,6 @@
       ],
       "additionalProperties": true
     },
-    "DomQueryParams": {
-      "type": "object",
-      "properties": {
-        "maxNodes": {
-          "type": "number"
-        },
-        "maxDepth": {
-          "type": "number"
-        },
-        "textBudget": {
-          "type": "number"
-        },
-        "includeBbox": {
-          "type": "boolean"
-        },
-        "attributeAllowlist": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "selector": {
-          "type": "string"
-        },
-        "withinRef": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "budget": {
-          "$ref": "#/$defs/BudgetOptions"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedDomQuery": {
       "type": "object",
       "properties": {
@@ -1537,31 +4244,6 @@
         "withinRef",
         "budget"
       ],
-      "additionalProperties": true
-    },
-    "DomBaselineCreateParams": {
-      "type": "object",
-      "properties": {
-        "selector": {
-          "type": "string"
-        },
-        "maxNodes": {
-          "type": "number"
-        },
-        "maxDepth": {
-          "type": "number"
-        },
-        "textBudget": {
-          "type": "number"
-        },
-        "attributeAllowlist": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [],
       "additionalProperties": true
     },
     "NormalizedDomBaselineCreateParams": {
@@ -1595,19 +4277,6 @@
       ],
       "additionalProperties": true
     },
-    "DomBaselineCompareParams": {
-      "type": "object",
-      "properties": {
-        "baselineId": {
-          "type": "string"
-        },
-        "maxChanges": {
-          "type": "number"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedDomBaselineCompareParams": {
       "type": "object",
       "properties": {
@@ -1622,16 +4291,6 @@
         "baselineId",
         "maxChanges"
       ],
-      "additionalProperties": true
-    },
-    "DomBaselineHandleParams": {
-      "type": "object",
-      "properties": {
-        "baselineId": {
-          "type": "string"
-        }
-      },
-      "required": [],
       "additionalProperties": true
     },
     "NormalizedDomBaselineHandleParams": {
@@ -2167,62 +4826,6 @@
       ],
       "additionalProperties": true
     },
-    "StyleQueryParams": {
-      "type": "object",
-      "properties": {
-        "elementRef": {
-          "type": "string"
-        },
-        "target": {
-          "$ref": "#/$defs/InputTarget"
-        },
-        "properties": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
-    "InputTarget": {
-      "type": "object",
-      "properties": {
-        "elementRef": {
-          "type": "string"
-        },
-        "selector": {
-          "type": "string"
-        },
-        "role": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "text": {
-          "type": "string"
-        },
-        "label": {
-          "type": "string"
-        },
-        "placeholder": {
-          "type": "string"
-        },
-        "testId": {
-          "type": "string"
-        },
-        "exact": {
-          "type": "boolean"
-        },
-        "nth": {
-          "type": "number"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedStyleQuery": {
       "type": "object",
       "properties": {
@@ -2245,44 +4848,6 @@
         "properties"
       ],
       "additionalProperties": true
-    },
-    "InputWaitObserveParams": {
-      "type": "object",
-      "properties": {
-        "timeoutMs": {
-          "type": "number"
-        },
-        "observe": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "settleMs": {
-                  "type": "number"
-                }
-              },
-              "required": [],
-              "additionalProperties": true
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
-    "InputExecutionMode": {
-      "type": "string",
-      "enum": [
-        "dom",
-        "cdp",
-        "auto"
-      ]
     },
     "InputResolutionMetadata": {
       "type": "object",
@@ -2463,88 +5028,6 @@
       ],
       "additionalProperties": true
     },
-    "InputActionParams": {
-      "type": "object",
-      "properties": {
-        "timeoutMs": {
-          "type": "number"
-        },
-        "observe": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "settleMs": {
-                  "type": "number"
-                }
-              },
-              "required": [],
-              "additionalProperties": true
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "target": {
-          "$ref": "#/$defs/InputTarget"
-        },
-        "button": {
-          "type": "string",
-          "enum": [
-            "left",
-            "middle",
-            "right"
-          ]
-        },
-        "clickCount": {
-          "type": "number"
-        },
-        "text": {
-          "type": "string"
-        },
-        "value": {
-          "type": "string"
-        },
-        "mode": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "setter",
-            "keystrokes"
-          ]
-        },
-        "clear": {
-          "type": "boolean"
-        },
-        "submit": {
-          "type": "boolean"
-        },
-        "key": {
-          "type": "string"
-        },
-        "modifiers": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "holdMs": {
-          "type": "number"
-        },
-        "executionMode": {
-          "$ref": "#/$defs/InputExecutionMode"
-        },
-        "recoverStale": {
-          "type": "boolean"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedInputAction": {
       "type": "object",
       "properties": {
@@ -2616,115 +5099,6 @@
         "executionMode",
         "recoverStale"
       ],
-      "additionalProperties": true
-    },
-    "TouchPositionParams": {
-      "type": "object",
-      "properties": {
-        "target": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/InputTarget"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "x": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "y": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
-    "TouchPointParams": {
-      "type": "object",
-      "properties": {
-        "target": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/InputTarget"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "x": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "y": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "to": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/TouchPositionParams"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
-    "TouchParams": {
-      "type": "object",
-      "properties": {
-        "points": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/TouchPointParams"
-          }
-        },
-        "holdMs": {
-          "type": "number"
-        },
-        "moveSteps": {
-          "type": "number"
-        },
-        "executionMode": {
-          "$ref": "#/$defs/InputExecutionMode"
-        },
-        "recoverStale": {
-          "type": "boolean"
-        }
-      },
-      "required": [],
       "additionalProperties": true
     },
     "NormalizedTouchPosition": {
@@ -2890,280 +5264,6 @@
         "dom.query",
         "dom.get_text"
       ]
-    },
-    "PerformStepParams": {
-      "type": "object",
-      "properties": {
-        "method": {
-          "type": "string"
-        },
-        "params": {
-          "type": "object",
-          "additionalProperties": {}
-        },
-        "delayMs": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "atMs": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
-    "PerformParams": {
-      "type": "object",
-      "properties": {
-        "steps": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/PerformStepParams"
-          }
-        },
-        "executionMode": {
-          "$ref": "#/$defs/InputExecutionMode"
-        },
-        "timeoutMs": {
-          "type": "number"
-        },
-        "continueOnError": {
-          "type": "boolean"
-        },
-        "returnLastResult": {
-          "type": "boolean"
-        },
-        "outcomes": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/PerformOutcomeParams"
-          }
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
-    "PerformOutcomeParams": {
-      "anyOf": [
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "type": "string",
-              "enum": [
-                "dom"
-              ]
-            },
-            "selector": {
-              "type": "string"
-            },
-            "text": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "state": {
-              "type": "string",
-              "enum": [
-                "attached",
-                "detached",
-                "visible",
-                "hidden"
-              ]
-            },
-            "timeoutMs": {
-              "type": "number"
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "additionalProperties": true
-        },
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "type": "string",
-              "enum": [
-                "url"
-              ]
-            },
-            "url": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "urlMatch": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "enum": [
-                    "exact"
-                  ]
-                },
-                {
-                  "type": "string",
-                  "enum": [
-                    "contains"
-                  ]
-                },
-                {
-                  "type": "string",
-                  "enum": [
-                    "regex"
-                  ]
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "additionalProperties": true
-        },
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "type": "string",
-              "enum": [
-                "network"
-              ]
-            },
-            "urlPattern": {
-              "type": "string"
-            },
-            "method": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "statusMin": {
-              "type": "number"
-            },
-            "statusMax": {
-              "type": "number"
-            }
-          },
-          "required": [
-            "kind",
-            "urlPattern"
-          ],
-          "additionalProperties": true
-        }
-      ]
-    },
-    "WaitForParams": {
-      "type": "object",
-      "properties": {
-        "selector": {
-          "type": "string"
-        },
-        "text": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "state": {
-          "type": "string",
-          "enum": [
-            "attached",
-            "detached",
-            "visible",
-            "hidden"
-          ]
-        },
-        "timeoutMs": {
-          "type": "number"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
-    "WaitForLoadStateParams": {
-      "type": "object",
-      "properties": {
-        "waitForLoad": {
-          "type": "boolean"
-        },
-        "timeoutMs": {
-          "type": "number"
-        },
-        "url": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "urlMatch": {
-          "anyOf": [
-            {
-              "type": "string",
-              "enum": [
-                "exact"
-              ]
-            },
-            {
-              "type": "string",
-              "enum": [
-                "contains"
-              ]
-            },
-            {
-              "type": "string",
-              "enum": [
-                "regex"
-              ]
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [],
-      "additionalProperties": true
     },
     "NormalizedPerformOutcome": {
       "anyOf": [
@@ -3643,55 +5743,6 @@
       ],
       "additionalProperties": true
     },
-    "CdpDispatchKeyEventParams": {
-      "type": "object",
-      "properties": {
-        "key": {
-          "type": "string"
-        },
-        "code": {
-          "type": "string"
-        },
-        "modifiers": {
-          "anyOf": [
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            {
-              "type": "number"
-            }
-          ]
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
-    "CdpNodeIdParams": {
-      "type": "object",
-      "properties": {
-        "nodeId": {
-          "type": "number"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
-    "CdpDomSnapshotParams": {
-      "type": "object",
-      "properties": {
-        "computedStyles": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedCdpDispatchKeyEventParams": {
       "type": "object",
       "properties": {
@@ -3749,48 +5800,6 @@
       ],
       "additionalProperties": true
     },
-    "CheckedActionParams": {
-      "type": "object",
-      "properties": {
-        "timeoutMs": {
-          "type": "number"
-        },
-        "observe": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "settleMs": {
-                  "type": "number"
-                }
-              },
-              "required": [],
-              "additionalProperties": true
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "target": {
-          "$ref": "#/$defs/InputTarget"
-        },
-        "checked": {
-          "type": "boolean"
-        },
-        "executionMode": {
-          "$ref": "#/$defs/InputExecutionMode"
-        },
-        "recoverStale": {
-          "type": "boolean"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedCheckedAction": {
       "type": "object",
       "properties": {
@@ -3813,63 +5822,6 @@
         "executionMode",
         "recoverStale"
       ],
-      "additionalProperties": true
-    },
-    "SelectActionParams": {
-      "type": "object",
-      "properties": {
-        "timeoutMs": {
-          "type": "number"
-        },
-        "observe": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "settleMs": {
-                  "type": "number"
-                }
-              },
-              "required": [],
-              "additionalProperties": true
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "target": {
-          "$ref": "#/$defs/InputTarget"
-        },
-        "values": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "labels": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "indexes": {
-          "type": "array",
-          "items": {
-            "type": "number"
-          }
-        },
-        "executionMode": {
-          "$ref": "#/$defs/InputExecutionMode"
-        },
-        "recoverStale": {
-          "type": "boolean"
-        }
-      },
-      "required": [],
       "additionalProperties": true
     },
     "NormalizedSelectAction": {
@@ -3913,32 +5865,6 @@
       ],
       "additionalProperties": true
     },
-    "ViewportActionParams": {
-      "type": "object",
-      "properties": {
-        "target": {
-          "$ref": "#/$defs/InputTarget"
-        },
-        "top": {
-          "type": "number"
-        },
-        "left": {
-          "type": "number"
-        },
-        "behavior": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "smooth"
-          ]
-        },
-        "relative": {
-          "type": "boolean"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedViewportAction": {
       "type": "object",
       "properties": {
@@ -3971,22 +5897,6 @@
       ],
       "additionalProperties": true
     },
-    "NavigationActionParams": {
-      "type": "object",
-      "properties": {
-        "url": {
-          "type": "string"
-        },
-        "waitForLoad": {
-          "type": "boolean"
-        },
-        "timeoutMs": {
-          "type": "number"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedNavigationAction": {
       "type": "object",
       "properties": {
@@ -4005,60 +5915,6 @@
         "waitForLoad",
         "timeoutMs"
       ],
-      "additionalProperties": true
-    },
-    "PatchOperationParams": {
-      "type": "object",
-      "properties": {
-        "patchId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "target": {
-          "type": "object",
-          "additionalProperties": {}
-        },
-        "operation": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "name": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "declarations": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
-        },
-        "value": {},
-        "important": {
-          "type": "boolean"
-        },
-        "verify": {
-          "type": "boolean"
-        }
-      },
-      "required": [],
       "additionalProperties": true
     },
     "NormalizedPatchOperation": {
@@ -4124,30 +5980,6 @@
       ],
       "additionalProperties": true
     },
-    "SetupInstallParams": {
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": [
-            "install",
-            "uninstall"
-          ]
-        },
-        "kind": {
-          "type": "string",
-          "enum": [
-            "mcp",
-            "skill"
-          ]
-        },
-        "target": {
-          "type": "string"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "SetupInstallResult": {
       "type": "object",
       "properties": {
@@ -4183,25 +6015,6 @@
       ],
       "additionalProperties": true
     },
-    "EvaluateParams": {
-      "type": "object",
-      "properties": {
-        "expression": {
-          "type": "string"
-        },
-        "awaitPromise": {
-          "type": "boolean"
-        },
-        "timeoutMs": {
-          "type": "number"
-        },
-        "returnByValue": {
-          "type": "boolean"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedEvaluateParams": {
       "type": "object",
       "properties": {
@@ -4227,46 +6040,6 @@
         "timeoutMs",
         "returnByValue"
       ],
-      "additionalProperties": true
-    },
-    "ConsoleParams": {
-      "type": "object",
-      "properties": {
-        "level": {
-          "type": "string"
-        },
-        "clear": {
-          "type": "boolean"
-        },
-        "limit": {
-          "type": "number"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
-    "DialogAction": {
-      "type": "string",
-      "enum": [
-        "inspect",
-        "accept",
-        "dismiss"
-      ]
-    },
-    "HandleDialogParams": {
-      "type": "object",
-      "properties": {
-        "action": {
-          "$ref": "#/$defs/DialogAction"
-        },
-        "promptText": {
-          "type": "string"
-        },
-        "expectedDialogId": {
-          "type": "string"
-        }
-      },
-      "required": [],
       "additionalProperties": true
     },
     "NormalizedHandleDialogParams": {
@@ -4323,28 +6096,6 @@
       ],
       "additionalProperties": true
     },
-    "FindByTextParams": {
-      "type": "object",
-      "properties": {
-        "text": {
-          "type": "string"
-        },
-        "exact": {
-          "type": "boolean"
-        },
-        "selector": {
-          "type": "string"
-        },
-        "maxResults": {
-          "type": "number"
-        },
-        "includeHidden": {
-          "type": "boolean"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedFindByTextParams": {
       "type": "object",
       "properties": {
@@ -4371,31 +6122,6 @@
         "maxResults",
         "includeHidden"
       ],
-      "additionalProperties": true
-    },
-    "FindByRoleParams": {
-      "type": "object",
-      "properties": {
-        "role": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "exact": {
-          "type": "boolean"
-        },
-        "selector": {
-          "type": "string"
-        },
-        "maxResults": {
-          "type": "number"
-        },
-        "includeHidden": {
-          "type": "boolean"
-        }
-      },
-      "required": [],
       "additionalProperties": true
     },
     "NormalizedFindByRoleParams": {
@@ -4430,25 +6156,6 @@
       ],
       "additionalProperties": true
     },
-    "GetHtmlParams": {
-      "type": "object",
-      "properties": {
-        "elementRef": {
-          "type": "string"
-        },
-        "target": {
-          "$ref": "#/$defs/InputTarget"
-        },
-        "outer": {
-          "type": "boolean"
-        },
-        "maxLength": {
-          "type": "number"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedGetHtmlParams": {
       "type": "object",
       "properties": {
@@ -4471,54 +6178,6 @@
         "outer",
         "maxLength"
       ],
-      "additionalProperties": true
-    },
-    "HoverParams": {
-      "type": "object",
-      "properties": {
-        "timeoutMs": {
-          "type": "number"
-        },
-        "observe": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "settleMs": {
-                  "type": "number"
-                }
-              },
-              "required": [],
-              "additionalProperties": true
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "target": {
-          "$ref": "#/$defs/InputTarget"
-        },
-        "duration": {
-          "type": "number"
-        },
-        "modifiers": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "executionMode": {
-          "$ref": "#/$defs/InputExecutionMode"
-        },
-        "recoverStale": {
-          "type": "boolean"
-        }
-      },
-      "required": [],
       "additionalProperties": true
     },
     "NormalizedHoverParams": {
@@ -4550,54 +6209,6 @@
         "executionMode",
         "recoverStale"
       ],
-      "additionalProperties": true
-    },
-    "DragParams": {
-      "type": "object",
-      "properties": {
-        "timeoutMs": {
-          "type": "number"
-        },
-        "observe": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "settleMs": {
-                  "type": "number"
-                }
-              },
-              "required": [],
-              "additionalProperties": true
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "source": {
-          "$ref": "#/$defs/InputTarget"
-        },
-        "destination": {
-          "$ref": "#/$defs/InputTarget"
-        },
-        "offsetX": {
-          "type": "number"
-        },
-        "offsetY": {
-          "type": "number"
-        },
-        "executionMode": {
-          "$ref": "#/$defs/InputExecutionMode"
-        },
-        "recoverStale": {
-          "type": "boolean"
-        }
-      },
-      "required": [],
       "additionalProperties": true
     },
     "NormalizedDragParams": {
@@ -4632,26 +6243,6 @@
       ],
       "additionalProperties": true
     },
-    "StorageParams": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": [
-            "local",
-            "session"
-          ]
-        },
-        "keys": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedStorageParams": {
       "type": "object",
       "properties": {
@@ -4679,29 +6270,6 @@
       "required": [
         "type",
         "keys"
-      ],
-      "additionalProperties": true
-    },
-    "SensitiveStorageSource": {
-      "type": "string",
-      "enum": [
-        "local_storage",
-        "session_storage"
-      ]
-    },
-    "SensitiveReadParams": {
-      "type": "object",
-      "properties": {
-        "source": {
-          "$ref": "#/$defs/SensitiveStorageSource"
-        },
-        "key": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "source",
-        "key"
       ],
       "additionalProperties": true
     },
@@ -4748,42 +6316,12 @@
       ],
       "additionalProperties": true
     },
-    "ExtractContentFormat": {
-      "type": "string",
-      "enum": [
-        "text",
-        "markdown"
-      ]
-    },
-    "ExtractContentConsistency": {
-      "type": "string",
-      "enum": [
-        "best_effort",
-        "settled"
-      ]
-    },
     "ExtractContentSource": {
       "type": "string",
       "enum": [
         "readability",
         "semantic-root",
         "body"
-      ]
-    },
-    "ScreenshotFormat": {
-      "type": "string",
-      "enum": [
-        "png",
-        "jpeg",
-        "webp"
-      ]
-    },
-    "ScreenshotDelivery": {
-      "type": "string",
-      "enum": [
-        "auto",
-        "inline",
-        "artifact"
       ]
     },
     "ArtifactKind": {
@@ -4793,31 +6331,6 @@
         "har",
         "resource"
       ]
-    },
-    "ExtractContentParams": {
-      "type": "object",
-      "properties": {
-        "format": {
-          "$ref": "#/$defs/ExtractContentFormat"
-        },
-        "selector": {
-          "type": "string"
-        },
-        "includeMetadata": {
-          "type": "boolean"
-        },
-        "consistency": {
-          "$ref": "#/$defs/ExtractContentConsistency"
-        },
-        "textBudget": {
-          "type": "number"
-        },
-        "settleTimeoutMs": {
-          "type": "number"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
     },
     "NormalizedExtractContentParams": {
       "type": "object",
@@ -4858,49 +6371,6 @@
       ],
       "additionalProperties": true
     },
-    "ScreenshotParams": {
-      "type": "object",
-      "properties": {
-        "format": {
-          "$ref": "#/$defs/ScreenshotFormat"
-        },
-        "quality": {
-          "type": "number"
-        },
-        "delivery": {
-          "$ref": "#/$defs/ScreenshotDelivery"
-        },
-        "scale": {
-          "type": "number"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
-    "VisualRect": {
-      "type": "object",
-      "properties": {
-        "x": {
-          "type": "number"
-        },
-        "y": {
-          "type": "number"
-        },
-        "width": {
-          "type": "number"
-        },
-        "height": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "x",
-        "y",
-        "width",
-        "height"
-      ],
-      "additionalProperties": true
-    },
     "VisualBaselineInvalidationMessage": {
       "type": "object",
       "properties": {
@@ -4918,59 +6388,6 @@
       "required": [
         "type",
         "tabId"
-      ],
-      "additionalProperties": true
-    },
-    "VisualBaselineCreateParams": {
-      "type": "object",
-      "properties": {
-        "selector": {
-          "type": "string"
-        },
-        "rect": {
-          "$ref": "#/$defs/VisualRect"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
-    "VisualBaselineFallback": {
-      "type": "string",
-      "enum": [
-        "summary",
-        "current"
-      ]
-    },
-    "VisualBaselineCompareParams": {
-      "type": "object",
-      "properties": {
-        "baselineId": {
-          "type": "string"
-        },
-        "advance": {
-          "type": "boolean"
-        },
-        "includeBefore": {
-          "type": "boolean"
-        },
-        "fallback": {
-          "$ref": "#/$defs/VisualBaselineFallback"
-        }
-      },
-      "required": [
-        "baselineId"
-      ],
-      "additionalProperties": true
-    },
-    "VisualBaselineReleaseParams": {
-      "type": "object",
-      "properties": {
-        "baselineId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "baselineId"
       ],
       "additionalProperties": true
     },
@@ -6001,22 +7418,6 @@
         }
       ]
     },
-    "ArtifactReadParams": {
-      "type": "object",
-      "properties": {
-        "artifactId": {
-          "type": "string"
-        },
-        "offset": {
-          "type": "number"
-        },
-        "maxBytes": {
-          "type": "number"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedArtifactReadParams": {
       "type": "object",
       "properties": {
@@ -6035,16 +7436,6 @@
         "offset",
         "maxBytes"
       ],
-      "additionalProperties": true
-    },
-    "ArtifactDeleteParams": {
-      "type": "object",
-      "properties": {
-        "artifactId": {
-          "type": "string"
-        }
-      },
-      "required": [],
       "additionalProperties": true
     },
     "ExtractContentResult": {
@@ -6126,19 +7517,6 @@
       ],
       "additionalProperties": true
     },
-    "TabCreateParams": {
-      "type": "object",
-      "properties": {
-        "url": {
-          "type": "string"
-        },
-        "active": {
-          "type": "boolean"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedTabCreateParams": {
       "type": "object",
       "properties": {
@@ -6155,16 +7533,6 @@
       ],
       "additionalProperties": true
     },
-    "TabCloseParams": {
-      "type": "object",
-      "properties": {
-        "tabId": {
-          "type": "number"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedTabCloseParams": {
       "type": "object",
       "properties": {
@@ -6175,57 +7543,6 @@
       "required": [
         "tabId"
       ],
-      "additionalProperties": true
-    },
-    "AccessibilityTreeParams": {
-      "type": "object",
-      "properties": {
-        "selector": {
-          "type": "string"
-        },
-        "maxDepth": {
-          "type": "number"
-        },
-        "maxNodes": {
-          "type": "number"
-        },
-        "compact": {
-          "type": "boolean"
-        },
-        "interactiveOnly": {
-          "type": "boolean"
-        },
-        "source": {
-          "type": "string",
-          "enum": [
-            "cdp",
-            "dom"
-          ]
-        },
-        "format": {
-          "type": "string",
-          "enum": [
-            "tree",
-            "outline"
-          ]
-        },
-        "scope": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "modal",
-            "main",
-            "document"
-          ]
-        },
-        "find": {
-          "type": "string"
-        },
-        "context": {
-          "type": "number"
-        }
-      },
-      "required": [],
       "additionalProperties": true
     },
     "NormalizedAccessibilityTreeParams": {
@@ -6689,44 +8006,6 @@
       ],
       "additionalProperties": true
     },
-    "NetworkSource": {
-      "type": "string",
-      "enum": [
-        "fetch-xhr",
-        "cdp"
-      ]
-    },
-    "NetworkCaptureAction": {
-      "type": "string",
-      "enum": [
-        "read",
-        "start",
-        "clear",
-        "stop"
-      ]
-    },
-    "NetworkParams": {
-      "type": "object",
-      "properties": {
-        "clear": {
-          "type": "boolean"
-        },
-        "limit": {
-          "type": "number"
-        },
-        "urlPattern": {
-          "type": "string"
-        },
-        "source": {
-          "$ref": "#/$defs/NetworkSource"
-        },
-        "capture": {
-          "$ref": "#/$defs/NetworkCaptureAction"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedNetworkParams": {
       "type": "object",
       "properties": {
@@ -7091,14 +8370,6 @@
       ],
       "additionalProperties": true
     },
-    "HarDelivery": {
-      "type": "string",
-      "enum": [
-        "auto",
-        "inline",
-        "artifact"
-      ]
-    },
     "HarCaptureState": {
       "type": "string",
       "enum": [
@@ -7107,22 +8378,6 @@
         "stopped",
         "instrumented"
       ]
-    },
-    "HarExportParams": {
-      "type": "object",
-      "properties": {
-        "limit": {
-          "type": "number"
-        },
-        "urlPattern": {
-          "type": "string"
-        },
-        "delivery": {
-          "$ref": "#/$defs/HarDelivery"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
     },
     "NormalizedHarExportParams": {
       "type": "object",
@@ -8073,39 +9328,6 @@
       ],
       "additionalProperties": true
     },
-    "NetworkInterceptAction": {
-      "type": "string",
-      "enum": [
-        "fulfill",
-        "continue",
-        "block"
-      ]
-    },
-    "NetworkInterceptAddParams": {
-      "type": "object",
-      "properties": {
-        "urlPattern": {
-          "type": "string"
-        },
-        "action": {
-          "$ref": "#/$defs/NetworkInterceptAction"
-        },
-        "statusCode": {
-          "type": "number"
-        },
-        "body": {
-          "type": "string"
-        },
-        "headers": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedNetworkInterceptAddParams": {
       "type": "object",
       "properties": {
@@ -8134,16 +9356,6 @@
       ],
       "additionalProperties": true
     },
-    "PageTextParams": {
-      "type": "object",
-      "properties": {
-        "textBudget": {
-          "type": "number"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedPageTextParams": {
       "type": "object",
       "properties": {
@@ -8154,16 +9366,6 @@
       "required": [
         "textBudget"
       ],
-      "additionalProperties": true
-    },
-    "LogTailParams": {
-      "type": "object",
-      "properties": {
-        "limit": {
-          "type": "number"
-        }
-      },
-      "required": [],
       "additionalProperties": true
     },
     "NormalizedLogTailParams": {
@@ -8178,16 +9380,6 @@
       ],
       "additionalProperties": true
     },
-    "HealthPingParams": {
-      "type": "object",
-      "properties": {
-        "diagnostics": {
-          "type": "boolean"
-        }
-      },
-      "required": [],
-      "additionalProperties": true
-    },
     "NormalizedHealthPingParams": {
       "type": "object",
       "properties": {
@@ -8198,25 +9390,6 @@
       "required": [
         "diagnostics"
       ],
-      "additionalProperties": true
-    },
-    "ViewportResizeParams": {
-      "type": "object",
-      "properties": {
-        "width": {
-          "type": "number"
-        },
-        "height": {
-          "type": "number"
-        },
-        "deviceScaleFactor": {
-          "type": "number"
-        },
-        "reset": {
-          "type": "boolean"
-        }
-      },
-      "required": [],
       "additionalProperties": true
     },
     "NormalizedViewportResizeParams": {

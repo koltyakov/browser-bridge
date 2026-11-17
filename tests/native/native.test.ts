@@ -202,6 +202,23 @@ test(
     assert.equal(detail.example.steps.length, 2);
     const alias = await execFileAsync(executable, ['protocol', 'describe', 'input.perform']);
     assert.deepEqual(JSON.parse(alias.stdout), detail);
+    const searched = await execFileAsync(
+      executable,
+      ['protocol.describe', '{"query":"input.fill","limit":1}'],
+      { env: { ...process.env, PATH: '' } }
+    );
+    const search = JSON.parse(searched.stdout) as {
+      matches: Array<{ method: string; signature: string; invocation: { tool: string } }>;
+      pagination: { returnedCount: number };
+    };
+    assert.equal(search.matches[0]?.method, 'input.fill');
+    assert.match(search.matches[0]?.signature ?? '', /call\(method: "input.fill"/);
+    assert.equal(search.matches[0]?.invocation.tool, 'browser_call');
+    assert.equal(search.pagination.returnedCount, 1);
+    await assert.rejects(
+      execFileAsync(executable, ['protocol.describe', '{"query":"input","limit":0}']),
+      /limit must be an integer/
+    );
   }
 );
 

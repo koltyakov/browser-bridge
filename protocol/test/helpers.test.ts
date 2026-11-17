@@ -27,6 +27,7 @@ const EXPECTED_BRIDGE_METHOD_ORDER: readonly BridgeMethod[] = [
   'access.request',
   'access.wait_for_change',
   'protocol.describe',
+  'protocol.capabilities',
   'skill.get_runtime_context',
   'setup.get_status',
   'setup.install',
@@ -323,7 +324,7 @@ test('describeBridgeMethods returns compact method, group, and index shapes', ()
 
   assert.deepEqual(describeBridgeMethods(), {
     groups: [
-      { group: 'system', count: 9 },
+      { group: 'system', count: 10 },
       { group: 'tabs', count: 4 },
       { group: 'page', count: 13 },
       { group: 'wait', count: 2 },
@@ -368,6 +369,7 @@ test('registry policies preserve every method capability classification', () => 
         'access.request',
         'access.wait_for_change',
         'protocol.describe',
+        'protocol.capabilities',
         'tabs.list',
         'skill.get_runtime_context',
         'setup.get_status',

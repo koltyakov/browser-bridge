@@ -146,7 +146,7 @@ function reference(value, context) {
     }
     return { type: 'object', additionalProperties: property };
   }
-  if (id === 'Pick' || id === 'Required') {
+  if (id === 'Pick' || id === 'Required' || id === 'Partial') {
     const original = structuredClone(resolve(schema(args[0], context)));
     if (!original.properties) throw new Error(`${id} requires object properties`);
     if (id === 'Pick') {
@@ -156,7 +156,7 @@ function reference(value, context) {
         Object.entries(original.properties).filter(([key]) => keys.includes(key))
       );
       original.required = original.required?.filter((key) => keys.includes(key));
-    } else original.required = Object.keys(original.properties);
+    } else original.required = id === 'Partial' ? [] : Object.keys(original.properties);
     return original;
   }
   if (args.length) {

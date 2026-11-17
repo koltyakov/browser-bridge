@@ -116,6 +116,29 @@ function inferCdpKeyDefinition(key: string): {
 }
 
 /** Check before a key-dependent flow and again before each fresh key dispatch. */
+export function requiresNativeKeyboard(method: string, params: Record<string, unknown>): boolean {
+  return (
+    method === 'cdp.dispatch_key_event' ||
+    method === 'input.press_key' ||
+    method === 'input.fill' ||
+    (method === 'input.type' && (params.clear === true || params.submit === true))
+  );
+}
+
+export const NATIVE_INPUT_METHODS: ReadonlySet<string> = new Set([
+  'input.click',
+  'input.hover',
+  'input.drag',
+  'input.type',
+  'input.fill',
+  'input.press_key',
+  'input.touch',
+]);
+
+export function requiresNativePointer(method: string): boolean {
+  return ['input.click', 'input.hover', 'input.drag', 'input.touch'].includes(method);
+}
+
 export async function assertNativeKeyboardTargetActive(
   tabId: number,
   getTab: (tabId: number) => Promise<Pick<chrome.tabs.Tab, 'active'>>
@@ -164,6 +187,7 @@ export function shouldLogAction(method: string): boolean {
     'setup.get_status',
     'setup.install',
     'tabs.list',
+    'protocol.capabilities',
   ].includes(method);
 }
 

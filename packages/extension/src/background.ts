@@ -122,6 +122,7 @@ import { createActionLogController, enrichBridgeResponse } from './background-ac
 import { createAccessRequestController } from './background-access-request.js';
 import { createPageRequestController } from './background-page.js';
 import { createBackgroundInputController, isNativeInputRelease } from './background-input.js';
+import { discoverRuntimeCapabilities } from './background-capabilities.js';
 import {
   getContentScriptTimeout,
   handleTabBoundRequest as executeTabBoundRequest,
@@ -265,6 +266,12 @@ const recoveryTelemetry = new RecoveryTelemetryCollector();
 const tabDebugger = new TabDebuggerCoordinator({
   attach: (target, protocolVersion) => chrome.debugger.attach(target, protocolVersion),
   detach: (target) => chrome.debugger.detach(target),
+  ownsAttachment: async (target) => {
+    // Chrome rejects sendCommand unless this extension owns the attachment.
+    // A read-only runtime ID does not execute page code or replay input.
+    await chrome.debugger.sendCommand(target, 'Runtime.getIsolateId', {});
+    return true;
+  },
   initialize: async (target) => {
     await chrome.debugger.sendCommand(target, 'Page.enable', {});
   },
@@ -1345,6 +1352,76 @@ async function dispatchBridgeRequest(request: BridgeRequest): Promise<BridgeResp
       );
   }
   switch (request.method) {
+    case 'protocol.capabilities': {
+      const result = await discoverRuntimeCapabilities(request, {
+        resolveTarget: (candidate) =>
+          resolveRequestTarget(candidate, { peek: true, requireScriptable: false }),
+        captureAccess: () => {
+          const assertGrant = captureWindowGrant(state);
+          const port = state.nativePort;
+          return (target) => {
+            assertGrant();
+            if (state.nativePort !== port || !isGrantedTab(state, target.tabId, target.windowId))
+              throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Capability scope changed.', {
+                reason: 'access_scope_changed',
+              });
+          };
+        },
+        assertActive: requestLifetimes.guard(request.id, request.meta?.deadline_ms),
+        getTab: (tabId) => chrome.tabs.get(tabId),
+        probeFrame: async (tabId, frameId) => {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            const results = await Promise.race([
+              chrome.scripting.executeScript({
+                target: { tabId, frameIds: [frameId] },
+                func: () => {
+                  const context = (
+                    document as Document & {
+                      modelContext?: { getTools?: unknown; executeTool?: unknown };
+                    }
+                  ).modelContext;
+                  return {
+                    webmcp:
+                      typeof context?.getTools === 'function' &&
+                      typeof context?.executeTool === 'function',
+                  };
+                },
+              }),
+              new Promise<never>((_resolve, reject) => {
+                timer = setTimeout(() => reject(new Error('Capability probe timed out.')), 1500);
+              }),
+            ]);
+            const result = results.find((entry) => entry.frameId === frameId)?.result;
+            if (!result || typeof result.webmcp !== 'boolean')
+              throw new Error('Frame probe unavailable.');
+            return result;
+          } finally {
+            clearTimeout(timer);
+          }
+        },
+        settings: () => getAccessSettingsSnapshot(state),
+        ownsTab: (tabId) => {
+          const owner = state.aiCreatedTabs[String(tabId)];
+          return Boolean(
+            owner &&
+            owner.windowId === state.enabledWindow?.windowId &&
+            owner.enabledAt === state.enabledWindow?.enabledAt
+          );
+        },
+        debuggerReason: (tabId) => {
+          if (typeof chrome.debugger?.attach !== 'function') return 'debugger_api_unavailable';
+          try {
+            tabDebugger.assertCanStart(tabId);
+            return null;
+          } catch (error) {
+            return error instanceof BridgeError ? error.code.toLowerCase() : 'debugger_unavailable';
+          }
+        },
+        downloadsAvailable: typeof chrome.downloads?.download === 'function',
+      });
+      return createSuccess(request.id, result, { method: request.method });
+    }
     case 'session.start':
     case 'session.status':
     case 'session.read':

@@ -9,6 +9,103 @@ function nextTick(): Promise<void> {
   });
 }
 
+test('worker recovery resets only a proven own attachment before dispatching one task', async () => {
+  const events: string[] = [];
+  let attaches = 0;
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      events.push('attach');
+      if (++attaches === 1) throw new Error('Another debugger is already attached to the tab.');
+    },
+    ownsAttachment: async () => {
+      events.push('prove-own');
+      return true;
+    },
+    detach: async () => {
+      events.push('detach');
+    },
+    initialize: async () => {
+      events.push('initialize');
+    },
+  });
+  await coordinator.run(
+    7,
+    async () => {
+      events.push('task');
+    },
+    { releaseAfterRun: true }
+  );
+  await nextTick();
+  assert.deepEqual(events, [
+    'attach',
+    'prove-own',
+    'detach',
+    'attach',
+    'initialize',
+    'task',
+    'detach',
+  ]);
+});
+
+test('worker recovery never detaches a foreign or unprovable attachment', async () => {
+  for (const fails of [false, true]) {
+    const events: string[] = [];
+    const coordinator = new TabDebuggerCoordinator({
+      attach: async () => {
+        events.push('attach');
+        throw new Error('Another debugger is already attached');
+      },
+      ownsAttachment: async () => {
+        events.push('prove-own');
+        if (fails) throw new Error('Debugger is not attached to this extension');
+        return false;
+      },
+      detach: async () => {
+        events.push('detach');
+      },
+    });
+    await assert.rejects(
+      coordinator.run(7, async () => {
+        events.push('task');
+      }),
+      /Another debugger/
+    );
+    assert.deepEqual(events, ['attach', 'prove-own']);
+    assert.equal(coordinator.attachedTabs.size, 0);
+  }
+});
+
+test('cancellation during attachment ownership proof prevents reset and input dispatch', async () => {
+  let resolveProof: (value: boolean) => void = () => {};
+  const proof = new Promise<boolean>((resolve) => {
+    resolveProof = resolve;
+  });
+  const events: string[] = [];
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      events.push('attach');
+      throw new Error('Another debugger is already attached');
+    },
+    ownsAttachment: async () => {
+      events.push('proof');
+      return proof;
+    },
+    detach: async () => {
+      events.push('detach');
+    },
+  });
+  const pending = coordinator.run(7, async () => {
+    events.push('task');
+  });
+  const rejected = assert.rejects(pending, /cancel/i);
+  await nextTick();
+  const discarded = coordinator.discard(7);
+  resolveProof(true);
+  await rejected;
+  await discarded;
+  assert.deepEqual(events, ['attach', 'proof']);
+});
+
 test('TabDebuggerCoordinator serializes debugger work for the same tab', async () => {
   const events: string[] = [];
   let releaseFirstTask: (value?: void | PromiseLike<void>) => void = () => {};

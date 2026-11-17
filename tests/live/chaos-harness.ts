@@ -41,8 +41,19 @@ export function positiveSetting(name: string, fallback: number, min: number, max
 /** Linux-only: both Chrome's registry and Go's home are redirected into this run.
  * Never installs into the user's real browser or connects to an existing daemon. */
 export class ChaosHarness {
+  constructor(
+    private readonly options: {
+      portable?: boolean;
+      extensionDirectory?: string;
+      outputDirectory?: string;
+    } = {}
+  ) {}
+
   root = '';
-  readonly output = path.join(
+  get output(): string {
+    return this.options.outputDirectory ?? this.defaultOutput;
+  }
+  private readonly defaultOutput = path.join(
     repoRoot,
     'dist',
     'chaos-live',
@@ -73,11 +84,22 @@ export class ChaosHarness {
   }
 
   async start(chromeExecutable: string) {
-    assert.equal(process.platform, 'linux', 'Native-host isolation currently requires Linux');
     assert(
-      process.env.DISPLAY || process.env.WAYLAND_DISPLAY,
-      'Use a disposable display, e.g. xvfb-run'
+      path.isAbsolute(chromeExecutable),
+      'Supply an absolute Chrome for Testing/Chromium executable'
     );
+    if (this.options.portable)
+      assert(
+        ['darwin', 'linux'].includes(process.platform),
+        'Full-chain isolation supports macOS/Linux only'
+      );
+    else {
+      assert.equal(process.platform, 'linux', 'Native-host isolation currently requires Linux');
+      assert(
+        process.env.DISPLAY || process.env.WAYLAND_DISPLAY,
+        'Use a disposable display, e.g. xvfb-run'
+      );
+    }
     this.executable = await realpath(nativeExecutable);
     await mkdir(this.output, { recursive: true });
     this.root = await mkdtemp(path.join(os.tmpdir(), 'bbx-chaos-'));
@@ -85,6 +107,7 @@ export class ChaosHarness {
     const env = {
       ...isolatedBridgeEnv(process.env),
       HOME: this.root,
+      CFFIXED_USER_HOME: this.root,
       XDG_CONFIG_HOME: path.join(this.root, 'config'),
       CHROME_CONFIG_HOME: path.join(this.root, 'config'),
       XDG_DATA_HOME: path.join(this.root, 'data'),
@@ -100,7 +123,9 @@ export class ChaosHarness {
       .map((nibble) => String.fromCharCode(97 + nibble))
       .join('');
     const extensionPath = path.join(this.root, 'extension');
-    await cp(path.join(repoRoot, 'dist/ext'), extensionPath, { recursive: true });
+    await cp(this.options.extensionDirectory ?? path.join(repoRoot, 'dist/ext'), extensionPath, {
+      recursive: true,
+    });
     const manifestPath = path.join(extensionPath, 'manifest.json');
     const manifest = object(JSON.parse(await readFile(manifestPath, 'utf8')));
     setProtocolPackageVersion(String(manifest.version));
@@ -121,7 +146,17 @@ export class ChaosHarness {
     for (const directory of [
       profile,
       ...targets.browsers.map((entry) =>
-        path.join(env.XDG_CONFIG_HOME, String(object(entry).linuxDir))
+        process.platform === 'darwin'
+          ? path.join(
+              this.root,
+              'Library',
+              'Application Support',
+              String(object(entry).macNativeMessagingDir ?? object(entry).macDir)
+            )
+          : path.join(
+              env.XDG_CONFIG_HOME,
+              String(object(entry).linuxNativeMessagingDir ?? object(entry).linuxDir)
+            )
       ),
     ]) {
       const hosts = path.join(directory, 'NativeMessagingHosts');
@@ -167,6 +202,16 @@ export class ChaosHarness {
         `--user-data-dir=${profile}`,
         `--load-extension=${extensionPath}`,
         `--disable-extensions-except=${extensionPath}`,
+        ...(this.options.portable
+          ? [
+              '--headless=new',
+              '--no-proxy-server',
+              '--enable-logging=stderr',
+              ...(process.platform === 'darwin'
+                ? ['--use-mock-keychain', '--password-store=basic']
+                : []),
+            ]
+          : []),
         '--remote-debugging-pipe',
         '--no-first-run',
         '--no-default-browser-check',
@@ -197,14 +242,29 @@ export class ChaosHarness {
       flatten: true,
     });
     this.ui = String(attached.sessionId);
-    await eventually('extension startup', 15_000, async (remaining) => {
-      this.tabId = Number(
+    await eventually('extension UI context', 10000, async (remaining) => {
+      const context = object(
         await this.uiEvaluate(
-          `(await chrome.tabs.query({})).find(tab => tab.url === ${JSON.stringify(url)})?.id`,
+          '({url:location.href,ready:document.readyState,tabs:typeof chrome.tabs?.query})',
           remaining
         )
       );
-      assert(this.tabId > 0);
+      assert.equal(context.tabs, 'function', JSON.stringify(context));
+    });
+    if (this.options.portable) {
+      // Headless Chrome on macOS may ignore its positional startup URL.
+      // Create the synthetic fixture explicitly inside this private profile.
+      this.tabId = Number(
+        await this.uiEvaluate(
+          `(await chrome.tabs.create({url:${JSON.stringify(url)},active:true})).id`
+        )
+      );
+    }
+    await eventually('extension startup', 15_000, async (remaining) => {
+      const tabs = await this.uiEvaluate('chrome.tabs.query({})', remaining);
+      assert(Array.isArray(tabs), 'Extension tab query returned no array');
+      this.tabId = Number(tabs.map(object).find((tab) => tab.url === url)?.id);
+      assert(this.tabId > 0, `Synthetic fixture not found: ${JSON.stringify(tabs)}`);
     });
     // Exercise the shipped extension's UI-port access flow, not worker globals.
     await this.uiEvaluate(`(() => {
@@ -217,6 +277,7 @@ export class ChaosHarness {
     // fixture is activated; the inspector stays attached to the extension UI.
     await this.uiEvaluate(`chrome.tabs.update(${this.tabId}, {active:true})`);
     await this.recover(20_000);
+    if (this.options.portable) return;
     await this.clean(10_000);
     this.baselineTargets = await this.pageTargets();
     this.baselinePid = await this.daemonPid();
@@ -508,6 +569,10 @@ export class ChaosHarness {
   }
 
   async close() {
+    if (this.options.portable) {
+      await this.closePortable();
+      return;
+    }
     const errors: unknown[] = [];
     for (const client of this.clients)
       await client.close().catch((error: unknown) => errors.push(error));
@@ -583,5 +648,57 @@ export class ChaosHarness {
       await rm(this.root, { recursive: true, force: true });
     }
     if (errors.length) throw new AggregateError(errors, 'Disposable browser cleanup failed');
+  }
+
+  /** Portable suite never SIGKILLs a discovered PID. All processes are owned
+   * children or members of the browser/daemon process groups it launched. */
+  private async closePortable(): Promise<void> {
+    const errors: unknown[] = [];
+    for (const client of this.clients)
+      await client.close().catch((error: unknown) => errors.push(error));
+    this.clients.clear();
+    await this.pipe?.command('Browser.close', {}, undefined, 2000).catch(() => {});
+    this.pipe?.close();
+    for (const child of [...this.children].reverse()) {
+      if (!child.pid) continue;
+      try {
+        // Also signal the group after the direct child exits, to release any
+        // owned native-host or renderer descendants.
+        try {
+          process.kill(-child.pid, 'SIGTERM');
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+        }
+        await eventually('owned full-chain process teardown', 5000, async () => {
+          let groupAlive = false;
+          try {
+            process.kill(-child.pid!, 0);
+            groupAlive = true;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+          }
+          if ((child.exitCode === null && child.signalCode === null) || groupAlive) {
+            try {
+              process.kill(-child.pid!, 'SIGKILL');
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+            }
+            throw new Error('Waiting for owned process exit');
+          }
+        });
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (this.server) await new Promise<void>((resolve) => this.server?.close(() => resolve()));
+    if (this.root) {
+      await cp(
+        path.join(this.home, 'daemon.log'),
+        path.join(this.output, 'reconnected-daemon.log')
+      ).catch(() => {});
+      if (!errors.length) await rm(this.root, { recursive: true, force: true });
+    }
+    if (errors.length)
+      throw new AggregateError(errors, 'Full-chain teardown failed; owned home retained.');
   }
 }
