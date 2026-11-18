@@ -3,7 +3,9 @@ package bridge
 import (
 	"bytes"
 	"errors"
+	"io/fs"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -26,7 +28,7 @@ func TestCodeModeAdapterExportIsExactAndOffline(t *testing.T) {
 	if err := writeCodeModeAdapter(&output, nil); err != nil {
 		t.Fatal(err)
 	}
-	expected, err := codeModeAssets.ReadFile("generated/code-mode/browser-bridge.mjs")
+	expected, err := os.ReadFile("generated/code-mode/browser-bridge.mjs")
 	if err != nil || !bytes.Equal(expected, output.Bytes()) {
 		t.Fatal("default export is not ESM")
 	}
@@ -38,6 +40,38 @@ func TestCodeModeAdapterExportIsExactAndOffline(t *testing.T) {
 	}
 	if err := writeCodeModeAdapter(codeModeBrokenWriter{}, nil); !errors.Is(err, errCodeModeWrite) {
 		t.Fatal("output failure was swallowed")
+	}
+}
+
+func TestCodeModeEmbedsOnlyCompressedAdapters(t *testing.T) {
+	var count, compressedBytes, plainBytes int
+	if err := fs.WalkDir(codeModeAssets, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		if !strings.HasSuffix(path, ".gz") {
+			t.Fatalf("uncompressed adapter embedded: %s", path)
+		}
+		compressed, err := codeModeAssets.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		plain, err := os.ReadFile(strings.TrimSuffix(path, ".gz"))
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(expandEmbeddedAsset(compressed), plain) {
+			t.Fatalf("compressed adapter differs from generated source: %s", path)
+		}
+		count++
+		compressedBytes += len(compressed)
+		plainBytes += len(plain)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 || compressedBytes >= plainBytes/4 {
+		t.Fatalf("expected three compact adapters; files=%d compressed=%d plain=%d", count, compressedBytes, plainBytes)
 	}
 }
 

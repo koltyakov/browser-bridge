@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { test, type TestContext } from 'node:test';
 import { prepareNpm } from '../../../scripts/prepare-npm.mjs';
+import { nativeMaxBytes } from '../../../packages/npm/src/install-targets.js';
 
 const releaseEnv = {
   GITHUB_REF: 'refs/tags/v1.2.3',
@@ -126,6 +127,17 @@ test('native manifest generation does not synchronize or require npm metadata', 
   assert.equal(await fs.readFile(manifestPath, 'utf8'), original);
 });
 
+test('npm preparation accepts former limits and sizes just below the current limit', async (t) => {
+  const { directory } = await fixture(t);
+  const [key, asset] = platforms[0];
+  const file = path.join(directory, 'dist/cli', asset);
+  for (const bytes of [10_000_000, 11_000_000, nativeMaxBytes - 1]) {
+    await fs.truncate(file, bytes);
+    const manifest = await prepareNpm(directory, {});
+    assert.equal(manifest.artifacts[key].bytes, bytes);
+  }
+});
+
 for (const mutation of [
   'invalid-manifest-version',
   'missing-file',
@@ -161,7 +173,7 @@ for (const mutation of [
         await fs.truncate(file, 0);
         break;
       case 'oversized-file':
-        await fs.truncate(file, 10_000_000);
+        await fs.truncate(file, nativeMaxBytes);
         break;
     }
     await assert.rejects(prepareNpm(directory, {}), /./);

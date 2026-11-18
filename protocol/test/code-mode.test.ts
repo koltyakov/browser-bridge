@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import {
   createBrowserBridge,
   type BrowserCallArguments,
@@ -170,6 +171,24 @@ test('generated artifacts are standalone, deterministic, and checked for drift o
       const relative = `internal/bridge/generated/code-mode/browser-bridge.${extension}`;
       const filename = path.join(directory, relative);
       const original = await fs.readFile(filename, 'utf8');
+      const compressedName = `${filename}.gz`;
+      const compressed = await fs.readFile(compressedName);
+      assert.equal(gunzipSync(compressed).toString(), original);
+      assert(compressed.length < Buffer.byteLength(original));
+      // Valid pre-existing compression bytes are retained across zlib versions.
+      const alternate = gzipSync(original, { level: 1 });
+      await fs.writeFile(compressedName, alternate);
+      await generateCodeMode(false, directory);
+      assert.deepEqual(await fs.readFile(compressedName), alternate);
+      for (const broken of [Buffer.from('not gzip'), gzipSync('stale adapter')]) {
+        await fs.writeFile(compressedName, broken);
+        await assert.rejects(generateCodeMode(true, directory), /Compressed asset is stale/);
+        await generateCodeMode(false, directory);
+        assert.equal(gunzipSync(await fs.readFile(compressedName)).toString(), original);
+      }
+      await fs.rm(compressedName);
+      await assert.rejects(generateCodeMode(true, directory), /Compressed asset is stale/);
+      await generateCodeMode(false, directory);
       assert.equal(original, await fs.readFile(new URL(relative, root), 'utf8'));
       if (extension === 'ts') assert.equal(original, sources.typescript);
       if (extension === 'd.mts') assert.equal(original, sources.declarations);

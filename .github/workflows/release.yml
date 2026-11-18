@@ -61,7 +61,7 @@ jobs:
           RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}
 
       - name: Check release metadata and generated protocol
-        run: make check-release-version check-protocol
+        run: make check-release-version check-protocol check-readability
 
       - name: Test Go runtime
         run: make test-go vet-go check-go-format

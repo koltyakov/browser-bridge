@@ -1,7 +1,7 @@
 {
   "hostName": "com.browserbridge.browser_bridge",
   "extensionId": "jjjkmmcdkpcgamlopogicbnnhdgebhie",
-  "maxBinaryBytes": 10000000,
+  "maxBinaryBytes": 12000000,
   "platforms": [
     {
       "key": "darwin-arm64",

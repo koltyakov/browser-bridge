@@ -12,6 +12,7 @@ import {
   type InstallOptions,
 } from '../src/runtime.js';
 import { postinstall, shouldInitialize } from '../bin/postinstall.js';
+import { nativeMaxBytes } from '../src/install-targets.js';
 
 async function fixture(t: TestContext) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bbx-npm-test-'));
@@ -388,10 +389,20 @@ test('Linux npm cache ignores relative XDG overrides', async (t) => {
   }
 });
 
+test('npm bootstrap accepts larger releases below the current size limit', async (t) => {
+  const f = await fixture(t);
+  for (const bytes of [10_000_000, 11_000_000, nativeMaxBytes - 1]) {
+    f.manifest.artifacts[f.target].bytes = bytes;
+    const release = await f.writeManifest();
+    assert.equal(release.artifact.bytes, bytes);
+  }
+  assert.equal(f.counts().downloads, 0);
+});
+
 test('npm bootstrap rejects malformed release metadata before download', async (t) => {
   const f = await fixture(t);
   for (const artifact of [
-    { ...f.manifest.artifacts[f.target], bytes: 10_000_000 },
+    { ...f.manifest.artifacts[f.target], bytes: nativeMaxBytes },
     { ...f.manifest.artifacts[f.target], sha256: 'invalid' },
   ]) {
     f.manifest.artifacts[f.target] = artifact;

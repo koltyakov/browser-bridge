@@ -10,7 +10,7 @@ import (
 	"unicode"
 	"unicode/utf16"
 
-	readability "codeberg.org/readeck/go-readability/v2"
+	"github.com/koltyakov/browser-bridge/internal/readability"
 	nethtml "golang.org/x/net/html"
 )
 

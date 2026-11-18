@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { transform } from 'esbuild';
 import { createMethodInputs, schemaSignature, validateMcpMetadata } from './generate-catalog.mjs';
+import { generateGzip } from './generated-gzip.mjs';
 
 /** @typedef {import('./generate-catalog.mjs').MethodInput} MethodInput */
 /** @typedef {{[key: string]: Tree | string}} Tree */
@@ -172,5 +173,6 @@ export async function generateCodeMode(
       await fs.mkdir(path.dirname(filename), { recursive: true });
       await fs.writeFile(filename, content);
     }
+    await generateGzip(`${filename}.gz`, Buffer.from(content), check);
   }
 }

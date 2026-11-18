@@ -61,4 +61,4 @@ export const nativeTargets = Object.freeze({
   'win32-arm64': 'bbx-windows-arm64.exe',
   'win32-x64': 'bbx-windows-x64.exe',
 });
-export const nativeMaxBytes = 10000000;
+export const nativeMaxBytes = 12000000;

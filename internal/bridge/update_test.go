@@ -578,6 +578,13 @@ func TestUpdateMetadataLimitsDuplicateKeysAndUnsafeURLs(t *testing.T) {
 		t.Fatal("accepted duplicate signed JSON keys")
 	}
 	artifact := manifest.Releases[0].Artifacts[f.manager.Target]
+	for _, size := range []int64{10_000_000, 11_000_000, updateBinaryLimit} {
+		artifact.Size = size
+		manifest.Releases[0].Artifacts[f.manager.Target] = artifact
+		if _, err := updateVerifyFeed(updateTestSign(t, manifest, f.key, "release"), f.manager.Trust, f.now, true); err != nil {
+			t.Fatalf("rejected binary below the current size limit: %d: %v", size, err)
+		}
+	}
 	artifact.Size = updateBinaryLimit + 1
 	manifest.Releases[0].Artifacts[f.manager.Target] = artifact
 	if _, err := updateVerifyFeed(updateTestSign(t, manifest, f.key, "release"), f.manager.Trust, f.now, true); err == nil {

@@ -12,6 +12,7 @@ import { createInterface } from 'node:readline';
 import { createRequest, createSuccess, getProtocolVersion } from '../../protocol/src/index.js';
 import { setProtocolPackageVersion } from '../_helpers/protocolVersion.js';
 import type { BridgeResponse } from '../../protocol/types.js';
+import { nativeMaxBytes } from '../../packages/npm/src/install-targets.js';
 
 const execFileAsync = promisify(execFile);
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -185,7 +186,7 @@ test(
     const result = JSON.parse(stdout) as { runtime: string; methodCount: number; version: string };
     assert.equal(result.runtime, 'go');
     assert.ok(result.methodCount > 100);
-    assert.ok((await fs.stat(executable)).size < 10_000_000);
+    assert.ok((await fs.stat(executable)).size < nativeMaxBytes);
     const described = await execFileAsync(executable, [
       'protocol.describe',
       '{"method":"input.perform"}',

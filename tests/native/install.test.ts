@@ -7,6 +7,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { nativeMaxBytes } from '../../packages/npm/src/install-targets.js';
 
 const exec = promisify(execFile);
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -113,12 +114,13 @@ test(
     await run('install-mcp', 'codex');
     await run('install-skill', 'codex', '--global');
     const installedBytes = await diskBytes(directory);
-    assert(
-      installedBytes < 10_000_000,
-      `Fresh runtime plus agent setup uses ${installedBytes} bytes`
-    );
+    const executableBytes = (await fs.stat(executable)).size;
     t.diagnostic(
-      `Fresh runtime plus one agent: ${installedBytes} bytes; executable: ${(await fs.stat(executable)).size} bytes`
+      `Fresh runtime plus one agent: ${installedBytes} bytes; executable: ${executableBytes} bytes; setup: ${installedBytes - executableBytes} bytes; limit: ${nativeMaxBytes} bytes`
+    );
+    assert(
+      installedBytes < nativeMaxBytes,
+      `Fresh runtime plus agent setup uses ${installedBytes} bytes`
     );
     await run('install-mcp', 'all');
     await run('install-skill', 'all', '--global');

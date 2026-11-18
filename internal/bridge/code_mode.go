@@ -9,7 +9,7 @@ import (
 // These are static host-side bindings, not a JavaScript runtime. All browser
 // requests still go through the caller's existing MCP tool and the Go bridge.
 //
-//go:embed generated/code-mode/*
+//go:embed generated/code-mode/*.gz
 var codeModeAssets embed.FS
 
 func writeCodeModeAdapter(out io.Writer, args []string) error {
@@ -23,10 +23,10 @@ func writeCodeModeAdapter(out io.Writer, args []string) error {
 	if extension == "" {
 		return errors.New("usage: bbx protocol adapter [javascript|declarations|typescript]")
 	}
-	data, err := codeModeAssets.ReadFile("generated/code-mode/browser-bridge." + extension)
+	data, err := codeModeAssets.ReadFile("generated/code-mode/browser-bridge." + extension + ".gz")
 	if err != nil {
 		return err
 	}
-	_, err = out.Write(data)
+	_, err = out.Write(expandEmbeddedAsset(data))
 	return err
 }

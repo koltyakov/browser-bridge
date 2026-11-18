@@ -33,6 +33,7 @@ endif
 .PHONY: help deps clean build build-extension build-native lint lint-js lint-go typecheck format format-js \
 	format-go check-go-format format-check test test-js test-runtime test-go test-native \
 	vet-go coverage coverage-review coverage-check coverage-go coverage-go-check generate-protocol check-protocol \
+	generate-readability check-readability \
 	check-release-version check check-extension-zip package-extension package-native \
 	package-native-all package-npm pack pack-dry-run release-check prepublish-check \
 	publish-native publish-release publish-update-feed renew-update-feed publish-npm fixture-browser fixture-interaction bench-interaction bench-comparative bench-iframe-wait \
@@ -152,10 +153,16 @@ generate-protocol: sync-version ## Generate shared protocol types, schemas, cata
 check-protocol: ## Check that generated protocol files are current
 	"$(NODE)" --import tsx scripts/generate-protocol.mjs --check
 
+generate-readability: ## Reproduce the audited document-only Readability subset
+	"$(NODE)" scripts/vendor-readability.mjs
+
+check-readability: ## Verify the pinned Readability sources and transformations
+	"$(NODE)" scripts/vendor-readability.mjs --check
+
 check-release-version: ## Check release version consistency
 	"$(NODE)" scripts/check-release-version.mjs
 
-check: sync-version check-release-version check-protocol lint typecheck vet-go test coverage-check coverage-go-check ## Run all source validation and tests
+check: sync-version check-release-version check-protocol check-readability lint typecheck vet-go test coverage-check coverage-go-check ## Run all source validation and tests
 
 package-extension: sync-version ## Build the release extension directory and ZIP without source maps
 	"$(NODE)" scripts/package-extension.mjs
