@@ -12,6 +12,44 @@ local code; only pass modules you trust.
 
 ## Run
 
+### Iframe wait latency
+
+To measure `dom.wait_for` itself, run the delayed existing-element, new-iframe,
+iframe-navigation and missing-element fixtures in disposable headless Chrome:
+
+```sh
+BBX_BENCH_CHROME="/absolute/path/to/chrome" \
+make bench-iframe-wait ARGS='--runs=30 --seed=100 --target-ms=500'
+```
+
+`totalWaitMs` is host time from submitting the wait to receiving its result.
+`readyToMatchMs` starts when the fixture inserts the visible target in the child
+document, not when the iframe attaches, its load event fires, or the fixture's
+timer is scheduled. It ends at the same host receipt timestamp. The runner reads
+the marker after stopping the clock and records its browser-to-host clock offset
+and uncertainty. A target ready before submission can have a longer ready-to-match
+time than total wait time. An expected timeout has a total and a null ready time;
+an unexpected miss fails the run.
+
+Results go to a new `dist/iframe-wait/run-*` directory. `samples.jsonl` contains
+the untraced timestamps and metrics, and `report.json` summarizes both distributions
+per workload. `--baseline-extension=/absolute/path/to/dist/ext` pairs another
+unpacked extension with the same native binary and fixture seeds.
+
+The default diagnostic target is 500 ms. If **ready-to-match** exceeds the target
+on at least two distinct seeds for a current-build workload, the runner replays
+up to three exceeding seeds with worker logpoints. `traces.jsonl` records worker
+hint receipt, the event or fallback timer armed, discovery start, injection
+settlement, enumerated document tags (as frame IDs), and the matched watcher.
+The classification follows the timer preceding the discovery that installed that
+watcher. A fallback scan starting after readiness is distinguished from a slow
+event-driven scan. Only the current build is traced; debugger attachment can
+change timing. Replay evidence is separate from ordinary percentiles and does
+not prove what happened in the original sample. If the emitted dev build no
+longer matches the probes, tracing fails explicitly.
+
+### Paired browser tasks
+
 ```sh
 BBX_BENCH_CHROME="/absolute/path/to/Chrome for Testing" \
 make bench-comparative ARGS='--runs=5 --seed=100 --tasks=save,spa,frame-cross,disconnect'
