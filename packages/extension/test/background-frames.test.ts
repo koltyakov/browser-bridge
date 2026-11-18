@@ -335,8 +335,10 @@ test('a selector overrides autoscope routing and pins search metadata to the own
 });
 
 test('DOM waits rediscover a child frame created after the wait starts', async () => {
-  const { dependencies, sent } = createDependencies(true, (_frameId, method) =>
-    method === 'dom.wait_for' ? { found: true, elementRef: 'el_pay7_1', duration: 0 } : undefined
+  const { dependencies, sent } = createDependencies(true, (frameId, method) =>
+    method === 'dom.wait_for'
+      ? { found: frameId === 7, elementRef: 'el_pay7_1', duration: 0 }
+      : undefined
   );
   let discoveries = 0;
   dependencies.frames.listFrames = async (_tabId?: number, options?: { refresh?: boolean }) => {
@@ -360,29 +362,26 @@ test('DOM waits rediscover a child frame created after the wait starts', async (
   assert(result.duration >= 90);
   assert.deepEqual(
     sent.filter((entry) => entry.method === 'dom.wait_for').map((entry) => entry.frameId),
-    [7]
+    [0, 7]
   );
 });
 
 test('text waits select the matching frame rather than the first wildcard selector', async () => {
   const { dependencies, sent } = createDependencies(true, (frameId, method, params) => {
-    if (method === 'dom.probe_target') {
-      assert.equal(params.waitText, 'Pay now');
-      return { found: frameId === 7 };
-    }
-    return method === 'dom.wait_for'
-      ? { found: true, elementRef: 'el_pay7_1', duration: 0 }
-      : undefined;
+    assert.equal(method, 'dom.wait_for');
+    assert.equal(params.text, 'Pay now');
+    return { found: frameId === 7, elementRef: frameId === 7 ? 'el_pay7_1' : null, duration: 0 };
   });
   const response = await handleTabBoundRequest(
     request('dom.wait_for', { text: 'Pay now', timeoutMs: 1000 }),
     dependencies as never
   );
   assert.equal(response.ok, true);
-  assert.equal(sent.find((entry) => entry.method === 'dom.wait_for')?.frameId, 7);
+  assert.equal((response.result as { frameId: number }).frameId, 7);
+  assert.equal(sent.length, 2);
 });
 
-test('DOM waits report timeout without sending a long wait to the wrong frame', async () => {
+test('DOM waits report timeout with a single watcher per document', async () => {
   const { dependencies, sent } = createDependencies(false);
   const response = await handleTabBoundRequest(
     request('dom.wait_for', { selector: '#pay', timeoutMs: 100 }),
@@ -392,7 +391,87 @@ test('DOM waits report timeout without sending a long wait to the wrong frame', 
   const result = response.result as { found: boolean; duration: number };
   assert.equal(result.found, false);
   assert(result.duration >= 90);
-  assert.equal(sent.filter((entry) => entry.method === 'dom.wait_for').length, 0);
+  assert.deepEqual(
+    sent.map(({ frameId, method }) => [frameId, method]),
+    [
+      [0, 'dom.wait_for'],
+      [7, 'dom.wait_for'],
+    ]
+  );
+});
+
+test('a replacement document gets a new watcher and stale matches cannot win', async () => {
+  const { dependencies } = createDependencies();
+  let discoveries = 0;
+  const aborted: number[] = [];
+  const response = await handleTabBoundRequest(
+    request('dom.wait_for', { selector: '#pay', timeoutMs: 2000 }),
+    {
+      ...dependencies,
+      frames: {
+        ...dependencies.frames,
+        listFrames: async () => [
+          { frameId: 0, tag: 'top' },
+          { frameId: 7, tag: ++discoveries === 1 ? 'old' : 'new' },
+        ],
+        sendFrameMessage: async (_tab, frame, _msg, _ms, signal) => {
+          if (frame === 7 && discoveries > 1) return { found: true, elementRef: 'new' };
+          return new Promise((resolve) =>
+            signal?.addEventListener('abort', () => {
+              aborted.push(frame);
+              resolve({ found: true, elementRef: 'stale' });
+            })
+          );
+        },
+      },
+    }
+  );
+  assert.equal((response.result as { elementRef: string }).elementRef, 'new');
+  assert.deepEqual(aborted, [7, 0]);
+});
+
+test('canceling the parent stops outstanding frame waits and ignores late discovery', async () => {
+  const { dependencies } = createDependencies();
+  const req = request('dom.wait_for', { selector: '#late', timeoutMs: 3000 });
+  const release = requestLifetimes.begin(req);
+  const started: number[] = [];
+  const stopped: number[] = [];
+  let publish!: (frames: Array<{ frameId: number; tag: string }>) => void;
+  let discovering!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    discovering = resolve;
+  });
+  try {
+    const result = handleTabBoundRequest(req, {
+      ...dependencies,
+      frames: {
+        ...dependencies.frames,
+        sendFrameMessage: async (_tab, frame, _msg, _ms, signal) => {
+          started.push(frame);
+          return new Promise((resolve) =>
+            signal?.addEventListener('abort', () => {
+              stopped.push(frame);
+              resolve({ found: false });
+            })
+          );
+        },
+        listFrames: () =>
+          new Promise((resolve) => {
+            publish = resolve;
+            discovering();
+          }),
+      },
+    });
+    await ready;
+    requestLifetimes.cancel(req.id);
+    await assert.rejects(result, /canceled or expired/);
+    publish([{ frameId: 7, tag: 'late' }]);
+    await Promise.resolve();
+    assert.deepEqual(started, [0]);
+    assert.deepEqual(stopped, [0]);
+  } finally {
+    release();
+  }
 });
 
 test('page text includes child frames without exceeding the combined text budget', async () => {

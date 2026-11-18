@@ -399,11 +399,16 @@ element reference. */
       let settled = false;
       let checkScheduled = false;
       const observer = new MutationObserver(scheduleObserverCheck);
+      const signal = params.__bbxSignal as AbortSignal | undefined;
+      function cleanup() {
+        settled = true;
+        observer.disconnect();
+        signal?.removeEventListener('abort', tryResolve);
+      }
 
       function finish(result: { found: boolean; elementRef: string | null; duration: number }) {
         if (settled) return;
-        settled = true;
-        observer.disconnect();
+        cleanup();
         resolve(result);
       }
 
@@ -413,8 +418,7 @@ element reference. */
         try {
           result = check();
         } catch (error) {
-          settled = true;
-          observer.disconnect();
+          cleanup();
           reject(error);
           return;
         }
@@ -438,8 +442,12 @@ element reference. */
 
       async function poll() {
         while (!settled) {
-          await delay(250);
+          await delay(Math.min(250, Math.max(0, start + timeout - Date.now())));
+          if (settled) return;
           tryResolve();
+          if (Date.now() - start >= timeout) {
+            finish({ found: false, elementRef: null, duration: Date.now() - start });
+          }
         }
       }
 
@@ -449,14 +457,8 @@ element reference. */
         attributes: true,
         characterData: true,
       });
+      signal?.addEventListener('abort', tryResolve, { once: true });
       void poll();
-      void delay(timeout).then(() =>
-        finish({
-          found: false,
-          elementRef: null,
-          duration: Math.max(timeout, Date.now() - start),
-        })
-      );
     });
   }
 

@@ -49,7 +49,6 @@ type peer struct {
 }
 
 type queuedMessage struct {
-	message object
 	payload []byte
 	bytes   int64
 	onWrite func(bool)
@@ -137,7 +136,7 @@ func (p *peer) enqueue(message object, onWrite func(bool)) bool {
 		return false
 	}
 	select {
-	case p.out <- queuedMessage{message: message, payload: payload, bytes: size, onWrite: onWrite}:
+	case p.out <- queuedMessage{payload: payload, bytes: size, onWrite: onWrite}:
 		return true
 	case <-p.done:
 		p.queuedBytes.Add(-size)

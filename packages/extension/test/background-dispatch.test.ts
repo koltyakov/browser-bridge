@@ -817,7 +817,6 @@ test('background dispatch routes page.get_state through the tab-bound content sc
     title: 'Stateful page',
     url: 'https://example.com/app',
   } as chrome.tabs.Tab;
-  let pingAttempts = 0;
   const chrome = createChromeFake({
     tabs: {
       async query(queryInfo: chrome.tabs.QueryInfo = {}) {
@@ -831,13 +830,6 @@ test('background dispatch routes page.get_state through the tab-bound content sc
       },
       async sendMessage(tabId: number, message: Record<string, unknown>) {
         sendMessageCalls.push({ tabId, message });
-        if (message.type === 'bridge.ping') {
-          pingAttempts += 1;
-          if (pingAttempts === 1) {
-            throw new Error('Could not establish connection. Receiving end does not exist.');
-          }
-          return { ok: true };
-        }
         return {
           url: activeTab.url,
           title: activeTab.title,
@@ -881,25 +873,8 @@ test('background dispatch routes page.get_state through the tab-bound content sc
     ready: true,
     dialog: { status: 'unknown', observable: false },
   });
-  assert.deepEqual(executeScriptCalls, [
-    {
-      target: { tabId: 41 },
-      files: [
-        'src/content-script-helpers.js',
-        'src/content-dom-baseline.js',
-        'src/content-element-registry.js',
-        'src/content-dom-query.js',
-        'src/content-input.js',
-        'src/content-patch.js',
-        'src/content-script.js',
-      ],
-    },
-  ]);
+  assert.deepEqual(executeScriptCalls, []);
   assert.deepEqual(withoutContentLifetimes(sendMessageCalls), [
-    {
-      tabId: 41,
-      message: { type: 'bridge.ping' },
-    },
     {
       tabId: 41,
       message: {
@@ -1159,10 +1134,6 @@ test('background dispatch reinjects and retries when content script receiver dis
     },
   ]);
   assert.deepEqual(withoutContentLifetimes(sendMessageCalls), [
-    {
-      tabId: 42,
-      message: { type: 'bridge.ping' },
-    },
     {
       tabId: 42,
       message: {

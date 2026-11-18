@@ -44,7 +44,7 @@ func TestMalformedMethodParamsFailBeforeMCPDispatch(t *testing.T) {
 			d := serviceTestDaemon(t)
 			peer := &peer{out: make(chan queuedMessage, 1), done: make(chan struct{}), role: "agent"}
 			d.route(peer, newRequest(tc.method, tc.params, nil, 1))
-			response := (<-peer.out).message.object("response")
+			response := serviceNextMessage(t, peer).object("response")
 			if response.object("error").text("code") != "INVALID_REQUEST" || len(d.pending) != 0 {
 				t.Fatalf("daemon did not reject before routing: %s", value(response))
 			}

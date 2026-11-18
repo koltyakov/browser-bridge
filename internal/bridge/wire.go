@@ -141,12 +141,43 @@ type oversizedLineError struct{ terminated bool }
 
 func (e *oversizedLineError) Error() string { return "bridge JSON line exceeds 1 MiB" }
 
+// Most messages fit in bufio's own buffer. Reuse overflow buffers across
+// readers, with a process-wide retention bound independent of idle peer count.
+var spareLines = make(chan []byte, 2)
+
 func readLine(reader *bufio.Reader) (object, error) {
+	part, err := reader.ReadSlice('\n')
+	if len(part) > maxMessageBytes+1 || (len(part) > maxMessageBytes && err != nil) {
+		return nil, &oversizedLineError{terminated: err == nil}
+	}
+	if err == nil {
+		return decodeObject(part)
+	}
+	if !errors.Is(err, bufio.ErrBufferFull) {
+		if len(part) > 0 && errors.Is(err, io.EOF) {
+			return nil, io.ErrUnexpectedEOF
+		}
+		return nil, err
+	}
 	var line []byte
+	select {
+	case line = <-spareLines:
+	default:
+	}
+	defer func() {
+		select {
+		case spareLines <- line[:0]:
+		default:
+		}
+	}()
 	for {
-		part, err := reader.ReadSlice('\n')
 		if len(line)+len(part) > maxMessageBytes+1 {
 			return nil, &oversizedLineError{terminated: err == nil}
+		}
+		if need := len(line) + len(part); need > cap(line) {
+			next := make([]byte, len(line), min(maxMessageBytes+1, max(need, 2*cap(line))))
+			copy(next, line)
+			line = next
 		}
 		line = append(line, part...)
 		if len(line) > maxMessageBytes && line[len(line)-1] != '\n' {
@@ -156,6 +187,7 @@ func readLine(reader *bufio.Reader) (object, error) {
 			if len(line) > maxMessageBytes {
 				return nil, &oversizedLineError{terminated: false}
 			}
+			part, err = reader.ReadSlice('\n')
 			continue
 		}
 		if err != nil {

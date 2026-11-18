@@ -44,7 +44,6 @@ export type PageRequestControllerDependencies = {
     method: string,
     params: Record<string, unknown>
   ) => Promise<unknown>;
-  ensureContentScript: (tabId: number) => Promise<void>;
   sendTabMessage: (
     tabId: number,
     message: Record<string, unknown>,
@@ -451,10 +450,15 @@ Dialog state never includes message or prompt text. */
     const target = await resolveRequestTarget(request, { requireScriptable: false });
     const dialog = dependencies.getDialogStatus(target.tabId);
     try {
-      await dependencies.ensureContentScript(target.tabId);
       const result = await dependencies.sendTabMessage(
         target.tabId,
-        { type: 'bridge.execute', method: request.method, params: {} },
+        {
+          type: 'bridge.execute',
+          requestId: request.id,
+          deadlineMs: request.meta?.deadline_ms,
+          method: request.method,
+          params: {},
+        },
         dependencies.contentScriptTimeoutMs
       );
       const pageState =

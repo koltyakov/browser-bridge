@@ -371,37 +371,9 @@ func cliAnnotate(summary, response object) object {
 	meta := response.object("meta")
 	sensitive := meta.text("method") == "sensitive.read"
 	if timing := meta.object("timing"); timing != nil && !sensitive {
-		timing = mcpPick(timing, "preparationMs queueMs executionMs totalMs scheduled")
-		for _, key := range []string{"preparationMs", "queueMs", "scheduled"} {
-			if string(timing[key]) == "0" || string(timing[key]) == "false" {
-				delete(timing, key)
-			}
-		}
-		out["timing"] = value(timing)
+		out["timing"] = cliStageTiming(timing)
 	}
-	bytesN, bok := cliNumberValue(meta["transport_bytes"])
-	if !bok {
-		bytesN, bok = cliNumberValue(meta["response_bytes"])
-	}
-	tokens, tok := cliNumberValue(meta["transport_approx_tokens"])
-	if !tok {
-		tokens, tok = cliNumberValue(meta["approx_tokens"])
-	}
-	if sensitive {
-		bytesN, tokens = 0, 0
-	} else if !bok || !tok {
-		payload := response["result"]
-		if !response.boolean("ok") {
-			payload = value(object{"error": response["error"]})
-		}
-		n := float64(len(cliJSON(payload, false)))
-		if !bok {
-			bytesN = n
-		}
-		if !tok {
-			tokens = math.Ceil(n / 4)
-		}
-	}
+	bytesN, tokens := cliTransportSize(response, meta)
 	cost := ""
 	for _, key := range []string{"transport_cost_class", "cost_class"} {
 		candidate := meta.text(key)
@@ -417,6 +389,44 @@ func cliAnnotate(summary, response object) object {
 	out["transportTokens"] = value(tokens)
 	out["transportCostClass"] = value(cost)
 	return out
+}
+
+func cliStageTiming(timing object) json.RawMessage {
+	timing = mcpPick(timing, "preparationMs queueMs executionMs totalMs scheduled")
+	for _, key := range []string{"preparationMs", "queueMs", "scheduled"} {
+		if string(timing[key]) == "0" || string(timing[key]) == "false" {
+			delete(timing, key)
+		}
+	}
+	return value(timing)
+}
+
+func cliTransportSize(response, meta object) (float64, float64) {
+	if meta.text("method") == "sensitive.read" {
+		return 0, 0
+	}
+	bytesN, bok := cliNumberValue(meta["transport_bytes"])
+	if !bok {
+		bytesN, bok = cliNumberValue(meta["response_bytes"])
+	}
+	tokens, tok := cliNumberValue(meta["transport_approx_tokens"])
+	if !tok {
+		tokens, tok = cliNumberValue(meta["approx_tokens"])
+	}
+	if !bok || !tok {
+		payload := response["result"]
+		if !response.boolean("ok") {
+			payload = value(object{"error": response["error"]})
+		}
+		n := float64(len(cliJSON(payload, false)))
+		if !bok {
+			bytesN = n
+		}
+		if !tok {
+			tokens = math.Ceil(n / 4)
+		}
+	}
+	return bytesN, tokens
 }
 
 // cliPrintedSummary is what a shortcut prints. The raw result's size matters

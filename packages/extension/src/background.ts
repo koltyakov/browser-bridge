@@ -617,7 +617,6 @@ const {
       method,
       params as { [key: string]: unknown }
     ) as Promise<unknown>,
-  ensureContentScript,
   sendTabMessage: (tabId, message, timeoutMs) => sendTabMessage(tabId, message, timeoutMs),
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
   waitForDialog: (tabId, timeoutMs) => tabDebugger.waitForDialog(tabId, timeoutMs),

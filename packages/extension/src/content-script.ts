@@ -177,6 +177,7 @@
       const result = handleCommand(message.method, {
         ...message.params,
         __bbxAssertActive: assertActive,
+        ...(message.method === 'dom.wait_for' ? { __bbxSignal: controller.signal } : {}),
       });
       Promise.resolve(result)
         .then(sendResponse)

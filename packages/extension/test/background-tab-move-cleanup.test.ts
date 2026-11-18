@@ -378,7 +378,6 @@ test('move re-entry abort preserves an observed dialog for page.handle_dialog', 
       }
       return {};
     },
-    async ensureContentScript() {},
     async sendTabMessage() {
       return {};
     },

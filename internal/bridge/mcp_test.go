@@ -136,6 +136,29 @@ func BenchmarkMCPBatchShaping(b *testing.B) {
 	}
 }
 
+func TestCompactDOMBatchPreservesEvidenceAndMetadata(t *testing.T) {
+	nodes := make([]object, 21)
+	for i := range nodes {
+		nodes[i] = object{"elementRef": value("el_1"), "tag": value("button"), "name": cliNull, "role": cliNull, "textExcerpt": value("Save"), "attrs": value(object{"aria-label": value("Save"), "class": value("a b c d"), "href": value("/save")}), "bbox": value(object{"x": value(1.24)})}
+	}
+	for _, count := range []int{0, 1, len(nodes)} {
+		for _, scheduled := range []bool{false, true} {
+			params := object{"maxNodes": value(3), "includeBbox": value(true), "attributeAllowlist": value([]string{"href"})}
+			response := success("r", object{"nodes": value(nodes[:count]), "matchCount": value(3)})
+			response["meta"] = value(object{
+				"tab_id": value(2), "active_tab_id": value(1), "protocol_warning": value("check versions"),
+				"continuation_hint": value("narrow selector"), "protocol_version": value(protocolVersion()),
+				"timing": value(object{"scheduled": value(scheduled), "executionMs": value(2)}),
+			})
+			want := mcpStructuredResponse(response, "dom.query", params)
+			want["method"], want["durationMs"], want["approxTokens"] = value("dom.query"), value(7), want["transportTokens"]
+			want["meta"] = value(mcpPick(response.object("meta"), "protocol_version protocol_warning budget_truncated continuation_hint"))
+			mcpCompactBatchItem(want)
+			assertJSONEqual(t, value(mcpBatchResult(response, "dom.query", params, nil, 7)), value(want))
+		}
+	}
+}
+
 func TestMCPModernFixedToolsAndEnvelope(t *testing.T) {
 	peer := mcpTestStart(t, config{home: t.TempDir()})
 	peer.send(t, mcpTestRequest(0, "server/discover", nil, true))

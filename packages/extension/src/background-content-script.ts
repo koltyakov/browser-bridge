@@ -62,7 +62,8 @@ export function createContentScriptBridge(
     tabId: number,
     frameId: number,
     message: Record<string, unknown>,
-    timeoutMs: number
+    timeoutMs: number,
+    signal?: AbortSignal
   ) => Promise<unknown>;
   listFrames: (
     tabId: number,
@@ -173,33 +174,36 @@ emit navigation-kind events; the background re-reads the authoritative URL. */
   async function sendTabMessage(
     tabId: number,
     message: Record<string, unknown>,
-    timeoutMs: number
+    timeoutMs: number,
+    signal?: AbortSignal
   ): Promise<unknown> {
     try {
-      return await sendTabMessageWithTimeout(tabId, message, timeoutMs);
+      return await sendTabMessageWithTimeout(tabId, message, timeoutMs, signal);
     } catch (error) {
-      if (!isMissingContentScriptReceiverError(error)) {
+      if (signal?.aborted || !isMissingContentScriptReceiverError(error)) {
         throw error;
       }
       await recoverContentScript(tabId);
-      return await sendTabMessageWithTimeout(tabId, message, timeoutMs);
+      return await sendTabMessageWithTimeout(tabId, message, timeoutMs, signal);
     }
   }
 
   async function sendTabMessageWithTimeout(
     tabId: number,
     message: Record<string, unknown>,
-    timeoutMs: number
+    timeoutMs: number,
+    signal?: AbortSignal
   ): Promise<unknown> {
     trackPatchFrame(tabId, 0, message);
-    return sendMessageWithTimeout(tabId, 0, message, timeoutMs);
+    return sendMessageWithTimeout(tabId, 0, message, timeoutMs, signal);
   }
 
   async function sendMessageWithTimeout(
     tabId: number,
     frameId: number,
     message: Record<string, unknown>,
-    timeoutMs: number
+    timeoutMs: number,
+    signal?: AbortSignal
   ): Promise<unknown> {
     const executable = message.type === 'bridge.execute';
     const requestId =
@@ -234,6 +238,8 @@ emit navigation-kind events; the background re-reads the authoritative URL. */
         .sendMessage(tabId, { type: 'bridge.cancel', requestId }, { frameId })
         .catch(() => {});
     };
+    signal?.throwIfAborted();
+    signal?.addEventListener('abort', cancel, { once: true });
     const untrack = requestLifetimes.track(requestId, cancel);
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     let timedOut = false;
@@ -256,6 +262,7 @@ emit navigation-kind events; the background re-reads the authoritative URL. */
     // Keep cancellation attached to the real operation, not the timeout race.
     const operation = Promise.resolve()
       .then(() => {
+        signal?.throwIfAborted();
         assertActive();
         return chromeObj.tabs.sendMessage(tabId, payload, { frameId });
       })
@@ -282,6 +289,7 @@ emit navigation-kind events; the background re-reads the authoritative URL. */
       }
       throw error;
     } finally {
+      signal?.removeEventListener('abort', cancel);
       clearTimeout(timeoutId);
     }
   }
@@ -371,11 +379,12 @@ frames, which `<all_urls>` host access permits). */
     tabId: number,
     frameId: number,
     message: Record<string, unknown>,
-    timeoutMs: number
+    timeoutMs: number,
+    signal?: AbortSignal
   ): Promise<unknown> {
-    if (frameId === 0) return sendTabMessage(tabId, message, timeoutMs);
+    if (frameId === 0) return sendTabMessage(tabId, message, timeoutMs, signal);
     trackPatchFrame(tabId, frameId, message);
-    return sendMessageWithTimeout(tabId, frameId, message, timeoutMs);
+    return sendMessageWithTimeout(tabId, frameId, message, timeoutMs, signal);
   }
 
   /** Ensure the content script is present on the target tab before issuing

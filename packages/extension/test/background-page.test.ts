@@ -22,7 +22,6 @@ function createController(
     dialog?: Record<string, unknown> | null;
     dialogStatus?: Record<string, unknown>;
     sendTabMessage?: () => Promise<unknown>;
-    ensureContentScript?: () => Promise<void>;
     waitForUrl?: () => Promise<{
       tab: chrome.tabs.Tab;
       elapsedMs: number;
@@ -145,7 +144,6 @@ function createController(
       if (commandError) throw commandError;
       return { ok: true };
     },
-    ensureContentScript: options.ensureContentScript ?? (async () => {}),
     sendTabMessage: options.sendTabMessage ?? (async () => ({})),
     contentScriptTimeoutMs: 5_000,
     async waitForDialog() {
@@ -799,7 +797,7 @@ test('page state adds non-sensitive dialog status to content and background fall
 
   const fallback = createController({
     dialogStatus,
-    ensureContentScript: async () => {
+    sendTabMessage: async () => {
       throw new Error('CONTENT_SCRIPT_UNAVAILABLE: Cannot access contents of the page');
     },
   });

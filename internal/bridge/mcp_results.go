@@ -388,9 +388,7 @@ func mcpRoundRect(rect object) object {
 
 // mcpRequestedAttributes keeps allowlisted attributes that the compact node
 // fields (id, role, label, testId, cls) do not already carry.
-func mcpRequestedAttributes(attrs, params object) object {
-	var allowlist []string
-	_ = json.Unmarshal(params["attributeAllowlist"], &allowlist)
+func mcpRequestedAttributes(attrs object, allowlist []string) object {
 	requested := object{}
 	for _, name := range allowlist {
 		switch name {
@@ -467,6 +465,68 @@ func mcpPerformEvidence(r, params object) json.RawMessage {
 	}
 	out["lastResult"] = value(last)
 	return value(out)
+}
+
+// Decode each node once and project only fields the caller can receive.
+func mcpDOMQueryNodes(r, params object) (evidence json.RawMessage, count, limit int, truncated, ok bool) {
+	var nodes []object
+	if json.Unmarshal(r["nodes"], &nodes) != nil {
+		return nil, 0, 0, false, false
+	}
+	count = len(nodes)
+	limit = int(params.number("maxNodes"))
+	if limit <= 0 {
+		limit = 25
+	}
+	limit = min(limit, 100)
+	var allowlist []string
+	if params["attributeAllowlist"] != nil {
+		_ = json.Unmarshal(params["attributeAllowlist"], &allowlist)
+	}
+	returned := min(count, limit)
+	out := make([]object, 0, returned)
+	for _, node := range nodes[:returned] {
+		compact := object{}
+		attrs := node.object("attrs")
+		for _, pair := range [][2]string{{"elementRef", "ref"}, {"tag", "tag"}, {"id", "id"}, {"role", "role"}, {"name", "label"}} {
+			if v := node[pair[0]]; cliPresent(v) {
+				compact[pair[1]] = v
+			}
+		}
+		for _, pair := range [][2]string{{"id", "id"}, {"role", "role"}, {"aria-label", "label"}, {"data-testid", "testId"}} {
+			if v := attrs[pair[0]]; compact[pair[1]] == nil && cliPresent(v) {
+				compact[pair[1]] = v
+			}
+		}
+		if mcpIsString(attrs["class"]) {
+			parts := strings.SplitN(attrs.text("class"), " ", 4)
+			compact["cls"] = value(strings.Join(parts[:min(len(parts), 3)], " "))
+		}
+		textKey := "textExcerpt"
+		if !mcpIsString(node[textKey]) {
+			textKey = "text"
+		}
+		if text := node.text(textKey); text != "" && compact.text("label") != text {
+			compact["text"] = value(mcpSlice(text, 120))
+		}
+		if children, ok := cliArray(node["children"]); ok && len(children) > 0 {
+			compact["childCount"] = value(len(children))
+		}
+		if requested := mcpRequestedAttributes(attrs, allowlist); len(requested) > 0 {
+			compact["attrs"] = value(requested)
+		}
+		if params.boolean("includeBbox") {
+			if box := node.object("bbox"); box != nil {
+				rounded := object{}
+				for _, key := range []string{"x", "y", "width", "height"} {
+					rounded[key] = value(math.Round(mcpFloat(box[key])*10) / 10)
+				}
+				compact["bbox"] = value(rounded)
+			}
+		}
+		out = append(out, compact)
+	}
+	return value(out), count, limit, count > limit || r.boolean("truncated"), true
 }
 
 func mcpEvidence(raw json.RawMessage, method string, params object, fallback json.RawMessage) (json.RawMessage, bool, object) {
@@ -576,7 +636,12 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 		}
 		return value(text), limited, object{"maxCharacters": value(4000)}
 	}
-	if method == "dom.query" || method == "dom.get_accessibility_tree" {
+	if method == "dom.query" {
+		if evidence, _, limit, truncated, ok := mcpDOMQueryNodes(r, params); ok {
+			return evidence, truncated, object{"maxEntries": value(limit)}
+		}
+	}
+	if method == "dom.get_accessibility_tree" {
 		var nodes []object
 		if json.Unmarshal(r["nodes"], &nodes) == nil {
 			limit := int(params.number("maxNodes"))
@@ -588,46 +653,7 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 			nodes = nodes[:min(len(nodes), limit)]
 			out := []object{}
 			for _, node := range nodes {
-				if method == "dom.query" {
-					attrs := node.object("attrs")
-					compact := mcpPick(node, "elementRef:ref tag id role name:label")
-					// Null node fields are absent evidence: fall back to attributes, then omit.
-					for _, pair := range [][2]string{{"id", "id"}, {"role", "role"}, {"aria-label", "label"}, {"data-testid", "testId"}} {
-						if !cliPresent(compact[pair[1]]) && cliPresent(attrs[pair[0]]) {
-							compact[pair[1]] = attrs[pair[0]]
-						}
-					}
-					for key, v := range compact {
-						if !cliPresent(v) {
-							delete(compact, key)
-						}
-					}
-					if classes := attrs.text("class"); mcpIsString(attrs["class"]) {
-						parts := strings.Split(classes, " ")
-						compact["cls"] = value(strings.Join(parts[:min(len(parts), 3)], " "))
-					}
-					text := node.text("textExcerpt")
-					if !mcpIsString(node["textExcerpt"]) {
-						text = node.text("text")
-					}
-					if text != "" && (!mcpIsString(compact["label"]) || compact.text("label") != text) {
-						compact["text"] = value(mcpSlice(text, 120))
-					}
-					if children, ok := cliArray(node["children"]); ok && len(children) > 0 {
-						compact["childCount"] = value(len(children))
-					}
-					if requested := mcpRequestedAttributes(attrs, params); len(requested) > 0 {
-						compact["attrs"] = value(requested)
-					}
-					if box := node.object("bbox"); params.boolean("includeBbox") && box != nil {
-						rounded := object{}
-						for _, key := range []string{"x", "y", "width", "height"} {
-							rounded[key] = value(math.Round(mcpFloat(box[key])*10) / 10)
-						}
-						compact["bbox"] = value(rounded)
-					}
-					out = append(out, compact)
-				} else if r.text("source") == "dom" {
+				if r.text("source") == "dom" {
 					// DOM trees carry actionable refs and states, not CDP node IDs.
 					compact := mcpPick(node, "ref role name depth states matched")
 					mcpOmitEmpty(compact, "name", "states")

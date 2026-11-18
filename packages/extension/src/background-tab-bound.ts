@@ -2,6 +2,7 @@ import {
   BridgeError,
   ERROR_CODES,
   createSuccess,
+  isBatchSafeBridgeCall,
   normalizeDomQuery,
   normalizeFindByRoleParams,
   normalizeFindByTextParams,
@@ -17,6 +18,7 @@ import {
   normalizeWaitForParams,
 } from '../../../protocol/src/index.js';
 import { requestLifetimes } from './background-request-lifetime.js';
+import { waitAcrossFrames } from './background-frame-wait.js';
 import { createInputAftermath, inputAftermathError } from './input-aftermath.js';
 
 export type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
@@ -69,7 +71,8 @@ export type TabBoundRequestDependencies = {
       tabId: number,
       frameId: number,
       message: Record<string, unknown>,
-      timeoutMs: number
+      timeoutMs: number,
+      signal?: AbortSignal
     ) => Promise<unknown>;
   };
   chooseInputExecutionMode?: (
@@ -204,8 +207,10 @@ export async function handleTabBoundRequest(
   const target = await dependencies.resolveRequestTarget(request);
   assertAccess();
   dependencies.assertNoDialog?.(target.tabId);
-  await dependencies.ensureContentScript(target.tabId);
-  assertAccess();
+  if (!isBatchSafeBridgeCall(request.method, request.params)) {
+    await dependencies.ensureContentScript(target.tabId);
+    assertAccess();
+  }
   const normalizer = TAB_BOUND_NORMALIZERS[request.method];
   let payload = normalizer ? normalizer(request.params) : request.params;
 
@@ -221,48 +226,24 @@ export async function handleTabBoundRequest(
   }
 
   const frameSearchStarted = performance.now();
-  let frameId: number;
   if (
     request.method === 'dom.wait_for' &&
     dependencies.frames &&
     (payload.state === 'attached' || payload.state === 'visible')
   ) {
-    const timeoutMs = Number(payload.timeoutMs) || 5000;
-    for (;;) {
-      assertAccess();
-      dependencies.assertNoDialog?.(target.tabId);
-      const foundFrame = await findContentFrame(
-        request.method,
-        payload,
-        target.tabId,
-        dependencies,
-        true,
-        frameSearchStarted + timeoutMs
-      );
-      assertAccess();
-      dependencies.assertNoDialog?.(target.tabId);
-      const remaining = timeoutMs - (performance.now() - frameSearchStarted);
-      if (remaining <= 0) {
-        return createSuccess(
-          request.id,
-          {
-            found: false,
-            elementRef: null,
-            duration: Math.round(performance.now() - frameSearchStarted),
-          },
-          { method: request.method }
-        );
+    return waitAcrossFrames(
+      request,
+      payload,
+      target.tabId,
+      dependencies.frames,
+      dependencies.toFailureResponse,
+      () => {
+        assertAccess();
+        dependencies.assertNoDialog?.(target.tabId);
       }
-      if (foundFrame !== null) {
-        frameId = foundFrame;
-        payload = { ...payload, timeoutMs: Math.max(1, Math.floor(remaining)) };
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, Math.min(100, remaining)));
-    }
-  } else {
-    frameId = await resolveContentFrame(request.method, payload, target.tabId, dependencies);
+    );
   }
+  const frameId = await resolveContentFrame(request.method, payload, target.tabId, dependencies);
   const frameSearchMs = performance.now() - frameSearchStarted;
   assertAccess();
   if (frameId !== 0 && payload.executionMode === 'cdp') {
@@ -450,19 +431,6 @@ export async function resolveContentFrame(
   tabId: number,
   dependencies: Pick<TabBoundRequestDependencies, 'frames'>
 ): Promise<number> {
-  return (await findContentFrame(method, payload, tabId, dependencies)) ?? 0;
-}
-
-/** A null result distinguishes a not-yet-present target from a top-frame match.
- * Waits refresh discovery so newly created/reloaded iframes can become owners. */
-async function findContentFrame(
-  method: string,
-  payload: Record<string, unknown>,
-  tabId: number,
-  dependencies: Pick<TabBoundRequestDependencies, 'frames'>,
-  refresh = false,
-  deadline = Infinity
-): Promise<number | null> {
   const frames = dependencies.frames;
   if (!frames) return 0;
   const refs = collectPayloadRefs(payload);
@@ -475,8 +443,6 @@ async function findContentFrame(
   if (!spec || typeof spec !== 'object') return 0;
 
   const probe = async (frameId: number) => {
-    const remaining = deadline - performance.now();
-    if (remaining <= 0) return false;
     try {
       const result = (await frames.sendFrameMessage(
         tabId,
@@ -491,7 +457,7 @@ async function findContentFrame(
               : {}),
           },
         },
-        Math.max(1, Math.min(FRAME_PROBE_TIMEOUT_MS, Math.floor(remaining)))
+        FRAME_PROBE_TIMEOUT_MS
       )) as { found?: boolean; error?: { code?: string; message?: string } } | null;
       if (result?.error?.code === ERROR_CODES.RESULT_TRUNCATED)
         throw new BridgeError(
@@ -505,14 +471,11 @@ async function findContentFrame(
     }
   };
   if (await probe(0)) return 0;
-  if (performance.now() >= deadline) return null;
-  const childFrames = (await frames.listFrames(tabId, { refresh })).filter(
-    (frame) => frame.frameId !== 0
-  );
+  const childFrames = (await frames.listFrames(tabId)).filter((frame) => frame.frameId !== 0);
   for (const frame of childFrames) {
     if (await probe(frame.frameId)) return frame.frameId;
   }
-  return null;
+  return 0;
 }
 
 /** Merge frame reads under one response budget. Shell matches must not hide

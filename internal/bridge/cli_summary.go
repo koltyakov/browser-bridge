@@ -21,15 +21,32 @@ func cliSummarize(response object, method string, now int64) object {
 		if stringIn(status, []string{"failed", "unavailable", "interrupted"}) {
 			result["summary"] = value(result.text("summary") + " Observation " + status + "; application outcome unverified.")
 		}
-		_, tab := cliNumberValue(meta["tab_id"])
-		_, active := cliNumberValue(meta["active_tab_id"])
-		// A caller that passed tabId already chose the tab; the note is for
-		// requests routed implicitly to a working tab.
-		if tab && active && meta.text("tab_routing") != "explicit" {
-			result["summary"] = cliStringValue(cliText(result, "summary") + fmt.Sprintf(" Ran in working tab %s; the user's active tab is %s (pass tabId to switch).", cliJSString(meta["tab_id"]), cliJSString(meta["active_tab_id"])))
+		if note := cliRoutingNote(meta); note != "" {
+			result["summary"] = cliStringValue(cliText(result, "summary") + note)
 		}
 	}
 	return result
+}
+
+func cliRoutingNote(meta object) string {
+	_, tab := cliNumberValue(meta["tab_id"])
+	_, active := cliNumberValue(meta["active_tab_id"])
+	if tab && active && meta.text("tab_routing") != "explicit" {
+		return fmt.Sprintf(" Ran in working tab %s; the user's active tab is %s (pass tabId to switch).", cliJSString(meta["tab_id"]), cliJSString(meta["active_tab_id"]))
+	}
+	return ""
+}
+
+func domQuerySummary(count int, matches float64) string {
+	suffix := ""
+	if count > 15 {
+		suffix = "; showing first 15"
+	}
+	text := fmt.Sprintf("DOM query returned %d element(s)%s.", count, suffix)
+	if matches > 1 {
+		text += fmt.Sprintf(" The selector matched %g elements; only the first match's subtree is shown. Narrow the selector or use dom.find_by_role or dom.find_by_text to list matches.", matches)
+	}
+	return text
 }
 func cliSummaryBody(response object, method string, now int64) object {
 	warning := response.object("meta").text("protocol_warning")
@@ -509,15 +526,7 @@ func cliSummaryBody(response object, method string, now int64) object {
 			}
 			return done(text, value(object{"found": value(count > 0), "count": value(count), "scanned": scanned, "truncated": value(truncated), "truncationReason": reason, "nodes": value(compact)}), true)
 		}
-		suffix := ""
-		if len(nodes) > 15 {
-			suffix = "; showing first 15"
-		}
-		text := fmt.Sprintf("DOM query returned %d element(s)%s.", len(nodes), suffix)
-		if matches := num("matchCount", 0); matches > 1 {
-			text += fmt.Sprintf(" The selector matched %g elements; only the first match's subtree is shown. Narrow the selector or use dom.find_by_role or dom.find_by_text to list matches.", matches)
-		}
-		return done(text, value(compact), true)
+		return done(domQuerySummary(len(nodes), num("matchCount", 0)), value(compact), true)
 	}
 	if cliBoolean(r["rolledBack"]) || cliBoolean(r["rolled_back"]) {
 		return done("Patch rolled back.", record, true)

@@ -243,7 +243,11 @@ func serviceNextMessage(t *testing.T, p *peer) object {
 	select {
 	case item := <-p.out:
 		p.queuedBytes.Add(-item.bytes)
-		return item.message
+		msg, err := decodeObject(item.payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return msg
 	default:
 		t.Fatal("expected peer message")
 		return nil

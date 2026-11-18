@@ -573,6 +573,11 @@ func mcpBatchResult(response object, method string, params object, err error, du
 	if err != nil {
 		response = failure("batch_error", "INTERNAL_ERROR", err.Error())
 	}
+	if method == "dom.query" && response.boolean("ok") {
+		if item := mcpDOMQueryBatchItem(response, params, duration); item != nil {
+			return item
+		}
+	}
 	// Shape evidence once, without constructing an MCP content envelope that
 	// would immediately be discarded by the batch.
 	item := mcpStructuredResponse(response, method, params)
@@ -582,6 +587,34 @@ func mcpBatchResult(response object, method string, params object, err error, du
 	}
 	item["meta"] = value(mcpPick(response.object("meta"), "protocol_version protocol_warning budget_truncated continuation_hint"))
 	mcpCompactBatchItem(item)
+	return item
+}
+
+func mcpDOMQueryBatchItem(response, params object, duration int64) object {
+	r := response.object("result")
+	evidence, count, limit, truncated, ok := mcpDOMQueryNodes(r, params)
+	if !ok {
+		return nil
+	}
+	meta := response.object("meta")
+	matches, _ := cliNumberValue(r["matchCount"])
+	summary := domQuerySummary(count, matches)
+	if warning := meta.text("protocol_warning"); strings.TrimSpace(warning) != "" {
+		summary += " Protocol warning: " + warning
+	}
+	_, tokens := cliTransportSize(response, meta)
+	item := object{"method": value("dom.query"), "durationMs": value(duration), "approxTokens": value(tokens),
+		"ok": value(true), "summary": cliStringValue(summary + cliRoutingNote(meta)), "evidence": evidence}
+	if truncated {
+		item["outputTruncated"], item["outputLimit"] = value(true), value(object{"maxEntries": value(limit)})
+	}
+	if timing := meta.object("timing"); timing.boolean("scheduled") {
+		item["timing"] = cliStageTiming(timing)
+	}
+	if snapshot := normalizeAccessSettingsSnapshot(meta.object("access_settings")); snapshot != nil {
+		item["accessSettings"] = value(snapshot)
+	}
+	mcpBatchMeta(item, mcpPick(meta, "protocol_version protocol_warning budget_truncated continuation_hint"))
 	return item
 }
 
@@ -603,7 +636,10 @@ func mcpCompactBatchItem(item object) {
 	if !item.object("timing").boolean("scheduled") {
 		delete(item, "timing")
 	}
-	meta := item.object("meta")
+	mcpBatchMeta(item, item.object("meta"))
+}
+
+func mcpBatchMeta(item, meta object) {
 	if meta.text("protocol_version") == protocolVersion() {
 		delete(meta, "protocol_version")
 	}

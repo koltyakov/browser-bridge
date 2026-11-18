@@ -14,8 +14,7 @@ func TestMutationSchedulerSerializesTabsAndHoldsCanceledInput(t *testing.T) {
 		t.Helper()
 		request := newRequest("input.click", object{"target": value(object{"selector": value("button")})}, nil, tab)
 		d.route(owner, request)
-		message := <-extension.out
-		forwarded := message.message.object("request")
+		forwarded := serviceNextMessage(t, extension).object("request")
 		if !forwarded.object("meta").boolean("mutation_schedule") {
 			t.Fatal("mutation was not scheduled")
 		}
@@ -30,15 +29,15 @@ func TestMutationSchedulerSerializesTabsAndHoldsCanceledInput(t *testing.T) {
 		t.Fatal("later preparation passed the earlier unknown target")
 	}
 	ready(a, 12)
-	if grant := (<-extension.out).message; grant.text("requestId") != a.text("id") {
+	if grant := serviceNextMessage(t, extension); grant.text("requestId") != a.text("id") {
 		t.Fatalf("wrong first grant: %s", value(grant))
 	}
 	ready(c, 34)
-	if grant := (<-extension.out).message; grant.text("requestId") != c.text("id") {
+	if grant := serviceNextMessage(t, extension); grant.text("requestId") != c.text("id") {
 		t.Fatalf("independent tab was blocked: %s", value(grant))
 	}
 	d.handle(first, object{"type": value("agent.cancel"), "requestId": value(d.pending[a.text("id")].original)})
-	if cancel := (<-extension.out).message; cancel.text("type") != "extension.request_cancelled" {
+	if cancel := serviceNextMessage(t, extension); cancel.text("type") != "extension.request_cancelled" {
 		t.Fatalf("cancel was not delivered: %s", value(cancel))
 	}
 	<-first.out
@@ -46,7 +45,7 @@ func TestMutationSchedulerSerializesTabsAndHoldsCanceledInput(t *testing.T) {
 		t.Fatal("caller cancellation released an input that has not settled")
 	}
 	d.response(extension, success(a.text("id"), object{}))
-	if grant := (<-extension.out).message; grant.text("requestId") != b.text("id") {
+	if grant := serviceNextMessage(t, extension); grant.text("requestId") != b.text("id") {
 		t.Fatalf("settled input did not release its slot: %s", value(grant))
 	}
 	d.response(extension, success(b.text("id"), object{}))
@@ -63,12 +62,12 @@ func TestMutationSchedulerDoesNotScheduleReadsOrTrustAgentMetadata(t *testing.T)
 	agent := serviceTestPeer(t, d, "agent")
 	request := newRequest("page.get_state", nil, object{"mutation_schedule": value(true)}, 12)
 	d.route(agent, request)
-	forwarded := (<-extension.out).message.object("request")
+	forwarded := serviceNextMessage(t, extension).object("request")
 	if forwarded.object("meta")["mutation_schedule"] != nil || len(d.scheduler.entries) != 0 {
 		t.Fatal("agent metadata enabled scheduling for a read")
 	}
 	d.response(extension, success(forwarded.text("id"), object{}))
-	response := (<-agent.out).message.object("response")
+	response := serviceNextMessage(t, agent).object("response")
 	if response.object("meta").object("timing").boolean("scheduled") {
 		t.Fatal("read timing claimed scheduling")
 	}
@@ -143,7 +142,7 @@ func TestMutationSchedulerCapacityOwnershipAndQueuedCancellation(t *testing.T) {
 	agent.pending++
 	pending.timer = time.AfterFunc(time.Hour, func() {})
 	d.mutationReady(extension, object{"requestId": value(id), "tabId": value("wrong")})
-	if (<-agent.out).message.object("response").object("error").text("code") != "INVALID_REQUEST" {
+	if serviceNextMessage(t, agent).object("response").object("error").text("code") != "INVALID_REQUEST" {
 		t.Fatal("invalid scheduling target was not rejected")
 	}
 }
