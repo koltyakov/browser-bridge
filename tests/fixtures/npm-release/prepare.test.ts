@@ -16,6 +16,22 @@ const releaseEnv = {
   GITHUB_REF_NAME: 'v1.2.3',
 };
 
+interface ReleaseFixtureState {
+  tagName: string;
+  isDraft: boolean;
+  assets: Array<{ name: string }>;
+  title?: string;
+  body?: string;
+  isPrerelease?: boolean;
+  corrupt?: string;
+  tagMissing?: boolean;
+  failUpload?: string;
+  failPublish?: 'before' | 'after' | 'stays-draft';
+  corruptOnReview?: boolean;
+  extraOnReview?: boolean;
+  tagMissingOnReview?: boolean;
+}
+
 const platforms = [
   ['darwin-arm64', 'bbx-darwin-arm64'],
   ['darwin-x64', 'bbx-darwin-x64'],
@@ -185,7 +201,7 @@ for (const mutation of [
 }
 
 test(
-  'release publishing reuses identical native and extension assets and refuses replacement or drafts',
+  'release publishing reuses immutable assets and safely resumes verified drafts',
   { skip: process.platform === 'win32' },
   async (t) => {
     const { directory } = await fixture(t);
@@ -212,16 +228,34 @@ test(
     await fs.writeFile(
       path.join(bin, 'gh'),
       `#!/usr/bin/env node
+// @ts-check
 const fs = require('node:fs');
 const path = require('node:path');
 const args = process.argv.slice(2);
 fs.appendFileSync('calls.jsonl', JSON.stringify(args) + '\\n');
 const statePath = 'release.json';
+/** @typedef {{tagName: string, isDraft: boolean, assets: {name: string}[], corrupt?: string, tagMissing?: boolean, failUpload?: string, failPublish?: string, corruptOnReview?: boolean, extraOnReview?: boolean, tagMissingOnReview?: boolean}} ReleaseState */
+/** @type {ReleaseState | null} */
 let release = fs.existsSync(statePath) ? JSON.parse(fs.readFileSync(statePath, 'utf8')) : null;
+/** @param {string} name @returns {string} */
 const option = (name) => args[args.indexOf(name) + 1];
+if (args[0] === 'api') {
+  if (!release || release.tagMissing || args[1] !== 'repos/koltyakov/browser-bridge/git/ref/tags/' + release.tagName) {
+    process.stderr.write('tag not found');
+    process.exit(1);
+  }
+  process.stdout.write(JSON.stringify({ref: 'refs/tags/' + release.tagName}));
+  process.exit(0);
+}
 switch (args[1]) {
   case 'view':
     if (!release) process.exit(1);
+    if (fs.readFileSync('calls.jsonl', 'utf8').trim().split('\\n').filter((line) => line.startsWith('["release","view",')).length >= 2) {
+      if (release.corruptOnReview) release.corrupt = release.assets[0].name;
+      if (release.extraOnReview && !release.assets.some((asset) => asset.name === 'unverified.txt')) release.assets.push({name: 'unverified.txt'});
+      if (release.tagMissingOnReview) release.tagMissing = true;
+      fs.writeFileSync(statePath, JSON.stringify(release));
+    }
     process.stdout.write(JSON.stringify(release));
     break;
   case 'create':
@@ -232,12 +266,20 @@ switch (args[1]) {
   case 'upload': {
     const name = path.basename(args[3]);
     if (!release || args.includes('--clobber') || release.assets.some((asset) => asset.name === name)) process.exit(1);
+    if (release.failUpload === name) process.exit(1);
     fs.mkdirSync('remote', { recursive: true });
     fs.copyFileSync(args[3], path.join('remote', name));
     release.assets.push({ name });
     fs.writeFileSync(statePath, JSON.stringify(release));
     break;
   }
+  case 'edit':
+    if (!release || !args.includes('--draft=false')) process.exit(1);
+    if (release.failPublish === 'before') process.exit(1);
+    if (release.failPublish !== 'stays-draft') release.isDraft = false;
+    fs.writeFileSync(statePath, JSON.stringify(release));
+    if (release.failPublish === 'after') process.exit(1);
+    break;
   case 'download': {
     const name = option('--pattern');
     if (release.corrupt === name) fs.writeFileSync(path.join(option('--dir'), name), 'different bytes');
@@ -369,14 +411,235 @@ switch (args[1]) {
         assets: [{ name: 'bbx-browser-extension.zip' }],
         corrupt: 'bbx-browser-extension.zip',
       },
-      { tagName: 'v1.2.3', isDraft: true, assets: [] },
     ]) {
       await fs.writeFile(path.join(directory, 'release.json'), JSON.stringify(state));
       await fs.writeFile(path.join(directory, 'calls.jsonl'), '');
       const result = publish(['--include-extension']);
       assert.notEqual(result.status, 0);
-      assert.match(result.stderr, state.isDraft ? /non-draft/ : /Immutable release asset mismatch/);
+      assert.match(result.stderr, /Immutable release asset mismatch/);
       assert.equal((await calls()).filter((args) => args[1] === 'upload').length, 0);
+    }
+
+    const required = [
+      ...platforms.map(([, asset]) => asset),
+      'checksums.txt',
+      'bbx-browser-extension.zip',
+    ];
+    const expected: Record<string, Buffer> = {
+      'bbx-browser-extension.zip': withDifferentZipMetadata(extensionBytes),
+    };
+    let seededAssets = new Set<string>();
+    for (const name of required.filter((name) => name !== 'bbx-browser-extension.zip'))
+      expected[name] = await fs.readFile(path.join(directory, 'dist/cli', name));
+    const readState = async (): Promise<ReleaseFixtureState> =>
+      JSON.parse(await fs.readFile(path.join(directory, 'release.json'), 'utf8'));
+    const writeState = async (state: ReleaseFixtureState) =>
+      fs.writeFile(path.join(directory, 'release.json'), JSON.stringify(state));
+    const seedDraft = async (names: string[], overrides: Partial<ReleaseFixtureState> = {}) => {
+      seededAssets = new Set(names);
+      await fs.rm(path.join(directory, 'remote'), { recursive: true, force: true });
+      await fs.mkdir(path.join(directory, 'remote'));
+      for (const name of names)
+        await fs.writeFile(
+          path.join(directory, 'remote', name),
+          expected[name] ?? Buffer.from('unverified')
+        );
+      await writeState({
+        tagName: 'v1.2.3',
+        isDraft: true,
+        title: 'Keep title',
+        body: 'Keep notes',
+        isPrerelease: false,
+        assets: names.map((name) => ({ name })),
+        ...overrides,
+      });
+      await fs.writeFile(path.join(directory, 'calls.jsonl'), '');
+    };
+    const assertRemoteUnchanged = async (names: string[]) => {
+      for (const name of names)
+        assert.deepEqual(
+          await fs.readFile(path.join(directory, 'remote', name)),
+          name === 'bbx-browser-extension.zip' && !seededAssets.has(name)
+            ? extensionBytes
+            : expected[name]
+        );
+    };
+    const mutations = async () =>
+      (await calls()).filter(
+        (args) => args[0] === 'release' && ['create', 'upload', 'edit'].includes(args[1])
+      );
+
+    await t.test(
+      'a complete matching draft is verified before publication and a rerun does not republish it',
+      async () => {
+        await seedDraft(required);
+        const result = publish(['--include-extension']);
+        assert.equal(result.status, 0, result.stderr);
+        assert.deepEqual(await mutations(), [
+          ['release', 'edit', 'v1.2.3', '--repo', 'koltyakov/browser-bridge', '--draft=false'],
+        ]);
+        const actions = await calls();
+        const edit = actions.findIndex((args) => args[1] === 'edit');
+        assert(
+          actions.slice(0, edit).filter((args) => args[1] === 'download').length >= required.length
+        );
+        assert(actions.slice(edit + 1).some((args) => args[1] === 'view'));
+        const state = await readState();
+        assert.equal(state.isDraft, false);
+        assert.equal(state.tagName, 'v1.2.3');
+        assert.equal(state.title, 'Keep title');
+        assert.equal(state.body, 'Keep notes');
+        assert.equal(state.isPrerelease, false);
+        await assertRemoteUnchanged(required);
+        await fs.writeFile(path.join(directory, 'calls.jsonl'), '');
+        const rerun = publish(['--include-extension']);
+        assert.equal(rerun.status, 0, rerun.stderr);
+        assert.deepEqual(await mutations(), []);
+        await assertRemoteUnchanged(required);
+      }
+    );
+
+    await t.test(
+      'a partial draft verifies existing assets before filling missing assets and publishing',
+      async () => {
+        const existing = [required[0], 'bbx-browser-extension.zip'];
+        await seedDraft(existing);
+        const result = publish(['--include-extension']);
+        assert.equal(result.status, 0, result.stderr);
+        const actions = await calls();
+        const firstUpload = actions.findIndex((args) => args[1] === 'upload');
+        assert.deepEqual(
+          actions
+            .slice(0, firstUpload)
+            .filter((args) => args[1] === 'download')
+            .map((args) => args[args.indexOf('--pattern') + 1])
+            .sort(),
+          [...existing].sort()
+        );
+        assert.equal(
+          actions.filter((args) => args[1] === 'upload').length,
+          required.length - existing.length
+        );
+        assert(!actions.some((args) => args.includes('--clobber') || args[1] === 'create'));
+        const edit = actions.findIndex((args) => args[1] === 'edit');
+        assert(
+          actions.slice(edit + 1).every((args) => args[1] !== 'upload' && args[1] !== 'download')
+        );
+        assert.equal((await readState()).isDraft, false);
+        await assertRemoteUnchanged(required);
+      }
+    );
+
+    for (const name of [required[0], 'checksums.txt', 'bbx-browser-extension.zip']) {
+      await t.test(
+        `a mismatched draft asset ${name} prevents uploads and publication`,
+        async () => {
+          await seedDraft([name], { corrupt: name });
+          const result = publish(['--include-extension']);
+          assert.notEqual(result.status, 0);
+          assert.match(result.stderr, /Immutable release asset mismatch/);
+          assert.deepEqual(await mutations(), []);
+          assert.equal((await readState()).isDraft, true);
+          await assertRemoteUnchanged([name]);
+        }
+      );
+    }
+
+    await t.test('unverified draft attachments are not silently made public', async () => {
+      await seedDraft([...required, 'unverified.txt']);
+      const result = publish(['--include-extension']);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /unverified asset unverified.txt/);
+      assert.deepEqual(await mutations(), []);
+      assert.equal((await readState()).isDraft, true);
+    });
+
+    await t.test(
+      'native-only publishing cannot expose an unverified extension attached to a draft',
+      async () => {
+        await seedDraft(required);
+        const result = publish();
+        assert.notEqual(result.status, 0);
+        assert.match(result.stderr, /unverified asset bbx-browser-extension.zip/);
+        assert.deepEqual(await mutations(), []);
+        assert.equal((await readState()).isDraft, true);
+      }
+    );
+
+    await t.test(
+      'a missing or mismatched tag cannot be recreated or changed during draft recovery',
+      async () => {
+        for (const overrides of [{ tagMissing: true }, { tagName: 'v9.9.9' }]) {
+          await seedDraft(required, overrides);
+          const result = publish(['--include-extension']);
+          assert.notEqual(result.status, 0);
+          assert.deepEqual(await mutations(), []);
+          assert.equal((await readState()).isDraft, true);
+        }
+      }
+    );
+
+    for (const fault of ['failUpload', 'corrupt'] as const) {
+      await t.test(
+        `a ${fault} failure leaves the draft unpublished and can be resumed`,
+        async () => {
+          await seedDraft([required[0]], { [fault]: required[2] });
+          const result = publish(['--include-extension']);
+          assert.notEqual(result.status, 0);
+          assert.equal((await readState()).isDraft, true);
+          assert(!(await calls()).some((args) => args[1] === 'edit'));
+          const partial = await readState();
+          delete partial[fault];
+          await writeState(partial);
+          await fs.writeFile(path.join(directory, 'calls.jsonl'), '');
+          const rerun = publish(['--include-extension']);
+          assert.equal(rerun.status, 0, rerun.stderr);
+          const uploads = (await calls())
+            .filter((args) => args[1] === 'upload')
+            .map((args) => path.basename(args[3]));
+          assert(uploads.every((name) => !partial.assets.some((asset) => asset.name === name)));
+          assert.equal((await readState()).isDraft, false);
+          await assertRemoteUnchanged(required);
+        }
+      );
+    }
+
+    for (const fault of ['before', 'after', 'stays-draft'] as const) {
+      await t.test(
+        `publication outcome ${fault} is safe to rerun without reuploading assets`,
+        async () => {
+          await seedDraft(required, { failPublish: fault });
+          const result = publish(['--include-extension']);
+          assert.notEqual(result.status, 0);
+          assert.equal((await readState()).isDraft, fault !== 'after');
+          const state = await readState();
+          delete state.failPublish;
+          await writeState(state);
+          await fs.writeFile(path.join(directory, 'calls.jsonl'), '');
+          const rerun = publish(['--include-extension']);
+          assert.equal(rerun.status, 0, rerun.stderr);
+          assert.equal(
+            (await calls()).filter((args) => args[1] === 'edit').length,
+            fault === 'after' ? 0 : 1
+          );
+          assert(!(await calls()).some((args) => args[1] === 'create' || args[1] === 'upload'));
+          await assertRemoteUnchanged(required);
+        }
+      );
+    }
+
+    for (const fault of ['corruptOnReview', 'extraOnReview', 'tagMissingOnReview'] as const) {
+      await t.test(`${fault} is caught by the final verification before publication`, async () => {
+        await seedDraft(required, { [fault]: true });
+        const result = publish(['--include-extension']);
+        assert.notEqual(result.status, 0);
+        assert.match(
+          result.stderr,
+          /Immutable release asset mismatch|unverified asset|tag not found/
+        );
+        assert.deepEqual(await mutations(), []);
+        assert.equal((await readState()).isDraft, true);
+      });
     }
   }
 );

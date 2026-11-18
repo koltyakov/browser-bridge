@@ -117,7 +117,7 @@ jobs:
       - name: Pack dry-run
         run: make pack-dry-run
 
-      - name: Publish immutable native and extension assets to GitHub
+      - name: Verify assets and publish or resume the GitHub release
         run: make publish-release
         env:
           GH_TOKEN: ${{ github.token }}

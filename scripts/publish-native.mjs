@@ -51,6 +51,64 @@ if (process.argv.includes('--include-extension')) {
 }
 const tag = resolved.tag ?? `v${resolved.version}`;
 const viewArgs = ['release', 'view', tag, '--repo', repository, '--json', 'isDraft,tagName,assets'];
+/** @typedef {{isDraft: boolean, assets: {name: string}[]}} ReleaseState */
+
+/** @param {string} raw @returns {ReleaseState} */
+function readRelease(raw) {
+  /** @type {unknown} */
+  const release = JSON.parse(raw);
+  if (
+    !release ||
+    typeof release !== 'object' ||
+    !('isDraft' in release) ||
+    typeof release.isDraft !== 'boolean' ||
+    !('tagName' in release) ||
+    release.tagName !== tag ||
+    !('assets' in release) ||
+    !Array.isArray(release.assets)
+  ) {
+    throw new Error(`Expected GitHub release ${tag} with valid draft status and asset metadata`);
+  }
+  const assets = release.assets.map((/** @type {unknown} */ asset) => {
+    if (!asset || typeof asset !== 'object' || !('name' in asset) || typeof asset.name !== 'string')
+      throw new Error('GitHub returned an invalid release asset');
+    return { name: asset.name };
+  });
+  if (new Set(assets.map((asset) => asset.name)).size !== assets.length)
+    throw new Error('GitHub returned duplicate release assets');
+  return { isDraft: release.isDraft, assets };
+}
+
+/** A draft may outlive a deleted tag. Never let publishing recreate that tag.
+ * @returns {void}
+ */
+function verifyReleaseTag() {
+  /** @type {unknown} */
+  const reference = JSON.parse(
+    gh(['api', `repos/${repository}/git/ref/tags/${encodeURIComponent(tag)}`])
+  );
+  if (
+    !reference ||
+    typeof reference !== 'object' ||
+    !('ref' in reference) ||
+    reference.ref !== `refs/tags/${tag}`
+  )
+    throw new Error(`Release tag ${tag} must already exist; refusing to create or change it`);
+}
+
+/** Do not publish unrelated, unverified files attached to a manual draft.
+ * @param {ReleaseState} release @returns {void}
+ */
+function requireKnownDraftAssets(release) {
+  const expected = new Set(artifacts.map((artifact) => artifact.asset));
+  for (const asset of release.assets) {
+    if (!expected.has(asset.name))
+      throw new Error(
+        `Draft release contains unverified asset ${asset.name}. Rerun with the complete artifact set; refusing to publish it.`
+      );
+  }
+}
+
 const view = spawnSync('gh', viewArgs, { cwd: root, encoding: 'utf8' });
 if (view.status !== 0) {
   // Creation verifies the tag and fails if an existing release could not be read.
@@ -67,33 +125,12 @@ if (view.status !== 0) {
     '--generate-notes',
   ]);
 }
-/** @type {unknown} */
-const release = JSON.parse(gh(viewArgs));
-if (
-  !release ||
-  typeof release !== 'object' ||
-  !('isDraft' in release) ||
-  release.isDraft !== false ||
-  !('tagName' in release) ||
-  release.tagName !== tag ||
-  !('assets' in release) ||
-  !Array.isArray(release.assets)
-) {
-  throw new Error(`Expected a public, non-draft GitHub release ${tag}`);
+const release = readRelease(view.status === 0 ? view.stdout : gh(viewArgs));
+if (release.isDraft) {
+  verifyReleaseTag();
+  requireKnownDraftAssets(release);
 }
-const existing = new Set(
-  release.assets.map((/** @type {unknown} */ asset) => {
-    if (
-      !asset ||
-      typeof asset !== 'object' ||
-      !('name' in asset) ||
-      typeof asset.name !== 'string'
-    ) {
-      throw new Error('GitHub returned an invalid release asset');
-    }
-    return asset.name;
-  })
-);
+const existing = new Set(release.assets.map((asset) => asset.name));
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'bbx-release-'));
 /** @param {import('./prepare-npm.mjs').NativeArtifact & {file: string}} artifact @returns {Promise<void>} */
 async function verifyRemote(artifact) {
@@ -142,6 +179,30 @@ try {
     await fs.copyFile(artifact.file, uploadPath);
     gh(['release', 'upload', tag, uploadPath, '--repo', repository]);
     await verifyRemote(artifact);
+  }
+  if (release.isDraft) {
+    // Re-read and reverify the complete set after filling any missing assets.
+    // A failed upload/verification leaves the release as a resumable draft.
+    const current = readRelease(gh(viewArgs));
+    requireKnownDraftAssets(current);
+    for (const artifact of artifacts) {
+      if (!current.assets.some((asset) => asset.name === artifact.asset))
+        throw new Error(`Draft release is missing required asset ${artifact.asset}`);
+      await verifyRemote(artifact);
+    }
+    if (current.isDraft) {
+      verifyReleaseTag();
+      gh(['release', 'edit', tag, '--repo', repository, '--draft=false']);
+      const published = readRelease(gh(viewArgs));
+      if (published.isDraft) throw new Error(`Draft release ${tag} was not published`);
+      requireKnownDraftAssets(published);
+      if (
+        artifacts.some(
+          (artifact) => !published.assets.some((asset) => asset.name === artifact.asset)
+        )
+      )
+        throw new Error(`Published release ${tag} is missing required assets`);
+    }
   }
   console.log(
     `Verified all release assets on https://github.com/${repository}/releases/tag/${tag}`

@@ -82,7 +82,18 @@ mismatches still stop publication before any missing assets are uploaded.
 
 The tarball contains only `packages/npm/bin`, `packages/npm/src`, and package metadata/license/docs. Packing requires no native binaries. Go binaries live on GitHub Releases. Shared TypeScript helpers in `protocol/` support browser builds and generation; they are not a published runtime or client library. `npm ci` in a source checkout skips the wrapper bootstrap, so CI does not download a published release during dependency installation.
 
-The release workflow uses Node builtins and `gh` to publish native assets and the extension ZIP. `make publish-release` requires the current version's packaged ZIP and publishes it as `bbx-browser-extension.zip`. It creates a public release if needed, requires the tag to exist, and downloads existing assets to compare their size and digest before uploading missing assets. Uploads never use `--clobber`. A mismatched existing asset fails the release; publish a new version rather than replacing bytes already verified by installations. A pre-existing draft release must be made public before this step. `checksums.txt` continues to cover only the native binaries, and `make publish-native` remains available for native-only publishing.
+The release workflow uses Node builtins and `gh` to publish native assets and the extension ZIP. `make publish-release` requires the current version's packaged ZIP and publishes it as `bbx-browser-extension.zip`. It creates a public release if needed, requires the tag to exist, and downloads existing assets to compare their size and digest before uploading missing assets. Uploads never use `--clobber`. A mismatched existing asset fails the release; publish a new version rather than replacing bytes already verified by installations. `checksums.txt` continues to cover only the native binaries, and `make publish-native` remains available for native-only publishing.
+
+An existing draft is resumed without deleting or moving its tag. The publisher
+verifies every attached expected asset before uploading anything, rejects unknown
+attachments, and uploads only missing assets. It then re-reads the release and
+verifies the complete required set before changing only its draft status.
+The title, notes, prerelease status, and existing asset bytes are preserved.
+The signed-feed step runs only after the release is confirmed public.
+Failed uploads or verification leave the draft unpublished for a later rerun.
+If publication succeeded but its response was lost, a rerun verifies the public
+release without publishing it again. Missing tags and mismatched assets fail
+closed; the publisher never recreates a deleted tag.
 
 For a manual fallback, run checks and build the extension first, then:
 
