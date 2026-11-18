@@ -131,8 +131,11 @@ func run(ctx context.Context, args []string) error {
 	case "doctor":
 		return doctorCLI(ctx, c, args[1:])
 	case "mcp":
+		if len(args) == 2 && args[1] == "http-status" {
+			return mcpHTTPStatus(c)
+		}
 		if len(args) != 2 || args[1] != "serve" {
-			return errors.New("usage: bbx mcp serve")
+			return errors.New("usage: bbx mcp serve | mcp http-status")
 		}
 		if handled, err := prepareNativeClient(ctx, c, invocation); handled || err != nil {
 			return cliForwardError(err)

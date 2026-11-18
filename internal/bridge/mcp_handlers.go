@@ -37,6 +37,8 @@ func (s *mcpSession) tools(era string) []object {
 	if era == "modern" {
 		return catalog.Tools
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	data := mcpCatalogData()
 	tools := []object{}
 	for _, tool := range data.AllTools {
@@ -137,6 +139,9 @@ func (s *mcpSession) handleTool(ctx context.Context, name string, args object, e
 		return s.investigate(ctx, args, era)
 	}
 	if name == "browser_setup" {
+		if s.daemonHosted && string(args["global"]) == "false" {
+			return mcpErrorResult("INVALID_REQUEST", "Daemon-hosted MCP has no project directory. Run project-local setup from the CLI in the intended project."), nil
+		}
 		scope, err := installCurrentScope()
 		if err != nil {
 			return nil, err

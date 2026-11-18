@@ -108,7 +108,7 @@ var cliCommands = []cliCommandDefinition{
 	{name: "uninstall", localOnly: true, category: "Setup", usage: "uninstall"},
 	{name: "install-skill", localOnly: true, category: "Setup", usage: "install-skill [targets] [--global|--local]"},
 	{name: "install-mcp", localOnly: true, category: "Setup", usage: "install-mcp [targets] [--global|--local]"},
-	{name: "mcp", localOnly: true, category: "Setup", usage: "mcp serve | mcp config"},
+	{name: "mcp", localOnly: true, category: "Setup", usage: "mcp serve | mcp config | mcp http-status"},
 	{name: "doctor", localOnly: true, category: "Setup", usage: "doctor"},
 	{name: "restart", localOnly: true, category: "Setup", usage: "restart"},
 	{name: "update", localOnly: true, category: "Updates", usage: "update [check|apply|install|repair|rollback|status]"},

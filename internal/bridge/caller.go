@@ -108,8 +108,13 @@ type mcpCallerContextKey struct{}
 // Modern MCP identity belongs to each request, not the shared stdio connection.
 func (s *mcpSession) callerContext(ctx context.Context, era string, envelope object) context.Context {
 	caller := environmentCaller(os.Getenv)
+	if s.daemonHosted {
+		caller = nil // The daemon's launch environment does not identify its clients.
+	}
 	if caller == nil || caller.Source != "explicit" {
+		s.mu.Lock()
 		reported := s.caller
+		s.mu.Unlock()
 		if era == "modern" {
 			reported = reportedCaller(envelope.object("io.modelcontextprotocol/clientInfo"))
 		}

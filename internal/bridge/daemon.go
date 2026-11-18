@@ -271,6 +271,12 @@ func runDaemon(ctx context.Context, c config) error {
 		_ = d.artifacts.reset()
 		d.mu.Unlock()
 	}()
+	// Register this defer after native cleanup so HTTP admission and owners
+	// stop before native peer workers are drained.
+	httpConfig := c
+	httpConfig.token = agent
+	stopHTTP := startDaemonMCPHTTP(ctx, httpConfig)
+	defer stopHTTP()
 	for {
 		conn, err := listener.Accept()
 		if err != nil {

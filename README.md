@@ -141,6 +141,8 @@ On Ubuntu, Chromium is commonly installed as a strict snap, and Flatpak Chromium
 
 MCP mode is self-contained: the dual-era stdio server supports legacy MCP clients and modern stateless MCP revision `2026-07-28`, and exposes tools and matching startup instructions without requiring a separate CLI skill.
 
+An optional [authenticated MCP HTTP endpoint](https://github.com/koltyakov/browser-bridge/blob/main/docs/mcp-http.md) can run inside the shared daemon to avoid per-client MCP subprocesses. It is loopback-only and disabled by default; stdio remains the managed-install default and fallback.
+
 ### Alternative: install with npm
 
 With Node.js 20 or later installed:

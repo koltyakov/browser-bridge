@@ -28,6 +28,7 @@ type mcpSession struct {
 	conversationNamespace string
 	caller                *protocol.BridgeCaller
 	closed                bool
+	daemonHosted          bool
 }
 
 func rpcError(id json.RawMessage, code int, message string) object {
@@ -70,18 +71,9 @@ func toolResult(response object, err error) object {
 }
 
 func mcpWriteToolResult(writer *wireWriter, id json.RawMessage, era string, result object) error {
-	payload, err := encodeJSON(mcpRPCResult(id, "tools/call", era, result))
+	payload, err := mcpToolPayload(id, era, result)
 	if err != nil {
 		return err
-	}
-	if len(payload) > maxMessageBytes {
-		// No bytes have been written. Keep the session alive and preserve atomic
-		// evidence by rejecting the aggregate instead of clipping schema fields.
-		result = mcpErrorResult("RESULT_TOO_LARGE", "MCP tool output exceeds 1 MiB. The call has already executed.", "Narrow read-only results or split the batch into smaller calls. Inspect postconditions before repeating actions.")
-		payload, err = encodeJSON(mcpRPCResult(id, "tools/call", era, result))
-		if err != nil {
-			return err
-		}
 	}
 	_, err = writer.sendPayloadContext(context.Background(), payload)
 	return err
@@ -101,12 +93,7 @@ func mcpServe(ctx context.Context, c config, input io.Reader, output io.Writer) 
 	var workers sync.WaitGroup
 	defer func() {
 		cancel()
-		s.mu.Lock()
-		s.closed = true
-		for _, cl := range s.clients {
-			cl.close()
-		}
-		s.mu.Unlock()
+		s.close()
 		workers.Wait()
 	}()
 	// Closing inherited stdin does not reliably interrupt an OS-level read.
@@ -228,7 +215,7 @@ func mcpServe(ctx context.Context, c config, input io.Reader, output io.Writer) 
 			}
 			era = "legacy"
 			s.caller = reportedCaller(params.object("clientInfo"))
-			_ = writer.send(rpcResult(id, object{"protocolVersion": value(revision), "serverInfo": value(object{"name": value("browser-bridge"), "version": value(version)}), "capabilities": value(object{"tools": value(object{"listChanged": value(true)})}), "instructions": value(mcpCatalogData().LegacyInstructions)}))
+			_ = writer.send(rpcResult(id, mcpInitializeResult(revision)))
 			continue
 		}
 		if era == "" {
@@ -247,53 +234,21 @@ func mcpServe(ctx context.Context, c config, input io.Reader, output io.Writer) 
 				_ = writer.send(rpcError(id, -32601, "Method not found: "+method))
 				continue
 			}
-			_ = writer.send(mcpRPCResult(id, method, era, object{"supportedVersions": value([]string{modernVersion}), "capabilities": value(object{"tools": value(object{"listChanged": value(true)})}), "instructions": value(catalog.Instructions)}))
+			_ = writer.send(mcpRPCResult(id, method, era, mcpDiscoverResult()))
 		case "ping":
 			_ = writer.send(mcpRPCResult(id, method, era, object{}))
 		case "tools/list":
 			_ = writer.send(mcpRPCResult(id, method, era, object{"tools": value(s.tools(era))}))
 		case "tools/call":
-			if params["_meta"] != nil && envelope == nil {
-				_ = writer.send(rpcError(id, -32602, "Tool request _meta must be an object."))
-				continue
-			}
-			requestCtx, err := s.conversationContext(ctx, envelope)
-			if err != nil {
-				_ = writer.send(rpcError(id, -32602, err.Error()))
-				continue
-			}
-			name := params.text("name")
-			var schema object
-			for _, tool := range s.tools(era) {
-				if tool.text("name") == name {
-					schema = tool.object("inputSchema")
-				}
-			}
-			if schema == nil {
-				_ = writer.send(rpcError(id, -32602, "Unknown tool: "+name))
-				continue
-			}
-			arguments, err := decodeObject(params["arguments"])
-			if params["arguments"] == nil {
-				arguments, err = object{}, nil
-			}
-			if err != nil {
-				_ = writer.send(rpcError(id, -32602, "Tool arguments must be an object."))
-				continue
-			}
-			if err := validateSchema(value(arguments), schema, "arguments"); err != nil {
-				_ = writer.send(rpcError(id, -32602, err.Error()))
+			requestCtx, name, arguments, invalid := s.prepareCall(ctx, params, era)
+			if invalid != nil {
+				invalid["id"] = id
+				_ = writer.send(invalid)
 				continue
 			}
 			if name == "browser_toolset" {
-				tool := arguments.text("tool")
-				newly := !s.enabled[tool]
-				s.enabled[tool] = true
-				text := tool + " is already loaded."
-				if newly {
-					text = "Loaded " + tool + "."
-				}
-				_ = writer.send(rpcResult(id, mcpResult(text, object{"tool": value(tool), "newlyEnabled": value(newly)}, false)))
+				result, newly := s.enableTool(arguments.text("tool"))
+				_ = writer.send(rpcResult(id, result))
 				if newly {
 					_ = writer.send(object{"jsonrpc": value("2.0"), "method": value("notifications/tools/list_changed")})
 				}
@@ -306,7 +261,6 @@ func mcpServe(ctx context.Context, c config, input io.Reader, output io.Writer) 
 				continue
 			}
 			callCtx, callCancel := context.WithTimeout(requestCtx, 124*time.Second)
-			callCtx = s.callerContext(callCtx, era, envelope)
 			pendingMu.Lock()
 			if _, duplicate := pending[string(id)]; duplicate {
 				pendingMu.Unlock()

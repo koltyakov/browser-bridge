@@ -185,6 +185,10 @@ config removes a stale selector from the managed server entry.
 
 ## Code mode and shared MCP connections
 
+Clients with Streamable HTTP support can explicitly use the optional
+[daemon-hosted MCP HTTP endpoint](./mcp-http.md) instead of launching stdio
+subprocesses. Managed installations continue to default to stdio.
+
 OpenCode can discover Browser Bridge's MCP tools and call them inside its host
 `execute` runtime. Use the exact tool paths returned by the host's search tool.
 Browser Bridge does not need an embedded JavaScript engine for this composition.
