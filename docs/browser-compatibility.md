@@ -25,7 +25,7 @@ browsers unless stated otherwise.
 | Vivaldi | Native lookup verified; fixture UI stalled | Full pass | Native lookup verified; fixture UI stalled |
 | Chrome for Testing | Native lookup verified; fixture navigation did not commit | Startup blocked by AppArmor user-namespace restrictions | Official archive failed bundle-signature verification; not run |
 | Chromium | Not separately installed | Strict Snap host exited before connecting | Homebrew cask disabled because of Gatekeeper failures |
-| Arc | Not tested | No installation attempted | Endpoint logged in default root; runner searched disposable root; native lookup and bridge unverified |
+| Arc | Not tested | No installation attempted | Native lookup and BBX 2.2.0 connection verified with a disposable home; browser actions not tested |
 
 There were 20 full browser/platform passes. Reinstallation and reconnection
 took 2.08–2.60 seconds in these single-fixture runs. These are recovery samples,
@@ -104,19 +104,20 @@ It timed out before attempting a WebSocket connection or native-host probe.
 The supplied `--user-data-dir=<path>` did not redirect Arc's data root in this
 run.
 
-A follow-up with disposable `HOME` and `CFFIXED_USER_HOME` redirected Arc's
-application-support storage, but did not reach a DevTools endpoint within
-30 seconds. System logs recorded error `-25307`, "A default keychain could not
-be found", and a trust-settings timeout. These are observed startup limitations
-of that isolated environment, not a source-traced explanation of its stall.
-An additional per-process sandbox control also prevented Arc's own sandbox
-from initializing; this does not describe ordinary Arc startup.
+A follow-up on vm.macos redirected both `HOME` and `CFFIXED_USER_HOME`. Arc
+created `Local State` under the disposable home's `Arc/User Data`, but did not
+listen for DevTools. A process sample showed it waiting in macOS Keychain
+calls, and the system log recorded error `-25307` (no default keychain).
+With `--use-mock-keychain --password-store=basic`, Arc opened a loopback
+listener and wrote a fresh `DevToolsActivePort` in that same disposable root.
 
-Manifest creation previously succeeded, but native-host lookup, native-host
-execution, and bridge connection remain separately unverified for Arc. No
-lookup result can be inferred from the manifest's presence. The follow-up
-preserved the existing default-root endpoint file, BBX manifests, and launcher,
-and did not change keychains or security settings.
+Arc did not find the native host under `Arc/User Data/NativeMessagingHosts`.
+A nonce-tagged reply proved lookup and execution from
+`Google/Chrome/NativeMessagingHosts` inside the disposable home. Using that
+directory, the published BBX 2.2.0 binary and a private-ID copy of the release
+ZIP reported `extensionConnected: true` through `health.ping`. This verifies
+native messaging, not browser actions, store install, or `bbx install --browser
+arc`, which still targets the Arc data directory on macOS.
 
 The maintained opt-in Arc runner now checks fresh startup-log endpoints and
 new port files, verifies the actual isolated data root before connecting, and
@@ -124,8 +125,7 @@ reports discovery, isolation, HTTP/WebSocket connection, manifest creation,
 native-host lookup, and bridge connection separately. It never silently
 attaches to a real default profile when the requested disposable root is
 ignored. See [live verification](../tests/live/README.md) for
-`make test-arc-live` and its focused, browser-free regression tests. This runner
-change does not upgrade Arc's live verification status above.
+`make test-arc-live` and its focused, browser-free regression tests.
 
 ## Limits and remaining checks
 

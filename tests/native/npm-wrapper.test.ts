@@ -10,7 +10,7 @@ import { performance } from 'node:perf_hooks';
 import { test, type TestContext } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
-import { resolveNative, nativeTargets } from '../../packages/npm/src/runtime.js';
+import { resolveNative, nativeTargets, probeExecutable } from '../../packages/npm/src/runtime.js';
 import { resolveNpmCli } from '../_helpers/npmCli.js';
 
 const exec = promisify(execFile);
@@ -189,6 +189,105 @@ test(
       )
     );
     const tarball = path.join(source, packed[0].filename);
+    if (process.platform === 'win32') {
+      for (const length of [259, 260]) {
+        await t.test(`Windows npm cold install at ${length} characters`, async () => {
+          const suffix = path.join(
+            'Browser Bridge',
+            'npm',
+            'pinned',
+            nativeVersion,
+            target,
+            createHash('sha256').update(bytes).digest('hex'),
+            'bbx.exe'
+          );
+          const local = path.join(directory, 'long cache');
+          const localAppData = path.join(
+            local,
+            'x'.repeat(length - local.length - suffix.length - 2)
+          );
+          const legacy = path.join(localAppData, suffix);
+          assert.equal(legacy.length, length);
+          const longEnv = { ...env, LOCALAPPDATA: localAppData, BBX_VERSION: nativeVersion };
+          const fetchModule = path.join(directory, 'long-cache-fetch.mjs');
+          await fs.writeFile(
+            fetchModule,
+            `import fs from 'node:fs/promises';
+globalThis.fetch = async (url) => {
+  if (String(url).startsWith('https://api.github.com/'))
+    return Response.json(${JSON.stringify({
+      tag_name: `v${nativeVersion}`,
+      draft: false,
+      prerelease: false,
+      assets: [{ name: nativeTargets[target], size: bytes.length }],
+    })});
+  if (String(url).endsWith('/checksums.txt'))
+    return new Response(${JSON.stringify(`${createHash('sha256').update(bytes).digest('hex')}  ${nativeTargets[target]}\n`)});
+  if (String(url) !== ${JSON.stringify(`https://github.com/koltyakov/browser-bridge/releases/download/v${nativeVersion}/${nativeTargets[target]}`)})
+    throw new Error('Unexpected URL: ' + url);
+  return new Response(await fs.readFile(${JSON.stringify(native)}));
+};\n`
+          );
+          const workspace = path.join(directory, `boundary-${length}`);
+          await fs.mkdir(workspace);
+          await exec(
+            process.execPath,
+            [
+              npm,
+              'install',
+              '--offline',
+              '--no-audit',
+              '--no-fund',
+              '--package-lock=false',
+              tarball,
+            ],
+            {
+              cwd: workspace,
+              env: {
+                ...longEnv,
+                NODE_OPTIONS: `${env.NODE_OPTIONS || ''} --import=${pathToFileURL(fetchModule).href}`,
+              },
+              timeout: 30_000,
+            }
+          );
+          const installed = path.join(workspace, 'node_modules/@browserbridge/bbx');
+          const release = await resolveNative({
+            root: installed,
+            env: longEnv,
+            fetchFn: async () => {
+              throw new Error('Cold npm install did not populate the verified cache');
+            },
+          });
+          if (length === 259) assert.equal(release.binary, legacy);
+          else assert(release.binary.length < 260);
+          assert.deepEqual(await fs.readFile(release.binary), bytes);
+          assert.equal(
+            (
+              await exec(process.execPath, [path.join(installed, pkg.bin.bbx), '--version'], {
+                env: longEnv,
+              })
+            ).stdout.trim(),
+            nativeVersion
+          );
+          // The browser's .cmd launcher uses a regular absolute path.
+          const command = path.join(workspace, 'probe.cmd');
+          await fs.writeFile(
+            command,
+            `@echo off\r\n"${release.binary.replaceAll('%', '%%')}" --version\r\n`
+          );
+          const result = await exec(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'probe.cmd'], {
+            cwd: workspace,
+            env: longEnv,
+          });
+          assert.equal(result.stdout.trim(), nativeVersion);
+
+          const staged = path.join(path.dirname(release.binary), `.${'x'.repeat(45)}.exe`);
+          assert(staged.length >= 260);
+          await fs.copyFile(release.binary, staged);
+          await probeExecutable(staged, release, longEnv);
+        });
+      }
+    }
     await npmRun(
       ['install', '--offline', '--no-audit', '--no-fund', '--package-lock=false', tarball],
       project

@@ -29,6 +29,30 @@ func TestArcNativeReplyRequiresThisRunsNonceAndLocation(t *testing.T) {
 	}
 }
 
+func TestArcNativeProbeSelectsTheDirectoryThatAnswered(t *testing.T) {
+	arc := manifestProof{Location: "/disposable/Arc/User Data/NativeMessagingHosts", Nonce: "arc-nonce"}
+	chrome := manifestProof{Location: "/disposable/Google/Chrome/NativeMessagingHosts", Nonce: "chrome-nonce"}
+	candidates := []manifestProof{arc, chrome}
+
+	for _, want := range candidates {
+		data, err := json.Marshal(nativeReply{Location: want.Location, Nonce: want.Nonce})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := selectNativeProbe(data, candidates); err != nil || got != want {
+			t.Fatalf("selected %+v, want %+v; error: %v", got, want, err)
+		}
+	}
+
+	mismatch, err := json.Marshal(nativeReply{Location: chrome.Location, Nonce: arc.Nonce})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := selectNativeProbe(mismatch, candidates); err == nil {
+		t.Fatal("accepted a location paired with another directory's nonce")
+	}
+}
+
 func TestArcDiagnosticHostUsesNativeMessagingFraming(t *testing.T) {
 	var output bytes.Buffer
 	reply := nativeReply{Location: "/disposable/NativeMessagingHosts", Nonce: "nonce"}

@@ -21,6 +21,9 @@ const repository = 'https://api.github.com/repos/koltyakov/browser-bridge';
 const downloads = 'https://github.com/koltyakov/browser-bridge/releases/download';
 const stableVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const metadataMaxBytes = 8 * 1024 * 1024;
+// MAX_PATH includes the terminating NUL. The installed binary must also work
+// through cmd.exe (the native-host launcher), not just through Node.
+const windowsExecutablePathLimit = 260;
 
 /** @param {unknown} value @returns {Record<string, unknown>} */
 function object(value) {
@@ -49,6 +52,35 @@ function cacheDirectory(env, platform) {
     cache && path.isAbsolute(cache) ? cache : path.join(home, '.cache'),
     'browser-bridge',
     'npm'
+  );
+}
+
+/** @param {string} directory @param {string} version @param {string} target
+ * @param {Artifact} artifact @param {boolean} pinned @param {string} platform @returns {string}
+ */
+function executableCachePath(directory, version, target, artifact, pinned, platform) {
+  const mode = pinned ? 'pinned' : 'rolling';
+  const windows = platform === 'win32';
+  const binary = path.join(
+    directory,
+    mode,
+    version,
+    target,
+    artifact.sha256,
+    windows ? 'bbx.exe' : 'bbx'
+  );
+  if (!windows || path.resolve(binary).length < windowsExecutablePathLimit) return binary;
+
+  // Keep version, architecture, digest and pin mode in the cache identity,
+  // without spelling out all four directories on disk.
+  const identity = createHash('sha256')
+    .update(JSON.stringify([mode, version, target, artifact.sha256]))
+    .digest('hex');
+  const compact = path.join(directory, identity, 'bbx.exe');
+  if (path.resolve(compact).length < windowsExecutablePathLimit) return compact;
+
+  throw new Error(
+    `Browser Bridge executable path is too long for Windows. Use a shorter LOCALAPPDATA path and retry installation: ${compact}`
   );
 }
 
@@ -227,23 +259,18 @@ export async function loadRelease({
   )
     throw new Error('Invalid cached native release version');
   const artifact = validateArtifact(cached.artifact, asset, target);
+  const pinned = stableVersion.test(selector);
+  const binary = executableCachePath(directory, version, target, artifact, pinned, platform);
   if (cached !== installed) await writeSelection(installation, cached);
   return {
     version,
-    pinned: stableVersion.test(selector),
+    pinned,
     target,
     artifact,
     url: `${downloads}/v${version}/${asset}`,
     // Keep running binaries outside node_modules so npm upgrades on Windows do
     // not try to replace a locked daemon executable. Versions never overwrite.
-    binary: path.join(
-      cacheDirectory(env, platform),
-      stableVersion.test(selector) ? 'pinned' : 'rolling',
-      version,
-      target,
-      artifact.sha256,
-      platform === 'win32' ? 'bbx.exe' : 'bbx'
-    ),
+    binary,
   };
 }
 
@@ -269,9 +296,20 @@ async function cachedBinary(release) {
 
 /** @param {string} binary @param {Release} release @param {NodeJS.ProcessEnv} env @returns {Promise<void>} */
 export async function probeExecutable(binary, release, env) {
-  const home = await fs.mkdtemp(path.join(path.dirname(binary), '.probe-'));
+  // mkdtemp's Windows suffix can itself exceed MAX_PATH next to bbx.exe.
+  const prefix =
+    process.platform === 'win32'
+      ? path.join(os.tmpdir(), 'bbx-probe-')
+      : path.join(path.dirname(binary), '.probe-');
+  const home = await fs.mkdtemp(prefix);
   try {
-    const { stdout } = await exec(binary, ['--self-test'], {
+    // The unique staging filename can exceed MAX_PATH even when bbx.exe fits.
+    // Use the extended path only to run the staged executable, not in configs.
+    const command =
+      process.platform === 'win32' && path.resolve(binary).length >= windowsExecutablePathLimit
+        ? path.toNamespacedPath(binary)
+        : binary;
+    const { stdout } = await exec(command, ['--self-test'], {
       env: {
         ...env,
         BROWSER_BRIDGE_HOME: home,

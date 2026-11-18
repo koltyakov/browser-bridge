@@ -130,11 +130,7 @@ func (r *arcRunner) createProbeManifest(ctx context.Context) (json.RawMessage, e
 		return nil, err
 	}
 	location := filepath.Join(r.isolation.Profile, "NativeMessagingHosts")
-	if err := os.MkdirAll(location, 0700); err != nil {
-		return nil, err
-	}
 	name := "com.browserbridge.arc_probe_" + hex.EncodeToString(nonce)
-	r.probe = manifestProof{filepath.Join(location, name+".json"), name, location, hex.EncodeToString(nonce), id, extension}
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -143,15 +139,47 @@ func (r *arcRunner) createProbeManifest(ctx context.Context) (json.RawMessage, e
 	if err != nil {
 		return nil, err
 	}
-	launcher := filepath.Join(r.root, "lookup-host.sh")
-	body := "#!/bin/sh\nexec " + shellQuote(executable) + " --probe-host " + shellQuote(location) + " " + shellQuote(r.probe.Nonce) + " arc-lookup\n"
-	if err := writeExclusive(launcher, []byte(body), 0700); err != nil {
-		return nil, err
+	// Arc's profile root and Chromium's native-messaging lookup root can differ.
+	// Each candidate returns a different nonce so a response identifies the
+	// location that was actually read.
+	paths := []string{
+		location,
+		filepath.Join(r.home, "Library", "Application Support", "Google", "Chrome", "NativeMessagingHosts"),
+		filepath.Join(r.home, "Library", "Application Support", "Chromium", "NativeMessagingHosts"),
 	}
-	if err := r.writeManifest(r.probe.Path, nativeManifest{name, "Disposable Arc lookup probe", launcher, "stdio", []string{"chrome-extension://" + id + "/"}}); err != nil {
-		return nil, err
+	for i, directory := range paths {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if err := os.MkdirAll(directory, 0700); err != nil {
+			return nil, err
+		}
+		if _, err := rand.Read(nonce); err != nil {
+			return nil, err
+		}
+		proof := manifestProof{filepath.Join(directory, name+".json"), name, directory, hex.EncodeToString(nonce), id, extension}
+		launcher := filepath.Join(r.root, fmt.Sprintf("lookup-host-%d.sh", i))
+		body := "#!/bin/sh\nexec " + shellQuote(executable) + " --probe-host " + shellQuote(directory) + " " + shellQuote(proof.Nonce) + " arc-lookup\n"
+		if err := writeExclusive(launcher, []byte(body), 0700); err != nil {
+			return nil, err
+		}
+		if err := r.writeManifest(proof.Path, nativeManifest{name, "Disposable Arc lookup probe", launcher, "stdio", []string{"chrome-extension://" + id + "/"}}); err != nil {
+			return nil, err
+		}
+		r.probeLocations = append(r.probeLocations, proof)
 	}
-	return json.Marshal(r.probe)
+	r.probe = r.probeLocations[0]
+	return json.Marshal(r.probeLocations)
+}
+
+func selectNativeProbe(data []byte, candidates []manifestProof) (manifestProof, error) {
+	for _, proof := range candidates {
+		if validateNativeReply(data, proof) == nil {
+			return proof, nil
+		}
+	}
+	// Preserve the browser's error message when it reports a failed lookup.
+	return manifestProof{}, validateNativeReply(data, manifestProof{})
 }
 
 func (r *arcRunner) loadExtension(ctx context.Context, directory, expectedID string) error {
@@ -242,7 +270,8 @@ func (r *arcRunner) lookupNativeHost(ctx context.Context) (json.RawMessage, erro
 	if err != nil {
 		return nil, err
 	}
-	return result, validateNativeReply(result, r.probe)
+	r.probe, err = selectNativeProbe(result, r.probeLocations)
+	return result, err
 }
 
 func copyExtension(source, destination string) error {

@@ -112,6 +112,7 @@ BBX_ARC_BROWSER="/Applications/Arc.app/Contents/MacOS/Arc" make test-arc-live
 The runner refuses to reuse an already-running Arc instance. It creates a fresh
 run directory under `dist/arc-live`, redirects both `HOME` and
 `CFFIXED_USER_HOME`, and sanitizes inherited BBX destinations and credentials.
+It starts Arc with Chromium's mock-keychain and basic password-store test flags.
 It does not install into the user's browser directories, use the real keychain
 as a fallback, disable security checks, or enable a browsing access grant.
 
@@ -127,16 +128,18 @@ HTTP redirects, and ambiguous startup endpoints fail closed.
 `endpointConnection`, `manifestCreation`, `nativeHostLookup`, and
 `bridgeConnection` separately. Each stage is `passed`, `failed`, or `not_run`.
 A log announcement cannot establish a connection. Manifest creation cannot
-establish lookup: a private diagnostic extension must receive the per-run
-nonce and expected location from an executed native host. Only then does the
-runner copy the shipped extension with a private ID, start an isolated BBX
-daemon, and check its observed extension connection. This is not a full
+establish lookup: a private diagnostic extension must receive a matching nonce
+and directory from an executed native host. Each candidate directory has its
+own nonce, including the disposable home's Chrome and Chromium directories,
+because Arc's profile and native-host lookup roots can differ. Only then does
+the runner place the BBX manifest in the proven directory, copy the shipped
+extension with a private ID, start an isolated BBX daemon, and check its
+observed extension connection. This is not a full
 page-read, input, or reinstall-recovery pass.
 
 The owned process groups and temporary manifests are cleaned up; the disposable
-home and logs remain as evidence. Arc may stall before DevTools in a fresh home
-without a default keychain. That is a discovery failure with later stages
-`not_run`, not proof of a native-host failure. Optional deadlines can be passed
+home and logs remain as evidence. A startup stall is a discovery failure with
+later stages `not_run`, not proof of a native-host failure. Optional deadlines can be passed
 with `ARGS='--startup-timeout=30s --stage-timeout=20s'`. Missing prerequisites or
 failed stages return a nonzero exit status. Focused Go tests run in `make test`
 without launching a browser.

@@ -192,6 +192,65 @@ test('npm bootstrap honors exact native versions without consulting npm metadata
   );
 });
 
+test('Windows cache keeps a 259-character executable path and compacts at 260', async (t) => {
+  const f = await fixture(t);
+  const platform = 'win32';
+  const arch = 'x64';
+  const target = `${platform}-${arch}`;
+  const artifact = { ...f.manifest.artifacts[f.target], asset: nativeTargets[target] };
+  const suffix = path.join(
+    'Browser Bridge',
+    'npm',
+    'pinned',
+    '1.14.2',
+    target,
+    artifact.sha256,
+    'bbx.exe'
+  );
+  const localAppData = (length: number) => {
+    const base = path.resolve(f.root) + path.sep;
+    return base + 'a'.repeat(length - base.length - suffix.length - 1);
+  };
+  const options = {
+    ...f.options,
+    platform,
+    arch,
+    fetchFn: async (url: Parameters<typeof fetch>[0]) =>
+      String(url).endsWith('/checksums.txt')
+        ? new Response(`${artifact.sha256}  ${artifact.asset}\n`)
+        : Response.json({
+            tag_name: 'v1.14.2',
+            draft: false,
+            prerelease: false,
+            assets: [{ name: artifact.asset, size: artifact.bytes }],
+          }),
+  };
+  const envAt = (length: number) => ({
+    ...f.options.env,
+    LOCALAPPDATA: localAppData(length),
+    BBX_VERSION: '1.14.2',
+  });
+  const below = await loadRelease({ ...options, env: envAt(259) });
+  assert.equal(below.binary, path.join(localAppData(259), suffix));
+  assert.equal(below.binary.length, 259);
+
+  // Rolling has one additional character in its directory name. At the same
+  // LOCALAPPDATA, it must not collide with the pinned release's compact path.
+  const env = envAt(261);
+  assert.equal(path.join(localAppData(260), suffix).length, 260);
+  const boundary = await loadRelease({ ...options, env: envAt(260) });
+  const pinned = await loadRelease({ ...options, env });
+  const rolling = await loadRelease({ ...options, env: { ...env, BBX_VERSION: 'latest' } });
+  for (const release of [boundary, pinned, rolling]) {
+    assert(release.binary.length < 260);
+    assert.match(path.basename(path.dirname(release.binary)), /^[a-f0-9]{64}$/u);
+    assert.equal(path.basename(release.binary), 'bbx.exe');
+  }
+  assert.notEqual(pinned.binary, rolling.binary);
+  assert.equal((await loadRelease({ ...options, env })).binary, pinned.binary);
+  await assert.rejects(loadRelease({ ...options, env: envAt(310) }), /shorter LOCALAPPDATA/u);
+});
+
 test('exact npm selectors retain a pin beside the binary for direct native and MCP launches', async (t) => {
   const f = await fixture(t);
   const rolling = await resolveNative(f.options);

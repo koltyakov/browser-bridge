@@ -33,6 +33,7 @@ type arcRunner struct {
 	isolation                                              isolationProof
 	client                                                 *devTools
 	probe                                                  manifestProof
+	probeLocations                                         []manifestProof
 	children                                               []*exec.Cmd
 	logs                                                   []*os.File
 	manifests                                              []string
@@ -204,6 +205,7 @@ func (r *arcRunner) launchBrowser() error {
 		"--remote-allow-origins=http://127.0.0.1", "--enable-automation",
 		"--enable-unsafe-extension-debugging", "--no-first-run", "--no-default-browser-check",
 		"--disable-background-networking", "--disable-component-update", "--disable-sync",
+		"--use-mock-keychain", "--password-store=basic",
 		"--enable-logging=stderr", "about:blank",
 	}
 	cmd := exec.Command(r.browser, args...)
