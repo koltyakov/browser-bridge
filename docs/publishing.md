@@ -73,6 +73,13 @@ The wrapper queries GitHub Releases independently of its npm version. By default
 
 Always run `make package-native-all` after tests to rebuild all six platforms before native publishing. Native publishing calls `scripts/prepare-npm.mjs`, which requires all six expected binary files in `dist/cli`, rejects empty files and files at or above 12,000,000 bytes, then hashes the files and atomically writes `packages/npm/native-manifest.json` for release verification. It does not require a matching npm version. It reads sizes directly from the binaries; there is no separate build report or per-binary version check. Do not commit this generated manifest or bundle it in npm.
 
+Extension ZIPs use sorted paths and fixed metadata so reruns with the pinned
+Node version produce the same archive. For older ZIPs made by platform tools,
+publishing also accepts identical validated file contents despite timestamp or
+compression differences. It reuses the original published ZIP bytes and never
+overwrites them. Changed payloads, unsafe ZIP entries, and native binary hash
+mismatches still stop publication before any missing assets are uploaded.
+
 The tarball contains only `packages/npm/bin`, `packages/npm/src`, and package metadata/license/docs. Packing requires no native binaries. Go binaries live on GitHub Releases. Shared TypeScript helpers in `protocol/` support browser builds and generation; they are not a published runtime or client library. `npm ci` in a source checkout skips the wrapper bootstrap, so CI does not download a published release during dependency installation.
 
 The release workflow uses Node builtins and `gh` to publish native assets and the extension ZIP. `make publish-release` requires the current version's packaged ZIP and publishes it as `bbx-browser-extension.zip`. It creates a public release if needed, requires the tag to exist, and downloads existing assets to compare their size and digest before uploading missing assets. Uploads never use `--clobber`. A mismatched existing asset fails the release; publish a new version rather than replacing bytes already verified by installations. A pre-existing draft release must be made public before this step. `checksums.txt` continues to cover only the native binaries, and `make publish-native` remains available for native-only publishing.
@@ -120,10 +127,25 @@ environment approvals also gate renewals; configure them only if someone will
 approve the weekly job before the feed expires. npm trusted publishing remains
 OIDC-based and independent of this signing key.
 
-- For the first release only, repository variable
-  `RELEASE_FEED_INITIALIZE=1`. This creates the metadata prerelease.
-  Remove the variable after successful publication. Initialization refuses
-  to overwrite an existing metadata release.
+- Do not configure `RELEASE_FEED_INITIALIZE`. It is obsolete; remove any existing
+  repository or environment variable with that name. The release workflow rejects
+  an enabled legacy value before publishing assets.
+- For the first release only, manually dispatch the **Release** workflow on the
+  version tag with its `initialize_feed` input enabled, for example:
+
+  ```sh
+  gh workflow run release.yml --repo koltyakov/browser-bridge \
+    --ref vX.Y.Z -f initialize_feed=true
+  ```
+
+  Select a tag, not a branch. Normal tag pushes never initialize or reset a feed.
+  Initialization creates an unpublished draft, verifies its signed metadata, then
+  publishes it. Reruns resume that tag's initialization draft or authenticate an
+  already-published feed, preserving its sequence and immutable release records.
+  Missing metadata on a public release fails closed and must be restored.
+  Locally, after verifying public release assets, `make initialize-update-feed`
+  performs the same explicit one-time action. Do not delete the feed or version
+  tags to recover from an ordinary failed pipeline.
 
 Local files live under `~/.ssh/github/`: `bbx.pem` is PKCS#8 private PEM,
 `bbx.pub` is SPKI public PEM, and `bbx.json` is the public JSON map.
@@ -167,6 +189,12 @@ previous feed before retaining its releases, increases the sequence, and
 refuses to change an existing signed version. Only the signed metadata asset
 uses `--clobber`; executable assets remain immutable. Publishing jobs share a
 concurrency group so scheduled renewal cannot race a release.
+
+`make check-update-feed` validates signing and remote initialization state without
+remote writes. CI runs it before tests/builds, then runs
+`make check-update-feed-release` after building and before publishing any assets.
+The latter also rejects changes to an already-signed version. Authentication,
+network, download, and signature failures never trigger initialization.
 
 The feed expires after 14 days. The weekly `native-update-feed.yml` workflow
 renews it without changing binary assets; `make renew-update-feed` does the

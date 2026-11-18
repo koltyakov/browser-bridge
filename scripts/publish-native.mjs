@@ -7,6 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { prepareNpm } from './prepare-npm.mjs';
 import { resolveVersion } from './version.mjs';
+import { haveSameZipContents } from './extension-zip.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const repository = 'koltyakov/browser-bridge';
@@ -94,7 +95,7 @@ const existing = new Set(
   })
 );
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'bbx-release-'));
-/** @param {import('./prepare-npm.mjs').NativeArtifact} artifact @returns {Promise<void>} */
+/** @param {import('./prepare-npm.mjs').NativeArtifact & {file: string}} artifact @returns {Promise<void>} */
 async function verifyRemote(artifact) {
   const file = path.join(temporary, artifact.asset);
   await fs.rm(file, { force: true });
@@ -114,6 +115,17 @@ async function verifyRemote(artifact) {
     bytes.length !== artifact.bytes ||
     createHash('sha256').update(bytes).digest('hex') !== artifact.sha256
   ) {
+    // Older platform ZIP packers recorded wall-clock timestamps. Keep the
+    // original immutable archive if every validated entry is byte-identical.
+    if (
+      artifact.asset === 'bbx-browser-extension.zip' &&
+      haveSameZipContents(bytes, await fs.readFile(artifact.file))
+    ) {
+      console.log(
+        'Verified identical extension contents; reusing the existing immutable ZIP bytes.'
+      );
+      return;
+    }
     throw new Error(
       `Immutable release asset mismatch: ${tag}/${artifact.asset}. Refusing to overwrite it; publish a new version.`
     );

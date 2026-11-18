@@ -7,6 +7,8 @@ import { spawnSync } from 'node:child_process';
 import { test, type TestContext } from 'node:test';
 import { prepareNpm } from '../../../scripts/prepare-npm.mjs';
 import { nativeMaxBytes } from '../../../packages/npm/src/install-targets.js';
+import { createZipArchive } from '../../../scripts/extension-zip.mjs';
+import { withDifferentZipMetadata } from '../../_helpers/zipMetadata.js';
 
 const releaseEnv = {
   GITHUB_REF: 'refs/tags/v1.2.3',
@@ -188,7 +190,12 @@ test(
   async (t) => {
     const { directory } = await fixture(t);
     await fs.mkdir(path.join(directory, 'scripts'));
-    for (const name of ['prepare-npm.mjs', 'publish-native.mjs', 'version.mjs']) {
+    for (const name of [
+      'prepare-npm.mjs',
+      'publish-native.mjs',
+      'version.mjs',
+      'extension-zip.mjs',
+    ]) {
       await fs.copyFile(
         new URL(`../../../scripts/${name}`, import.meta.url),
         path.join(directory, 'scripts', name)
@@ -295,8 +302,11 @@ switch (args[1]) {
     assert.notEqual(emptyExtension.status, 0);
     assert.match(emptyExtension.stderr, /Extension ZIP is empty/);
     assert.deepEqual(await calls(), []);
-    const extensionBytes = Buffer.from('packaged extension fixture');
-    await fs.writeFile(extensionPath, extensionBytes);
+    const extensionSource = path.join(directory, 'extension-source');
+    await fs.mkdir(extensionSource);
+    await fs.writeFile(path.join(extensionSource, 'manifest.json'), '{"version":"1.2.3"}');
+    await createZipArchive(extensionSource, extensionPath);
+    const extensionBytes = await fs.readFile(extensionPath);
     const withExtension = publish(['--include-extension']);
     assert.equal(withExtension.status, 0, withExtension.stderr);
     assert.equal((await calls()).filter((args) => args[1] === 'upload').length, 1);
@@ -304,6 +314,26 @@ switch (args[1]) {
       (await calls()).filter((args) => args[1] === 'download').length,
       platforms.length + 2
     );
+    // Legacy archives differ only in timestamps. Never overwrite their
+    // published bytes, and do not reject a rerun with identical payloads.
+    await fs.writeFile(extensionPath, withDifferentZipMetadata(extensionBytes));
+    await fs.writeFile(path.join(directory, 'calls.jsonl'), '');
+    const metadataRerun = publish(['--include-extension']);
+    assert.equal(metadataRerun.status, 0, metadataRerun.stderr);
+    assert.match(metadataRerun.stdout, /reusing the existing immutable ZIP/);
+    assert.equal((await calls()).filter((args) => args[1] === 'upload').length, 0);
+    assert.deepEqual(
+      await fs.readFile(path.join(directory, 'remote/bbx-browser-extension.zip')),
+      extensionBytes
+    );
+    await fs.writeFile(path.join(extensionSource, 'manifest.json'), '{"version":"changed"}');
+    await createZipArchive(extensionSource, extensionPath);
+    await fs.writeFile(path.join(directory, 'calls.jsonl'), '');
+    const changedExtension = publish(['--include-extension']);
+    assert.notEqual(changedExtension.status, 0);
+    assert.match(changedExtension.stderr, /Immutable release asset mismatch/);
+    assert.equal((await calls()).filter((args) => args[1] === 'upload').length, 0);
+    await fs.writeFile(extensionPath, extensionBytes);
     assert.deepEqual(
       await fs.readFile(path.join(directory, 'remote/bbx-browser-extension.zip')),
       extensionBytes

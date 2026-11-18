@@ -19,6 +19,7 @@ INSTALL_DIR ?=
 TARGET ?=
 TARBALL ?= ./browserbridge-bbx-$(shell "$(NODE)" -p "require('./package.json').version").tgz
 ARGS ?=
+UPDATE_FEED_ARGS ?=
 TEST_ARGS ?=
 TEST_FILES ?= packages/*/test/*.test.ts protocol/test/*.test.ts tests/integration/*.test.ts tests/fixtures/*/*.test.ts tests/native/*.test.ts
 EXEC = $(NPM) exec --no --
@@ -36,7 +37,7 @@ endif
 	generate-readability check-readability \
 	check-release-version check check-extension-zip package-extension package-native \
 	package-native-all package-npm pack pack-dry-run release-check prepublish-check \
-	publish-native publish-release publish-update-feed renew-update-feed publish-npm fixture-browser fixture-interaction bench-interaction bench-comparative bench-iframe-wait \
+	publish-native publish-release publish-update-feed initialize-update-feed check-update-feed check-update-feed-release renew-update-feed publish-npm fixture-browser fixture-interaction bench-interaction bench-comparative bench-iframe-wait \
 	run status daemon install-manifest install sync-version bench-runtime bench-npm-launch test-visual-live test-inspection-live test-mcp-live test-workflows-live test-chaos-live test-arc-live test-input-live test-full-chain-live
 
 help: ## Show available tasks; the default when running make
@@ -195,7 +196,16 @@ publish-release: ## Publish and verify existing native assets and extension ZIP 
 	"$(NODE)" scripts/publish-native.mjs --include-extension
 
 publish-update-feed: ## Publish signed native update metadata after immutable release assets
-	"$(NODE)" scripts/publish-update-feed.mjs --include-release
+	"$(NODE)" scripts/publish-update-feed.mjs --include-release $(UPDATE_FEED_ARGS)
+
+initialize-update-feed: ## Explicitly initialize the feed after verifying public native release assets
+	"$(NODE)" scripts/publish-update-feed.mjs --include-release --initialize
+
+check-update-feed: ## Check signing and remote feed configuration without publishing
+	"$(NODE)" scripts/publish-update-feed.mjs --check $(UPDATE_FEED_ARGS)
+
+check-update-feed-release: ## Check candidate immutability before publishing release assets
+	"$(NODE)" scripts/publish-update-feed.mjs --check --include-release $(UPDATE_FEED_ARGS)
 
 renew-update-feed: ## Renew signed native update metadata without changing release assets
 	"$(NODE)" scripts/publish-update-feed.mjs
