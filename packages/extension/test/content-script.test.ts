@@ -3042,6 +3042,52 @@ test('content script dispatches dom describe, style, and layout reads', async (t
   assert.deepEqual(missingRole, { error: 'role is required for dom.find_by_role' });
 });
 
+test('pending frame waits share attachment hints and stop signaling after cancellation', async (t) => {
+  const harness = createChromeHarness();
+  const hints: unknown[] = [];
+  Object.assign(harness.chrome.runtime, {
+    id: 'test',
+    sendMessage: async (message: unknown) => {
+      hints.push(message);
+    },
+  });
+  await withDocument('<html><body></body></html>', async ({ document }) => {
+    // linkedom does not implement Window.length. Model the browser count while
+    // exercising real mutation delivery and content request cancellation.
+    await loadContentScript(t, {
+      withHelpers: true,
+      chrome: harness.chrome,
+      document,
+      window: { length: 0 },
+    });
+    const send = (data: Record<string, unknown>) =>
+      new Promise((resolve) => harness.getListener()(data, EMPTY_SENDER, resolve));
+    const waits = ['a', 'b'].map((requestId) =>
+      send({
+        type: 'bridge.execute',
+        method: 'dom.wait_for',
+        requestId,
+        watchFrameTree: true,
+        params: { selector: '#not-yet', timeoutMs: 2000 },
+      })
+    );
+    const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+    document.body.append(document.createElement('div'));
+    await flush();
+    assert.deepEqual(hints, []);
+    Reflect.set(window, 'length', 1);
+    document.body.append(document.createElement('iframe'));
+    await flush();
+    assert.deepEqual(hints, [{ type: 'bridge.frame-tree-changed' }]);
+    for (const requestId of ['a', 'b']) await send({ type: 'bridge.cancel', requestId });
+    await Promise.all(waits);
+    Reflect.set(window, 'length', 2);
+    document.body.append(document.createElement('iframe'));
+    await flush();
+    assert.equal(hints.length, 1);
+  });
+});
+
 test('content script dom.wait_for handles immediate matches, timeouts, and validation', async (t) => {
   const harness = createChromeHarness();
 

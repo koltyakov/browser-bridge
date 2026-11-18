@@ -113,7 +113,7 @@ export interface BrowserMethodParams {
 }
 export type BrowserMethod = keyof BrowserMethodParams;
 /** Defaults are routing conveniences, not security boundaries or grants. */
-export type BrowserRouting = { "tabId"?: number; "destinationId"?: string; "budgetPreset"?: "quick" | "normal" | "deep"; "extensionId"?: string; "targetBrowser"?: string; "targetProfile"?: string };
+export type BrowserRouting = { "resultMode"?: "compact" | "data"; "tabId"?: number; "destinationId"?: string; "budgetPreset"?: "quick" | "normal" | "deep"; "extensionId"?: string; "targetBrowser"?: string; "targetProfile"?: string };
 export type BrowserCallOptions = BrowserRouting & { signal?: AbortSignal };
 export type BrowserCallArguments = {
   [Method in BrowserMethod]: BrowserRouting & { method: Method; params: BrowserMethodParams[Method] }
@@ -237,7 +237,7 @@ readonly "list_tools": BrowserMethodCall<"webmcp.list_tools", Result>}};
  * Every invocation goes through the supplied host tool and its Go runtime. */
 export function createBrowserBridge<Result>(call: BrowserCall<Result>, defaults: BrowserRouting = {}): BrowserBridge<Result> {
   if (typeof call !== 'function') throw new TypeError('Supply the host browser_call callback');
-  const keys = new Set<string>(["tabId","destinationId","budgetPreset","extensionId","targetBrowser","targetProfile"]);
+  const keys = new Set<string>(["resultMode","tabId","destinationId","budgetPreset","extensionId","targetBrowser","targetProfile"]);
   function routingOptions(value: BrowserRouting, allowSignal = false): BrowserRouting {
     const result: Record<string, unknown> = {};
     for (const key of Object.keys(value)) {

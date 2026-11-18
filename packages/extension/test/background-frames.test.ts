@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { handleTabBoundRequest } from '../src/background-tab-bound.js';
+import { notifyFrameWaits } from '../src/background-frame-wait.js';
 import { enrichBridgeResponse } from '../src/background-action-log.js';
 import { createFailure, createRequest, BridgeError } from '../../../protocol/src/index.js';
 import { requestLifetimes } from '../src/background-request-lifetime.js';
@@ -334,7 +335,7 @@ test('a selector overrides autoscope routing and pins search metadata to the own
   );
 });
 
-test('DOM waits rediscover a child frame created after the wait starts', async () => {
+test('the timer fallback discovers a child when no frame-change hint arrives', async () => {
   const { dependencies, sent } = createDependencies(true, (frameId, method) =>
     method === 'dom.wait_for'
       ? { found: frameId === 7, elementRef: 'el_pay7_1', duration: 0 }
@@ -364,6 +365,47 @@ test('DOM waits rediscover a child frame created after the wait starts', async (
     sent.filter((entry) => entry.method === 'dom.wait_for').map((entry) => entry.frameId),
     [0, 7]
   );
+});
+
+test('attachment during discovery coalesces into one fresh enumeration before the fallback', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+  const { dependencies, sent } = createDependencies(true, (id) => ({ found: id === 7 }));
+  let discoveries = 0;
+  let release!: () => void;
+  dependencies.frames.listFrames = async () => {
+    if (++discoveries === 1) {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return [{ frameId: 0, tag: 'top' }];
+    }
+    return [
+      { frameId: 0, tag: 'top' },
+      { frameId: 7, tag: 'child' },
+    ];
+  };
+  const result = handleTabBoundRequest(request('dom.wait_for', { selector: '#pay' }), dependencies);
+  await flush();
+  t.mock.timers.tick(0);
+  await flush();
+  notifyFrameWaits(5);
+  notifyFrameWaits(5);
+  t.mock.timers.tick(100);
+  assert.equal(discoveries, 1);
+  release();
+  await flush();
+  t.mock.timers.tick(50);
+  await flush();
+  assert.equal(discoveries, 2);
+  assert.equal((await result).ok, true);
+  assert.deepEqual(
+    sent.map((m) => m.frameId),
+    [0, 7]
+  );
+  notifyFrameWaits(5);
+  t.mock.timers.tick(1000);
+  assert.equal(discoveries, 2);
 });
 
 test('text waits select the matching frame rather than the first wildcard selector', async () => {
@@ -400,11 +442,13 @@ test('DOM waits report timeout with a single watcher per document', async () => 
   );
 });
 
-test('a replacement document gets a new watcher and stale matches cannot win', async () => {
+test('a navigation hint replaces only the navigated watcher; stale matches cannot win', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
   const { dependencies } = createDependencies();
   let discoveries = 0;
   const aborted: number[] = [];
-  const response = await handleTabBoundRequest(
+  const pending = handleTabBoundRequest(
     request('dom.wait_for', { selector: '#pay', timeoutMs: 2000 }),
     {
       ...dependencies,
@@ -426,6 +470,17 @@ test('a replacement document gets a new watcher and stale matches cannot win', a
       },
     }
   );
+  await flush();
+  t.mock.timers.tick(0);
+  await flush();
+  notifyFrameWaits(99);
+  t.mock.timers.tick(100);
+  assert.equal(discoveries, 1, 'a hint from an unrelated tab must not wake this wait');
+  notifyFrameWaits(5);
+  t.mock.timers.tick(50);
+  await flush();
+  assert.equal(discoveries, 2);
+  const response = await pending;
   assert.equal((response.result as { elementRef: string }).elementRef, 'new');
   assert.deepEqual(aborted, [7, 0]);
 });

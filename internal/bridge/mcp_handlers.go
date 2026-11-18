@@ -202,6 +202,10 @@ func (s *mcpSession) handleTool(ctx context.Context, name string, args object, e
 	if _, ok := catalog.Methods[method]; !ok {
 		return mcpErrorResult("INVALID_REQUEST", "Unknown bridge method: "+method), nil
 	}
+	dataMode := name == "browser_call" && args.text("resultMode") == "data"
+	if dataMode && !batchSafe(method, params) {
+		return mcpErrorResult("INVALID_REQUEST", "resultMode=data requires a batch-safe read.", "Use compact mode for this method."), nil
+	}
 	if err := validateMethodParams(method, params); err != nil {
 		return mcpErrorResult("INVALID_REQUEST", err.Error()), nil
 	}
@@ -323,6 +327,9 @@ func (s *mcpSession) handleTool(ctx context.Context, name string, args object, e
 	response, err := s.bridge(ctx, method, params, args, era)
 	if err != nil {
 		return nil, err
+	}
+	if dataMode && response.boolean("ok") {
+		return mcpWithParamWarnings(mcpDataResult(response, method), warnings), nil
 	}
 	if name == "browser_capture" && strings.HasPrefix(method, "cdp.") && response.boolean("ok") {
 		data, truncated := mcpBoundValue(response["result"], 500, 50000, 4000, true)

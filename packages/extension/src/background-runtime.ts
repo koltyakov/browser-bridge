@@ -2,6 +2,7 @@ export type RuntimeResponse = { ok: boolean; error?: string; details?: Record<st
 
 export type RuntimeMessageListenerOptions = {
   openSidePanelForTab: (tabId: number, windowId: number) => Promise<void>;
+  onFrameTreeChanged?: (tabId: number) => void;
   onNavigationSignal?: (
     tabId: number,
     kind: 'pushState' | 'replaceState' | 'popstate' | 'hashchange',
@@ -47,6 +48,10 @@ export function createRuntimeMessageListener(
       message && typeof message === 'object' ? (message as Record<string, unknown>) : null;
     if (candidate?.type === 'webmcp.approval.get' || candidate?.type === 'webmcp.approval.decide') {
       return options.onWebMcpApproval?.(message, sender, sendResponse) ?? false;
+    }
+    if (candidate?.type === 'bridge.frame-tree-changed' && typeof sender.tab?.id === 'number') {
+      options.onFrameTreeChanged?.(sender.tab.id);
+      return false;
     }
     // Content scripts in hidden tabs time short waits here because Chrome
     // throttles their own timers to about one wake-up per second.

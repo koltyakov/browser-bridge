@@ -337,6 +337,33 @@ element reference. */
     return { html: t.value, truncated: t.truncated, omitted: t.omitted };
   }
 
+  // All pending frame-aware waits in this document share one load listener.
+  // window.length counts direct child browsing contexts across origins without
+  // walking added subtrees or touching another document.
+  let frameWaitCount = 0;
+  let childFrameCount = 0;
+  function signalFrameChange() {
+    if (globalThis.chrome?.runtime?.id)
+      void chrome.runtime.sendMessage({ type: 'bridge.frame-tree-changed' }).catch(() => {});
+  }
+  function onFrameLoad(event: Event) {
+    if (
+      event.isTrusted &&
+      event.target instanceof Element &&
+      (event.target.tagName === 'IFRAME' || event.target.tagName === 'FRAME')
+    )
+      signalFrameChange();
+  }
+  function monitorFrameTree() {
+    if (frameWaitCount++ === 0) {
+      childFrameCount = window.length;
+      document.addEventListener('load', onFrameLoad, true);
+    }
+    return () => {
+      if (--frameWaitCount === 0) document.removeEventListener('load', onFrameLoad, true);
+    };
+  }
+
   /** Wait for a DOM condition using MutationObserver + polling fallback. */
   function waitForDom(
     params: Record<string, unknown>
@@ -398,11 +425,19 @@ element reference. */
     return new Promise((resolve, reject) => {
       let settled = false;
       let checkScheduled = false;
-      const observer = new MutationObserver(scheduleObserverCheck);
+      const stopMonitoring = params.__bbxWatchFrameTree === true ? monitorFrameTree() : undefined;
+      const observer = new MutationObserver(() => {
+        if (stopMonitoring && window.length !== childFrameCount) {
+          childFrameCount = window.length;
+          signalFrameChange();
+        }
+        scheduleObserverCheck();
+      });
       const signal = params.__bbxSignal as AbortSignal | undefined;
       function cleanup() {
         settled = true;
         observer.disconnect();
+        stopMonitoring?.();
         signal?.removeEventListener('abort', tryResolve);
       }
 

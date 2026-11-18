@@ -68,6 +68,31 @@ existing `input.perform` method for an already-authorized known flow. A failed
 MCP tool call may resolve with `isError: true` rather than throw. Check the
 returned error before continuing a dependent action.
 
+### Read data for a script
+
+Compact evidence is the default. For a batch-safe read, pass `resultMode: 'data'`
+to get the bridge result under `structuredContent.data`, including fields the
+compact preview omits. For example, a script can list the input types in a
+form without sending every node to the model:
+
+```ts
+const result = await bridge.dom.query(
+  { selector: 'form', maxNodes: 80, maxDepth: 8, attributeAllowlist: ['type'] },
+  { resultMode: 'data' },
+);
+const { ok, data, meta, error } = result.structuredContent;
+if (!ok) return { error };
+const inputs = data.nodes.filter(node => node.tag === 'input');
+return {
+  types: inputs.map(node => node.attrs?.type ?? 'text'),
+  partial: Boolean(data.truncated || meta?.budget_truncated || meta?.result_truncated),
+};
+```
+
+Data mode rejects results larger than 64 KiB with `RESULT_TOO_LARGE`; it never
+substitutes a preview. Narrow the read or use the method's pagination. A result
+within the limit can still be partial according to that method's own contract.
+
 ## Routing, cancellation and safety
 
 The first argument is the method's parameters. The second is the ordinary

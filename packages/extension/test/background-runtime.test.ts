@@ -156,6 +156,18 @@ test('background runtime accepts navigation kinds only from sender tabs', () => 
   assert.deepEqual(signals, [{ tabId: 19, kind: 'pushState', channel: 'channel-1' }]);
 });
 
+test('frame-change hints use the sender tab, not a tab or frame named by the payload', () => {
+  const tabs: number[] = [];
+  const listener = createRuntimeMessageListener({
+    openSidePanelForTab: async () => {},
+    onFrameTreeChanged: (tabId) => tabs.push(tabId),
+  });
+  const hint = { type: 'bridge.frame-tree-changed', tabId: 99, frameId: 3 };
+  listener(hint, { tab: { id: 7 }, frameId: 1 } as chrome.runtime.MessageSender, () => {});
+  listener(hint, {}, () => {});
+  assert.deepEqual(tabs, [7]);
+});
+
 test('background runtime times content delays for tabs and ignores other senders', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const responses: RuntimeResponse[] = [];

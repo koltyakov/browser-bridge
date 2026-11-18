@@ -113,7 +113,7 @@ export interface BrowserMethodParams {
 }
 export type BrowserMethod = keyof BrowserMethodParams;
 /** Defaults are routing conveniences, not security boundaries or grants. */
-export type BrowserRouting = { "tabId"?: number; "destinationId"?: string; "budgetPreset"?: "quick" | "normal" | "deep"; "extensionId"?: string; "targetBrowser"?: string; "targetProfile"?: string };
+export type BrowserRouting = { "resultMode"?: "compact" | "data"; "tabId"?: number; "destinationId"?: string; "budgetPreset"?: "quick" | "normal" | "deep"; "extensionId"?: string; "targetBrowser"?: string; "targetProfile"?: string };
 export type BrowserCallOptions = BrowserRouting & { signal?: AbortSignal };
 export type BrowserCallArguments = {
   [Method in BrowserMethod]: BrowserRouting & { method: Method; params: BrowserMethodParams[Method] }

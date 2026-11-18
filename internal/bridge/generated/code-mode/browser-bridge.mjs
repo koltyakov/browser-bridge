@@ -1,7 +1,7 @@
 // Generated from browser-bridge.ts. DO NOT EDIT.
 function createBrowserBridge(call, defaults = {}) {
   if (typeof call !== "function") throw new TypeError("Supply the host browser_call callback");
-  const keys = /* @__PURE__ */ new Set(["tabId", "destinationId", "budgetPreset", "extensionId", "targetBrowser", "targetProfile"]);
+  const keys = /* @__PURE__ */ new Set(["resultMode", "tabId", "destinationId", "budgetPreset", "extensionId", "targetBrowser", "targetProfile"]);
   function routingOptions(value, allowSignal = false) {
     const result = {};
     for (const key of Object.keys(value)) {

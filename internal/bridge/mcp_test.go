@@ -551,6 +551,39 @@ func TestMCPOversizedBatchResultPreservesSessionAndAtomicEvidence(t *testing.T) 
 	}
 }
 
+func TestMCPDataModeForAgentScripts(t *testing.T) {
+	nodes := make([]object, 30)
+	for i := range nodes {
+		nodes[i] = object{"tag": value("input"), "attrs": value(object{"type": value("number")}), "elementRef": value(fmt.Sprint("el_", i))}
+	}
+	raw := object{"nodes": value(nodes), "count": value(len(nodes))}
+	c, _ := mcpTestDaemon(t, func(request object) object {
+		if request.text("method") != "dom.query" || request.object("params")["resultMode"] != nil {
+			t.Errorf("unexpected dispatch %s", value(request))
+		}
+		r := success(request.text("id"), raw)
+		r["meta"] = value(object{"budget_truncated": value(true), "continuation_hint": value("narrow scope")})
+		return r
+	})
+	peer := mcpTestStart(t, c)
+	call := func(method string, params object) object {
+		peer.send(t, mcpTestCall(1, "browser_call", object{"method": value(method), "params": value(params), "tabId": value(7), "resultMode": value("data")}, true))
+		return peer.read(t).object("result").object("structuredContent")
+	}
+	result := call("dom.query", object{"selector": value("form")})
+	assertJSONEqual(t, result["data"], value(raw))
+	if !result.object("meta").boolean("budget_truncated") || result.object("meta").text("continuation_hint") != "narrow scope" {
+		t.Fatalf("lost upstream truncation: %s", value(result))
+	}
+	if rejected := call("page.get_console", object{"clear": value(true)}); rejected.object("error").text("code") != "INVALID_REQUEST" {
+		t.Fatalf("destructive read accepted: %s", value(rejected))
+	}
+	large := mcpDataResult(success("x", object{"text": value(strings.Repeat("x", 65536))}), "page.get_text").object("structuredContent")
+	if large.object("error").text("code") != "RESULT_TOO_LARGE" || large["data"] != nil {
+		t.Fatal("oversize data was not rejected atomically")
+	}
+}
+
 func TestMCPQueryEvidenceTreatsNullFieldsAsMissing(t *testing.T) {
 	node := object{"elementRef": value("el_1"), "tag": value("button"), "role": value[*string](nil), "name": value[*string](nil), "attrs": value(object{"role": value("tab"), "aria-label": value("Settings")})}
 	evidence := mcpResponse(success("q", object{"nodes": value([]object{node, {"elementRef": value("el_2"), "tag": value("a"), "role": value[*string](nil)}})}), "dom.query", object{}).object("structuredContent")["evidence"]

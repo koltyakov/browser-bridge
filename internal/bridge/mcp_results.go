@@ -19,6 +19,22 @@ func mcpCost(tokens int) string {
 	return cliCostClass(float64(tokens))
 }
 
+// Agent-side scripts need the protocol fields, not a human-readable preview.
+// Reject an oversized result as a whole rather than silently changing its shape.
+func mcpDataResult(response object, method string) object {
+	const maxDataBytes = 64 * 1024
+	raw := response["result"]
+	if len(raw) > maxDataBytes {
+		return mcpErrorResult("RESULT_TOO_LARGE", fmt.Sprintf("%s returned %d bytes; data mode accepts up to %d.", method, len(raw), maxDataBytes), "Narrow the read or use the method's pagination.")
+	}
+	out := object{"ok": value(true), "data": raw}
+	meta := response.object("meta")
+	if kept := cliNotableMeta(meta, meta.text("tab_routing") != "explicit"); len(kept) > 0 {
+		out["meta"] = value(kept)
+	}
+	return mcpResult("Read "+method+"; see structuredContent.data.", out, false)
+}
+
 func mcpResult(summary string, structured object, isError bool, images ...object) object {
 	content := []object{{"type": value("text"), "text": value(summary)}}
 	content = append(content, images...)

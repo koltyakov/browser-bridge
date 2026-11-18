@@ -1602,6 +1602,11 @@
             "type": "string",
             "description": "RPC name. Discover with protocol.describe params {query,limit:5}; exact {method} loads its schema/signature. protocol.capabilities probes selected-tab eligibility without acting."
           },
+          "resultMode": {
+            "type": "string",
+            "enum": ["compact", "data"],
+            "description": "Default compact returns evidence for the model. In an agent-side script use data for batch-safe reads: structuredContent.data is the original bridge result, with no MCP field or row elision, up to 64 KiB. Bridge-side limits and pagination still apply. Filter or aggregate locally and return only the answer. Chain dependent reads in the same script; use input.perform for known ordered actions."
+          },
           "params": {
             "description": "Method parameters as object",
             "type": "object",

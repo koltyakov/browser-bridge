@@ -63,6 +63,7 @@ import {
   updateActionIndicatorForTab as updateActionIndicatorForTabBadge,
 } from './background-badge.js';
 import { createRuntimeMessageListener } from './background-runtime.js';
+import { notifyFrameWaits } from './background-frame-wait.js';
 import { getVersionNegotiationPayload } from './background-versioning.js';
 import { handleNavigationRequest as executeNavigationRequest } from './background-navigation.js';
 import { handlePageEvaluate as executePageEvaluate } from './background-evaluate.js';
@@ -1182,6 +1183,7 @@ chrome.runtime.onConnect.addListener((port) => {
 chrome.runtime.onMessage.addListener(
   createRuntimeMessageListener({
     openSidePanelForTab,
+    onFrameTreeChanged: notifyFrameWaits,
     onWebMcpApproval: webmcp.handleMessage,
     onNavigationSignal: (tabId, kind, channel) => {
       domBaselines.invalidateNavigation(tabId);
