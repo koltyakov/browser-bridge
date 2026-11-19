@@ -3090,6 +3090,9 @@
         },
         "maxLength": {
           "type": "number"
+        },
+        "prune": {
+          "type": "boolean"
         }
       },
       "required": [],
@@ -6170,13 +6173,17 @@
         },
         "maxLength": {
           "type": "number"
+        },
+        "prune": {
+          "type": "boolean"
         }
       },
       "required": [
         "elementRef",
         "target",
         "outer",
-        "maxLength"
+        "maxLength",
+        "prune"
       ],
       "additionalProperties": true
     },

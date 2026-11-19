@@ -2726,18 +2726,20 @@ type GetHtmlParams struct {
 
 	MaxLength Optional[float64] `json:"maxLength,omitzero"`
 
+	Prune Optional[bool] `json:"prune,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v GetHtmlParams) MarshalJSON() ([]byte, error) {
 	type alias GetHtmlParams
-	return marshalOpen(alias(v), v.Extra, []string{"elementRef", "target", "outer", "maxLength"})
+	return marshalOpen(alias(v), v.Extra, []string{"elementRef", "target", "outer", "maxLength", "prune"})
 }
 
 func (v *GetHtmlParams) UnmarshalJSON(data []byte) error {
 	type alias GetHtmlParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"elementRef", "target", "outer", "maxLength"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"elementRef", "target", "outer", "maxLength", "prune"})
 	if err != nil {
 		return err
 	}
@@ -5220,18 +5222,20 @@ type NormalizedGetHtmlParams struct {
 
 	MaxLength float64 `json:"maxLength"`
 
+	Prune bool `json:"prune"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v NormalizedGetHtmlParams) MarshalJSON() ([]byte, error) {
 	type alias NormalizedGetHtmlParams
-	return marshalOpen(alias(v), v.Extra, []string{"elementRef", "target", "outer", "maxLength"})
+	return marshalOpen(alias(v), v.Extra, []string{"elementRef", "target", "outer", "maxLength", "prune"})
 }
 
 func (v *NormalizedGetHtmlParams) UnmarshalJSON(data []byte) error {
 	type alias NormalizedGetHtmlParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"elementRef", "target", "outer", "maxLength"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"elementRef", "target", "outer", "maxLength", "prune"})
 	if err != nil {
 		return err
 	}

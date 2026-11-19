@@ -323,6 +323,76 @@ element reference. */
     };
   }
 
+  // Keep in sync with MAX_HTML_LENGTH / MAX_PRUNED_HTML_LENGTH in protocol defaults.
+  const MAX_HTML_LENGTH = 50_000;
+  const MAX_PRUNED_HTML_LENGTH = 400_000;
+  // Chrome caps a native message at 1 MiB; leave room for JSON escaping.
+  const MAX_PRUNED_HTML_BYTES = 768 * 1024;
+  const PRUNED_HTML_DROPPED_TAGS = new Set([
+    'SCRIPT',
+    'STYLE',
+    'NOSCRIPT',
+    'TEMPLATE',
+    'SVG',
+    'IFRAME',
+    'FRAME',
+    'OBJECT',
+    'EMBED',
+    'LINK',
+    'META',
+    'CANVAS',
+  ]);
+  // Structure and Readability scoring use these; everything else is dropped.
+  const PRUNED_HTML_ATTRIBUTES = new Set([
+    'id',
+    'class',
+    'role',
+    'href',
+    'src',
+    'alt',
+    'title',
+    'lang',
+    'dir',
+    'colspan',
+    'rowspan',
+    'start',
+    'datetime',
+    'itemprop',
+    'aria-label',
+  ]);
+  const PRUNED_HIDDEN_STYLE = /display\s*:\s*none|visibility\s*:\s*hidden/i;
+
+  /** Copy of an element without inert, hidden, or presentational payload. */
+  function prunedClone(element: Element): Element {
+    const clone = element.cloneNode(true) as Element;
+    const stack: Element[] = [clone];
+    while (stack.length) {
+      const current = stack.pop() as Element;
+      for (const attribute of [...current.attributes]) {
+        if (!PRUNED_HTML_ATTRIBUTES.has(attribute.name)) current.removeAttribute(attribute.name);
+      }
+      for (const node of [...current.childNodes]) {
+        if (node.nodeType === 8) {
+          current.removeChild(node);
+          continue;
+        }
+        if (node.nodeType !== 1) continue;
+        const child = node as Element;
+        if (
+          PRUNED_HTML_DROPPED_TAGS.has(child.tagName.toUpperCase()) ||
+          child.hasAttribute('hidden') ||
+          child.getAttribute('aria-hidden') === 'true' ||
+          PRUNED_HIDDEN_STYLE.test(child.getAttribute('style') ?? '')
+        ) {
+          current.removeChild(child);
+        } else {
+          stack.push(child);
+        }
+      }
+    }
+    return clone;
+  }
+
   /** Return innerHTML or outerHTML of an element, truncated to budget. */
   function getHtml(params: Record<string, unknown>): {
     html: string;
@@ -331,9 +401,22 @@ element reference. */
   } {
     const element = getRequiredElement(String(params.elementRef || ''));
     const outer = Boolean(params.outer);
-    const maxLength = clamp(params.maxLength ?? 2000, 32, 50000);
-    const raw = outer ? element.outerHTML : element.innerHTML;
-    const t = truncateText(raw, maxLength);
+    const prune = params.prune === true;
+    const maxLength = clamp(
+      params.maxLength ?? 2000,
+      32,
+      prune ? MAX_PRUNED_HTML_LENGTH : MAX_HTML_LENGTH
+    );
+    const source = prune ? prunedClone(element) : element;
+    const raw = outer ? source.outerHTML : source.innerHTML;
+    let t = truncateText(raw, maxLength);
+    if (prune) {
+      const bytes = new TextEncoder().encode(t.value).length;
+      if (bytes > MAX_PRUNED_HTML_BYTES) {
+        const budget = Math.floor((t.value.length * MAX_PRUNED_HTML_BYTES) / bytes);
+        t = { ...truncateText(raw, budget), truncated: true };
+      }
+    }
     return { html: t.value, truncated: t.truncated, omitted: t.omitted };
   }
 

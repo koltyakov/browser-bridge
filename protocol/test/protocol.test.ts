@@ -640,6 +640,13 @@ test('validateBridgeRequest normalizes locator targets, auto-wait, and observati
   assert.equal(quiet.params.observe, null);
   assert.equal(quiet.params.timeoutMs, 0);
 
+  const immediate = validateBridgeRequest({
+    id: 'req_immediate_click',
+    method: 'input.click',
+    params: { target: { selector: '#go' }, observe: { settleMs: 0 } },
+  });
+  assert.deepEqual(immediate.params.observe, { settleMs: 0 });
+
   const typed = validateBridgeRequest({
     id: 'req_submit_type',
     method: 'input.type',
@@ -912,6 +919,16 @@ test('normalizeGetHtmlParams defaults sensibly', () => {
   const params = normalizeGetHtmlParams({});
   assert.equal(params.outer, false);
   assert.equal(params.maxLength, 2000);
+});
+
+test('normalizeGetHtmlParams allows larger pruned snapshots', () => {
+  assert.equal(normalizeGetHtmlParams({ prune: true, maxLength: 1_000_000 }).maxLength, 400_000);
+  assert.equal(normalizeGetHtmlParams({ prune: true }).prune, true);
+  assert.equal(normalizeGetHtmlParams({ maxLength: 1_000_000 }).prune, false);
+  assert.throws(
+    () => normalizeGetHtmlParams({ prune: 'yes' as unknown as boolean }),
+    /prune must be a boolean/
+  );
 });
 
 /** Ensure hover params normalize target and clamp duration. */

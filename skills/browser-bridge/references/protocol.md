@@ -336,7 +336,7 @@ bbx call dom.find_by_role '{"role":"navigation"}'
 
 ### dom.get_html
 
-Get raw HTML of an element. Defaults to `innerHTML`; set `outer: true` for `outerHTML`.
+Get raw HTML of an element. Defaults to `innerHTML`; set `outer: true` for `outerHTML`. `prune: true` serializes a copy without scripts, styles, SVG, frames, comments, hidden subtrees, and non-semantic attributes, and accepts `maxLength` up to 400,000 (otherwise 50,000). Keep `maxLength` small when the HTML is for the model.
 
 ```bash
 bbx html el_abc123
@@ -449,7 +449,7 @@ bbx call page.get_text '{"textBudget":2000}'
 
 ### page.extract_content
 
-Extract article-like or documentation content without returning source HTML to the agent. The Node client reads a bounded HTML snapshot through the existing bridge, runs pinned Mozilla Readability locally, then falls back to the largest `article`, `main`, or `[role="main"]` subtree and finally sanitized body text. Scripts, styles, hidden regions, and form controls are excluded before extraction.
+Extract article-like or documentation content without returning source HTML to the agent. The Go runtime reads a pruned, bounded HTML snapshot (`dom.get_html` with `prune: true`, up to 400,000 characters) through the existing bridge, runs pinned Mozilla Readability locally, then falls back to the largest `article`, `main`, or `[role="main"]` subtree and finally sanitized body text. Scripts, styles, hidden regions, and form controls are excluded before extraction.
 
 ```bash
 bbx call page.extract_content '{"format":"text"}'

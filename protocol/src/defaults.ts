@@ -195,3 +195,7 @@ export function getCostClass(approxTokens: number): 'cheap' | 'moderate' | 'heav
 export function isDebuggerBackedMethod(method: string): boolean {
   return DEBUGGER_BACKED_METHODS.has(method);
 }
+
+/** dom.get_html character limits; pruned reads feed server-side extraction. */
+export const MAX_HTML_LENGTH = 50_000;
+export const MAX_PRUNED_HTML_LENGTH = 400_000;

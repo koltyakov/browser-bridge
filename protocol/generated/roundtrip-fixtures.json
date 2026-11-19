@@ -2173,6 +2173,7 @@
         },
         "outer": false,
         "maxLength": 1.25,
+        "prune": false,
         "future_extension": {
           "arbitrary": [
             null,
@@ -4231,6 +4232,7 @@
       },
       "outer": false,
       "maxLength": 1.25,
+      "prune": false,
       "future_extension": {
         "arbitrary": [
           null,
@@ -7402,6 +7404,7 @@
       },
       "outer": false,
       "maxLength": 1.25,
+      "prune": false,
       "future_extension": {
         "arbitrary": [
           null,

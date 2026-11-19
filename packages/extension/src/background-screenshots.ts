@@ -19,7 +19,22 @@ export type TabDebuggerLike = {
     callback: (debugTarget: chrome.debugger.Debuggee) => Promise<T>,
     options?: import('./debugger-coordinator.js').DebuggerRunOptions
   ) => Promise<T>;
+  discard?: (tabId: number) => Promise<void>;
 };
+
+/** Chrome can leave Page.captureScreenshot pending indefinitely for a hidden
+tab. Bound it so one stuck capture cannot hold the tab's debugger lane. */
+export const SCREENSHOT_CDP_TIMEOUT_MS = 10_000;
+
+class ScreenshotCaptureTimeout extends Error {}
+
+function withCaptureTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new ScreenshotCaptureTimeout()), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 export type ScreenshotDeps = {
   chrome: typeof globalThis.chrome;
@@ -32,6 +47,8 @@ export type ScreenshotDeps = {
   ) => Promise<unknown>;
   frames?: import('./background-tab-bound.js').TabBoundRequestDependencies['frames'];
   tabDebugger: TabDebuggerLike;
+  /** Override for tests; defaults to SCREENSHOT_CDP_TIMEOUT_MS. */
+  captureTimeoutMs?: number;
   storeArtifact: (
     requestId: string,
     data: string,
@@ -196,54 +213,66 @@ export async function handleScreenshot(
       .then((results) => results[0]?.result ?? null)
       .catch(() => null) ?? null,
   ]);
-  const data = await deps.tabDebugger.run(
-    target.tabId,
-    async (debugTarget) => {
-      let pageX = 0;
-      let pageY = 0;
-      if (frameId !== 0) {
-        if (!elementRef)
-          throw new BridgeError(
-            ERROR_CODES.ELEMENT_STALE,
-            'Screenshot target ref is unavailable.',
-            { frameId }
-          );
-        const bounds = await readChildElementBounds(deps.chrome, debugTarget, elementRef);
-        clip = { ...bounds, scale: clip.scale };
-        assertScreenshotClipWithinLimits(method, clip);
-      }
-      if (method === 'screenshot.capture_region') {
-        const metrics = (await deps.chrome.debugger.sendCommand(
-          debugTarget,
-          'Page.getLayoutMetrics'
-        )) as { cssVisualViewport?: { pageX?: number; pageY?: number } };
-        pageX = Number(metrics.cssVisualViewport?.pageX) || 0;
-        pageY = Number(metrics.cssVisualViewport?.pageY) || 0;
-      }
-      const cdpResult = (await deps.chrome.debugger.sendCommand(
-        debugTarget,
-        'Page.captureScreenshot',
-        {
-          format,
-          ...(quality === null ? {} : { quality }),
-          clip: {
-            x: Math.max(0, clip.x + pageX),
-            y: Math.max(0, clip.y + pageY),
-            width: clip.width,
-            height: clip.height,
-            scale: dpr,
-          },
-          captureBeyondViewport: true,
+  const captureTimeoutMs = deps.captureTimeoutMs ?? SCREENSHOT_CDP_TIMEOUT_MS;
+  const data = await deps.tabDebugger
+    .run(
+      target.tabId,
+      async (debugTarget) => {
+        let pageX = 0;
+        let pageY = 0;
+        if (frameId !== 0) {
+          if (!elementRef)
+            throw new BridgeError(
+              ERROR_CODES.ELEMENT_STALE,
+              'Screenshot target ref is unavailable.',
+              { frameId }
+            );
+          const bounds = await readChildElementBounds(deps.chrome, debugTarget, elementRef);
+          clip = { ...bounds, scale: clip.scale };
+          assertScreenshotClipWithinLimits(method, clip);
         }
-      )) as { data?: string };
-      pageClip = { ...clip, x: Math.max(0, clip.x + pageX), y: Math.max(0, clip.y + pageY) };
-      if (!cdpResult?.data) {
-        throw new Error('CDP Page.captureScreenshot returned empty data.');
-      }
-      return cdpResult.data;
-    },
-    { retryDetached: true, releaseAfterRun: true }
-  );
+        if (method === 'screenshot.capture_region') {
+          const metrics = (await deps.chrome.debugger.sendCommand(
+            debugTarget,
+            'Page.getLayoutMetrics'
+          )) as { cssVisualViewport?: { pageX?: number; pageY?: number } };
+          pageX = Number(metrics.cssVisualViewport?.pageX) || 0;
+          pageY = Number(metrics.cssVisualViewport?.pageY) || 0;
+        }
+        const cdpResult = (await withCaptureTimeout(
+          deps.chrome.debugger.sendCommand(debugTarget, 'Page.captureScreenshot', {
+            format,
+            ...(quality === null ? {} : { quality }),
+            clip: {
+              x: Math.max(0, clip.x + pageX),
+              y: Math.max(0, clip.y + pageY),
+              width: clip.width,
+              height: clip.height,
+              scale: dpr,
+            },
+            captureBeyondViewport: true,
+          }),
+          captureTimeoutMs
+        )) as { data?: string };
+        pageClip = { ...clip, x: Math.max(0, clip.x + pageX), y: Math.max(0, clip.y + pageY) };
+        if (!cdpResult?.data) {
+          throw new Error('CDP Page.captureScreenshot returned empty data.');
+        }
+        return cdpResult.data;
+      },
+      { retryDetached: true, releaseAfterRun: true }
+    )
+    .catch(async (error: unknown) => {
+      if (!(error instanceof ScreenshotCaptureTimeout)) throw error;
+      // Detaching makes Chrome reject the abandoned command and frees the tab's
+      // debugger lane, so later debugger-backed requests do not queue behind it.
+      await deps.tabDebugger.discard?.(target.tabId).catch(() => {});
+      throw new BridgeError(
+        ERROR_CODES.TIMEOUT,
+        `Chrome did not return the screenshot within ${captureTimeoutMs} ms; the debugger session was released.`,
+        { method, tabActive: tabState?.active ?? null, stage: 'Page.captureScreenshot' }
+      );
+    });
   const byteLength = getBase64ByteLength(data);
   const capturedDimensions = getImageDimensions(data, format);
 

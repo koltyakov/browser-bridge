@@ -209,7 +209,8 @@ const BRIDGE_METHOD_DESCRIPTIONS: Readonly<Record<import('./types.js').BridgeMet
       'Find the innermost visible elements by text, including open/closed shadow DOM.',
     'dom.find_by_role':
       'Find visible elements by ARIA role and accessible name (labels, aria-*, alt, content).',
-    'dom.get_html': 'Read inner or outer HTML for one element.',
+    'dom.get_html':
+      'Read inner or outer HTML for one element; prune drops scripts, styles, SVG, comments, hidden subtrees, and non-semantic attributes.',
     'dom.get_accessibility_tree':
       'Read an accessibility tree; source=dom returns actionable refs without the debugger. DOM-only scope=auto|modal|main|document opts into document-local scope; selector overrides it. find is literal case-insensitive role/name search with context=0..3. Scoped/search reads never merge other frames and report scope, fallback and completeness.',
     'layout.get_box_model': 'Read the box model for one element.',
@@ -658,7 +659,7 @@ export const BRIDGE_METHOD_REGISTRY: Readonly<
     'dom.get_html',
     'inspect',
     true,
-    ['elementRef', 'target', 'outer', 'maxLength'],
+    ['elementRef', 'target', 'outer', 'maxLength', 'prune'],
     'low',
     METHOD_POLICIES.domRead
   ),

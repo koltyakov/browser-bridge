@@ -1390,6 +1390,9 @@ export interface GetHtmlParams {
   target?: InputTarget;
   outer?: boolean;
   maxLength?: number;
+  /** Serialize a copy without scripts, styles, SVG, frames, comments, hidden
+   * subtrees, or non-semantic attributes. Allows a larger maxLength. */
+  prune?: boolean;
 }
 
 export interface NormalizedGetHtmlParams extends BridgeParams {
@@ -1397,6 +1400,7 @@ export interface NormalizedGetHtmlParams extends BridgeParams {
   target: InputTarget;
   outer: boolean;
   maxLength: number;
+  prune: boolean;
 }
 
 export interface HoverParams extends InputWaitObserveParams {

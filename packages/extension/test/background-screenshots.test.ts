@@ -507,3 +507,59 @@ test('a blocked screenshot artifact upload does not hold the debugger attachment
   });
   assert.equal((await capture).delivery, 'artifact');
 });
+
+function regionDeps(
+  sendCommand: (method: string, params: Record<string, unknown>) => Promise<unknown>,
+  discarded: number[] = []
+) {
+  return {
+    chrome: {
+      debugger: {
+        sendCommand: (_target: unknown, method: string, params: Record<string, unknown>) =>
+          sendCommand(method, params),
+      },
+    },
+    contentScriptTimeoutMs: 1000,
+    captureTimeoutMs: 20,
+    async ensureContentScript() {},
+    async sendTabMessage() {},
+    tabDebugger: {
+      async run(_tabId: number, callback: (debugTarget: { tabId: number }) => Promise<unknown>) {
+        return callback({ tabId: 7 });
+      },
+      async discard(tabId: number) {
+        discarded.push(tabId);
+      },
+    },
+    async storeArtifact() {
+      throw new Error('inline capture must not create an artifact');
+    },
+  } as unknown as Parameters<typeof handleScreenshot>[3];
+}
+
+test('a stalled screenshot times out and releases the tab debugger session', async () => {
+  const discarded: number[] = [];
+  const deps = regionDeps(async (method) => {
+    if (method === 'Page.getLayoutMetrics')
+      return { cssVisualViewport: { pageX: 0, pageY: 0, clientWidth: 800, clientHeight: 600 } };
+    return new Promise(() => {});
+  }, discarded);
+  await assert.rejects(
+    handleScreenshot(
+      target,
+      'screenshot.capture_region',
+      { x: 0, y: 0, width: 10, height: 10 },
+      deps,
+      'stalled'
+    ),
+    (error: unknown) => {
+      assert.equal((error as { code?: string }).code, ERROR_CODES.TIMEOUT);
+      assert.match(
+        String((error as Error).message),
+        /within 20 ms; the debugger session was released/
+      );
+      return true;
+    }
+  );
+  assert.deepEqual(discarded, [7]);
+});

@@ -70,6 +70,20 @@ func TestExtractRejectsTruncatedSnapshotAndHonorsCancellation(t *testing.T) {
 	}
 }
 
+func TestExtractRequestsPrunedSnapshot(t *testing.T) {
+	var requested object
+	response, err := extractContentRequest(context.Background(), object{"includeMetadata": value(false)}, func(ctx context.Context, method string, params object) (object, error) {
+		requested = params
+		return success("snapshot", object{"html": value("<main><p>Pruned page text.</p></main>"), "truncated": value(false)}), nil
+	})
+	if err != nil || !response.boolean("ok") {
+		t.Fatalf("extract failed: %v %s", err, value(response))
+	}
+	if !requested.boolean("prune") || requested.number("maxLength") != extractSnapshotMaxLength || !requested.boolean("outer") {
+		t.Fatalf("snapshot request is not pruned and bounded: %s", value(requested))
+	}
+}
+
 func TestExtractSettlesAndPreservesMarkdownFence(t *testing.T) {
 	count := 0
 	response, err := extractContentRequest(context.Background(), object{"includeMetadata": value(false), "consistency": value("settled"), "format": value("markdown"), "textBudget": value(100)}, func(ctx context.Context, method string, params object) (object, error) {
@@ -82,6 +96,13 @@ func TestExtractSettlesAndPreservesMarkdownFence(t *testing.T) {
 	result := response.object("result")
 	if count != 2 || result.object("settlement").boolean("timedOut") || !result.boolean("truncated") || strings.Count(result.text("content"), "```")%2 != 0 {
 		t.Fatalf("bad settlement or truncation: %s", value(result))
+	}
+}
+
+func TestExtractMarkdownOmitsEmptyLinks(t *testing.T) {
+	result := extractContentHTML(`<main><p><a href="/file.png"><img src="/file.png"></a>A <a href="/doc">doc</a> link.</p></main>`, "markdown", 8000, "", false)
+	if content := result.text("content"); content != "A [doc](/doc) link." {
+		t.Fatalf("empty link survived markdown extraction: %q", content)
 	}
 }
 

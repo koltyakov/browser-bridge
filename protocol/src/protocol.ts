@@ -47,6 +47,8 @@ import {
   MAX_PERFORM_TIMEOUT_MS,
   MAX_SENSITIVE_VALUE_BYTES,
   MAX_TOUCH_POINTS,
+  MAX_HTML_LENGTH,
+  MAX_PRUNED_HTML_LENGTH,
 } from './defaults.js';
 import { BridgeError, ERROR_CODES, getErrorRecovery } from './errors.js';
 import { METHOD_SET, createBridgeMethodGroups } from './registry.js';
@@ -861,7 +863,12 @@ function normalizeObserveOption(
   if (value && typeof value === 'object') {
     const settleMs = (value as { settleMs?: unknown }).settleMs;
     return {
-      settleMs: clampInt(settleMs, 0, MAX_OBSERVE_SETTLE_MS, DEFAULT_OBSERVE_SETTLE_MS),
+      // clampInt treats 0 as unset; an explicit zero requests an immediate
+      // effects snapshot without the quiet-period wait.
+      settleMs:
+        settleMs === 0
+          ? 0
+          : clampInt(settleMs, 0, MAX_OBSERVE_SETTLE_MS, DEFAULT_OBSERVE_SETTLE_MS),
     };
   }
   const observeByDefault =
@@ -1551,11 +1558,19 @@ export function normalizeGetHtmlParams(params: GetHtmlParams = {}): NormalizedGe
       ? (params.target as { elementRef?: string; selector?: string })
       : undefined
   );
+  optionalParamType(params.prune, 'prune', 'boolean');
+  const prune = params.prune === true;
   return {
     elementRef: String(params.elementRef || target.elementRef || ''),
     target,
     outer: Boolean(params.outer),
-    maxLength: clampInt(params.maxLength, 32, 50_000, 2000),
+    maxLength: clampInt(
+      params.maxLength,
+      32,
+      prune ? MAX_PRUNED_HTML_LENGTH : MAX_HTML_LENGTH,
+      2000
+    ),
+    prune,
   };
 }
 

@@ -1751,6 +1751,57 @@ test('content script dom.get_html truncates large HTML payloads', async (t) => {
   ]);
 });
 
+test('content script dom.get_html prune drops inert, hidden, and presentational payload', async (t) => {
+  await withDocument(
+    `<html><body><main id="article" class="content" data-track="x" onclick="steal()">
+      <!-- build 123 -->
+      <h1 style="color:red">Title</h1>
+      <p>Visible <a href="/docs" data-id="7" rel="nofollow">docs</a></p>
+      <script>secret()</script><style>.x{}</style><svg><path d="M0"></path></svg>
+      <div hidden>hidden copy</div><div aria-hidden="true">decoration</div>
+      <p style="display: none">collapsed</p>
+      <input type="password" value="hunter2">
+    </main></body></html>`,
+    async ({ document }) => {
+      const harness = createChromeHarness();
+      await loadContentScript(t, {
+        withHelpers: true,
+        preserveDomGlobals: true,
+        chrome: harness.chrome,
+      });
+      const result = await executeBridgeMethod(harness.getListener(), 'dom.get_html', {
+        target: { selector: 'main' },
+        outer: true,
+        prune: true,
+        maxLength: 400_000,
+      });
+      const html = String(result.html);
+      assert.equal(result.truncated, false);
+      assert.match(html, /<main id="article" class="content">/);
+      assert.match(html, /<h1>Title<\/h1>/);
+      assert.match(html, /<a href="\/docs">docs<\/a>/);
+      for (const excluded of [
+        'build 123',
+        'secret',
+        '.x{}',
+        '<svg',
+        'hidden copy',
+        'decoration',
+        'collapsed',
+        'hunter2',
+        'data-',
+        'onclick',
+        'style=',
+      ]) {
+        assert.equal(html.includes(excluded), false, `${excluded} survived pruning: ${html}`);
+      }
+      // The live document is untouched.
+      assert.ok(document.querySelector('script'));
+      assert.equal(document.querySelector('main')?.getAttribute('data-track'), 'x');
+    }
+  );
+});
+
 test('content script dom.query scopes to withinRef and respects maxNodes', async (t) => {
   const harness = createChromeHarness();
   await withDocument(

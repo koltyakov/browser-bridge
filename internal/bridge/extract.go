@@ -16,6 +16,11 @@ import (
 
 // extractContentRequest consumes bounded HTML snapshots locally. The callback
 // must dispatch normal bridge requests, and must preserve routing and ownership.
+// Pruned snapshots drop scripts, styles, SVG, hidden subtrees and most
+// attributes in the page, so typical article and documentation pages fit.
+// Extensions that predate pruning cap the same read at 50,000 characters.
+const extractSnapshotMaxLength = 400000
+
 func extractContentRequest(ctx context.Context, params object, send func(context.Context, string, object) (object, error)) (response object, err error) {
 	defer func() {
 		if response != nil && !response.boolean("ok") {
@@ -63,7 +68,7 @@ func extractContentRequest(ctx context.Context, params object, send func(context
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		return send(ctx, "dom.get_html", object{"target": value(object{"selector": value(selector)}), "outer": value(true), "maxLength": value(50000)})
+		return send(ctx, "dom.get_html", object{"target": value(object{"selector": value(selector)}), "outer": value(true), "prune": value(true), "maxLength": value(extractSnapshotMaxLength)})
 	}
 	response, err = read()
 	if err != nil || !response.boolean("ok") {
@@ -73,7 +78,7 @@ func extractContentRequest(ctx context.Context, params object, send func(context
 	truncated := func(snapshot object) object {
 		r := failure("", "RESULT_TRUNCATED", "The bounded HTML snapshot was too large for semantic extraction.")
 		e := r.object("error")
-		e["details"] = value(object{"selector": value(selector), "omitted": snapshot["omitted"], "maxLength": value(50000)})
+		e["details"] = value(object{"selector": value(selector), "omitted": snapshot["omitted"], "maxLength": value(extractSnapshotMaxLength)})
 		r["error"] = value(e)
 		r["meta"] = value(object{"method": value("page.extract_content"), "continuation_hint": value("Retry with a narrower selector.")})
 		return r
@@ -298,6 +303,10 @@ func extractMarkdown(node *extractNode) string {
 	case "ul", "ol":
 		return children + "\n\n"
 	case "a":
+		if trimmed == "" {
+			// Image-only and icon links have no readable text; "[](url)" only costs tokens.
+			return children
+		}
 		href := strings.TrimSpace(node.attrs["href"])
 		lower := strings.ToLower(href)
 		if href != "" && !strings.HasPrefix(lower, "javascript:") && !strings.HasPrefix(lower, "data:") {
