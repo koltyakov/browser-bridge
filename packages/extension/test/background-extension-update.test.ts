@@ -159,6 +159,34 @@ test('disconnect and grant expiry cancel draining without replaying an update ch
   assert.equal(f.calls.reloads, 0);
 });
 
+for (const elapsedMs of [20_000, 31_000]) {
+  test(`reload callback delayed by ${elapsedMs}ms requires a fresh drain grant`, async (t) => {
+    const f = fixture(t);
+    f.response.status = 'update_available';
+    f.response.version = '2.3.0';
+    f.signal();
+    await flush();
+    f.tick();
+    f.controller.handleMessage({ type: 'host.update_apply', version: '2.3.0' });
+    f.calls.now += elapsedMs;
+    // Run the earlier idle callback before the overdue grant-timeout callback.
+    f.tick();
+    assert.equal(f.calls.reloads, 0);
+    assert.equal(f.sent.at(-1)?.type, 'host.update_cancel');
+
+    f.signal();
+    await flush();
+    f.tick();
+    assert.equal(f.sent.at(-1)?.type, 'host.update_ready');
+    assert.equal(f.calls.reloads, 0);
+    f.controller.handleMessage({ type: 'host.update_apply', version: '2.3.0' });
+    f.tick();
+    assert.equal(f.calls.reloads, 1);
+    assert.equal(f.calls.checks, 1);
+    assert.deepEqual(f.errors, []);
+  });
+}
+
 test('browser errors never authorize repeated checks', async (t) => {
   const f = fixture(t);
   f.chrome.runtime.requestUpdateCheck = async () => {
@@ -171,6 +199,26 @@ test('browser errors never authorize repeated checks', async (t) => {
   await flush();
   assert.equal(f.calls.checks, 1);
   assert.equal(f.errors.length, 1);
+  assert.deepEqual(f.sent, []);
+});
+
+test('storage-read failure cannot bypass a persisted cooldown after restart', async (t) => {
+  const f = fixture(t);
+  f.signal();
+  await flush();
+  assert.equal(f.calls.checks, 1);
+  const error = new Error('cooldown storage unreadable');
+  f.chrome.storage.local.get = async () => {
+    throw error;
+  };
+  const restarted = createExtensionUpdateController(f.chrome, f.deps);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    restarted.handleMessage({ type: 'host.update_check', version: '2.3.0' });
+    await flush();
+  }
+  assert.equal(f.calls.checks, 1);
+  assert.equal(f.calls.reloads, 0);
+  assert.deepEqual(f.errors, [error]);
   assert.deepEqual(f.sent, []);
 });
 

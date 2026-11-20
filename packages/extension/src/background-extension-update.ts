@@ -44,6 +44,7 @@ export function createExtensionUpdateController(
   let coordinated = false;
   let waiting = false;
   let granted = false;
+  let grantExpiresAt = 0;
   let reloading = false;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
   let grantTimer: ReturnType<typeof setTimeout> | null = null;
@@ -52,7 +53,7 @@ export function createExtensionUpdateController(
         .get(STORAGE_KEY)
         .then((stored) => {
           const value = stored[STORAGE_KEY];
-          if (!value || typeof value !== 'object') return;
+          if (!value || typeof value !== 'object') return true;
           if (
             'lastCheckAt' in value &&
             typeof value.lastCheckAt === 'number' &&
@@ -68,9 +69,13 @@ export function createExtensionUpdateController(
           ) {
             pendingVersion = value.pendingVersion;
           }
+          return true;
         })
-        .catch(deps.reportError)
-    : Promise.resolve();
+        .catch((error: unknown) => {
+          deps.reportError(error);
+          return false;
+        })
+    : Promise.resolve(false);
 
   function save(): Promise<void> {
     return chromeObj.storage.local.set({ [STORAGE_KEY]: { lastCheckAt, pendingVersion } });
@@ -85,11 +90,19 @@ export function createExtensionUpdateController(
     if (waiting) deps.send({ type: 'host.update_cancel' });
     waiting = false;
     granted = false;
+    grantExpiresAt = 0;
   }
   function scheduleIdle(): void {
     if (!coordinated || !pendingVersion || reloading || idleTimer !== null) return;
     idleTimer = setTimeout(() => {
       idleTimer = null;
+      // A delayed callback may run before the overdue timeout, after the
+      // daemon has already resumed dispatching. Never reload on an old grant.
+      if (waiting && now() >= grantExpiresAt) {
+        cancelGrant();
+        coordinated = false;
+        return;
+      }
       if (active > 0 || deps.isBusy()) {
         scheduleIdle();
         return;
@@ -107,8 +120,10 @@ export function createExtensionUpdateController(
           deps.reportError(error);
         }
       } else if (!waiting) {
+        const requestedAt = now();
         waiting = deps.send({ type: 'host.update_ready', version: pendingVersion });
         if (waiting) {
+          grantExpiresAt = requestedAt + GRANT_TIMEOUT_MS;
           grantTimer = setTimeout(() => {
             cancelGrant();
             coordinated = false;
@@ -121,7 +136,8 @@ export function createExtensionUpdateController(
     if (!deps.enabled || !chromeObj.runtime.requestUpdateCheck || checking || reloading) return;
     checking = true;
     try {
-      await ready;
+      // An unreadable cooldown is not evidence that no recent check occurred.
+      if (!(await ready)) return;
       if (pendingVersion) {
         scheduleIdle();
         return;
