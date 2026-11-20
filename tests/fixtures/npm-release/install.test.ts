@@ -18,6 +18,19 @@ async function fixture(t: TestContext) {
 const fs = require('node:fs');
 const path = require('node:path');
 const args = process.argv.slice(2);
+if (args[0] === 'update' && args[1] === 'status') {
+  fs.appendFileSync(process.env.PROBE_CALLS, JSON.stringify({
+    autoUpdate: process.env.BBX_AUTO_UPDATE,
+    home: process.env.BROWSER_BRIDGE_HOME,
+    remote: process.env.BBX_REMOTE,
+    extensionId: process.env.BROWSER_BRIDGE_EXTENSION_ID,
+  }) + '\\n');
+  if (process.env.FAIL_DISCOVERY) process.exit(1);
+  const status = { runningVersion: process.env.BOOTSTRAP_VERSION || '9.0.0' };
+  if (!process.env.LEGACY_DISCOVERY) status.installedExtensionVersion = process.env.DETECTED_EXTENSION || null;
+  console.log(JSON.stringify(status));
+  process.exit(0);
+}
 fs.appendFileSync(process.env.CALLS, JSON.stringify({ args, autoUpdate: process.env.BBX_AUTO_UPDATE }) + '\\n');
 fs.appendFileSync(process.env.CALL_ENV, JSON.stringify({ browser: process.env.BBX_BROWSER, extensionId: process.env.BROWSER_BRIDGE_EXTENSION_ID }) + '\\n');
 fs.appendFileSync(process.env.EVENTS, 'bbx ' + args[0] + '\\n');
@@ -112,6 +125,11 @@ if (url.startsWith('https://api.github.com/')) {
     FAIL_NPM_UNINSTALL: '',
     FAIL_DOWNLOAD: '',
     FAIL_COMMAND: '',
+    PROBE_CALLS: path.join(directory, 'probe-calls.jsonl'),
+    DETECTED_EXTENSION: '',
+    BOOTSTRAP_VERSION: '',
+    FAIL_DISCOVERY: '',
+    LEGACY_DISCOVERY: '',
   };
   await fs.mkdir(env.HOME!, { recursive: true });
   await fs.mkdir(env.RELEASE_PAGES!);
@@ -159,6 +177,91 @@ test(
     );
     assert.equal(startup.status, 0, startup.stderr);
     assert.equal(startup.stdout, `kept\n${env.HOME}/.local/bin:${env.PATH}`);
+  }
+);
+
+test(
+  'Unix installer detects the extension line using only a verified, isolated bootstrap',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    for (const bootstrapVersion of ['9.0.0', '2.3.12']) {
+      const { env, checksum, run } = await fixture(t);
+      env.BBX_VERSION = '';
+      env.DETECTED_EXTENSION = '2.3.0';
+      env.BOOTSTRAP_VERSION = bootstrapVersion;
+      await fs.writeFile(env.CHECKSUMS!, `${checksum}  bbx-linux-x64\n`);
+      await fs.writeFile(
+        path.join(env.RELEASE_PAGES!, '1.json'),
+        JSON.stringify([
+          { tag_name: 'v2.3.9', draft: false, prerelease: false },
+          { tag_name: 'v2.3.12', draft: false, prerelease: false },
+          { tag_name: 'v9.0.0', draft: false, prerelease: false },
+        ])
+      );
+      const result = run();
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /Detected Browser Bridge extension v2.3.0/);
+      assert.match(result.stdout, /Selected Browser Bridge v2.3.12/);
+      const probe = JSON.parse((await fs.readFile(env.PROBE_CALLS!, 'utf8')).trim()) as {
+        autoUpdate: string;
+        home: string;
+        remote: string;
+        extensionId: string;
+      };
+      assert.equal(probe.autoUpdate, 'off');
+      assert.equal(probe.remote, '');
+      assert.equal(probe.extensionId, env.BBX_EXTENSION_ID);
+      assert.match(probe.home, /[/\\]detection$/);
+      assert.notEqual(probe.home, env.BROWSER_BRIDGE_HOME);
+      const urls = await fs.readFile(env.URLS!, 'utf8');
+      assert.match(urls, /releases\/latest\/download\/checksums.txt/);
+      assert.match(urls, /api.github.com/);
+      if (bootstrapVersion === '9.0.0') {
+        assert.match(urls, /releases\/download\/v2.3.12\/bbx-linux-x64/);
+    } else {
+      assert.match(urls, /releases\/download\/v2.3.12\/checksums.txt/);
+      assert.doesNotMatch(urls, /releases\/download\/v2.3.12\/bbx-linux-x64/);
+      }
+    }
+  }
+);
+
+test(
+  'Unix installer keeps explicit selectors and safe latest fallbacks',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    for (const scenario of [
+      'none',
+      'legacy',
+      'failed',
+      'latest',
+      'exact',
+      'unpublished',
+      'bad checksum',
+    ]) {
+      const { env, checksum, run } = await fixture(t);
+      env.BBX_VERSION = scenario === 'latest' ? 'latest' : scenario === 'exact' ? '2.3.4' : '';
+      env.DETECTED_EXTENSION = ['latest', 'exact', 'unpublished'].includes(scenario) ? '2.3.0' : '';
+      env.LEGACY_DISCOVERY = scenario === 'legacy' ? '1' : '';
+      env.FAIL_DISCOVERY = scenario === 'failed' ? '1' : '';
+      await fs.writeFile(
+        env.CHECKSUMS!,
+        `${scenario === 'bad checksum' ? '0'.repeat(64) : checksum}  bbx-linux-x64\n`
+      );
+      if (scenario === 'unpublished')
+        await fs.writeFile(path.join(env.RELEASE_PAGES!, '1.json'), '[]');
+      const result = run();
+      if (scenario === 'unpublished' || scenario === 'bad checksum') {
+        assert.notEqual(result.status, 0);
+        await assert.rejects(fs.access(env.NPM_CALLS!));
+        await assert.rejects(fs.access(env.CALLS!));
+      } else {
+        assert.equal(result.status, 0, result.stderr);
+      }
+      if (['latest', 'exact', 'bad checksum'].includes(scenario)) {
+        await assert.rejects(fs.access(env.PROBE_CALLS!));
+      }
+    }
   }
 );
 

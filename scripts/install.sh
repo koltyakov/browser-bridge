@@ -3,7 +3,7 @@ set -eu
 umask 077
 
 if [ "${1:-}" = '--help' ]; then
-  echo 'Install Browser Bridge from GitHub Releases. Detects supported browsers with the extension installed. BBX_VERSION accepts a major-minor release line such as 2.0, or an exact version. Optional: BBX_EXTENSION_ID, BBX_BROWSER (one browser override), BBX_INSTALL_DIR.'
+  echo 'Install Browser Bridge from GitHub Releases. Automatically selects the newest installed extension release line, or latest stable when none is found. BBX_VERSION overrides detection with latest, a major-minor line such as 2.0, or an exact version. Optional: BBX_EXTENSION_ID, BBX_BROWSER (registration override), BBX_INSTALL_DIR.'
   exit 0
 fi
 if [ "$#" -ne 0 ]; then
@@ -35,7 +35,7 @@ case "$(uname -s):$(uname -m)" in
 esac
 # END GENERATED PLATFORMS
 base='https://github.com/koltyakov/browser-bridge/releases/latest/download'
-if [ -n "$version" ]; then
+if [ -n "$version" ] && [ "$version" != latest ]; then
   version="${version#v}"
   if ! printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+([.-][a-zA-Z0-9.-]+)?)?$'; then
     echo 'Invalid version' >&2
@@ -58,7 +58,7 @@ download() {
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 trap 'exit 1' HUP INT TERM
-if printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+$'; then
+resolve_release_line() {
   release_line="$version"
   best_patch=-1
   page=1
@@ -129,23 +129,50 @@ if printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+$'; then
   version="$release_line.$best_patch"
   base="https://github.com/koltyakov/browser-bridge/releases/download/v$version"
   echo "Selected Browser Bridge v$version for $release_line.x"
+}
+download_verified_binary() {
+  download "$base/checksums.txt" "$tmp/checksums.txt"
+  if [ "${1:-}" != reuse ]; then download "$base/$asset" "$tmp/bbx"; fi
+  expected="$(awk -v file="$asset" '$2 == file {print $1}' "$tmp/checksums.txt")"
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$tmp/bbx" | awk '{print $1}')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "$tmp/bbx" | awk '{print $1}')"
+  else
+    echo 'Missing required command: sha256sum or shasum' >&2
+    exit 1
+  fi
+  if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+    if [ "${1:-}" = reuse ]; then download_verified_binary; return; fi
+    echo 'Binary checksum mismatch' >&2
+    exit 1
+  fi
+  chmod 700 "$tmp/bbx"
+}
+if printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+$'; then
+  resolve_release_line
 fi
-download "$base/checksums.txt" "$tmp/checksums.txt"
-download "$base/$asset" "$tmp/bbx"
-expected="$(awk -v file="$asset" '$2 == file {print $1}' "$tmp/checksums.txt")"
-if command -v sha256sum >/dev/null 2>&1; then
-  actual="$(sha256sum "$tmp/bbx" | awk '{print $1}')"
-elif command -v shasum >/dev/null 2>&1; then
-  actual="$(shasum -a 256 "$tmp/bbx" | awk '{print $1}')"
-else
-  echo 'Missing required command: sha256sum or shasum' >&2
-  exit 1
+download_verified_binary
+if [ -z "$version" ]; then
+  # Run only the verified bootstrap, with private state and automatic updates
+  # disabled. Its shared browser registry handles profiles, channels and MSIX.
+  if detection="$(BROWSER_BRIDGE_HOME="$tmp/detection" BBX_REMOTE='' BBX_AUTO_UPDATE=off BROWSER_BRIDGE_EXTENSION_ID="$extension_id" "$tmp/bbx" update status 2>/dev/null)"; then
+    detected="$(printf '%s\n' "$detection" | sed -n 's/.*"installedExtensionVersion"[[:space:]]*:[[:space:]]*"\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p')"
+    bootstrap_version="$(printf '%s\n' "$detection" | sed -n 's/.*"runningVersion"[[:space:]]*:[[:space:]]*"\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p')"
+    if [ -n "$detected" ]; then
+      version="${detected%.*}"
+      echo "Detected Browser Bridge extension v$detected"
+      resolve_release_line
+      if [ "$version" = "$bootstrap_version" ]; then download_verified_binary reuse; else download_verified_binary; fi
+    elif ! printf '%s\n' "$detection" | grep -q '"installedExtensionVersion"'; then
+      echo 'Warning: extension discovery is unavailable in the downloaded release; using latest stable.' >&2
+    else
+      echo 'Using latest stable Browser Bridge; no extension version was detected.'
+    fi
+  else
+    echo 'Warning: extension discovery is unavailable in the downloaded release; using latest stable.' >&2
+  fi
 fi
-if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
-  echo 'Binary checksum mismatch' >&2
-  exit 1
-fi
-chmod 700 "$tmp/bbx"
 volta_status=absent
 if command -v volta >/dev/null 2>&1; then
   if volta_packages="$(volta list --format plain @browserbridge/bbx 2>/dev/null)"; then

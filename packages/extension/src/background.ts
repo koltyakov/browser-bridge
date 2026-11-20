@@ -153,6 +153,7 @@ import { cancelPageResources } from './background-resource.js';
 import { createFileRequestHandler } from './background-file-requests.js';
 import { createRecordingRequestHandler } from './background-recording-requests.js';
 import { requestLifetimes } from './background-request-lifetime.js';
+import { createExtensionUpdateController } from './background-extension-update.js';
 import { createArtifactTransport } from './background-artifact-transport.js';
 
 export type EnabledWindowState = import('./background-state.js').EnabledWindowState;
@@ -782,6 +783,21 @@ const developmentReload = createDevelopmentReloadController(chrome, {
   enabled: DEVELOPMENT_AUTO_RELOAD,
   sourceDigest: SOURCE_DIGEST,
 });
+const extensionUpdates = createExtensionUpdateController(chrome, {
+  enabled: !DEVELOPMENT_AUTO_RELOAD,
+  send: (message) => {
+    const port = state.nativePort ?? state.pendingNativePort;
+    if (!port) return false;
+    try {
+      port.postMessage(message);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  isBusy: () => state.setupInstallPendingRequestId !== null,
+  reportError: reportAsyncError,
+});
 
 const {
   connectNative,
@@ -789,6 +805,7 @@ const {
   retryNativeConnection,
   syncNativeReconnectSchedule,
 } = createNativeConnectionController(state, chrome, {
+  extensionUpdateChecks: !DEVELOPMENT_AUTO_RELOAD,
   scheduleIdleReconnect: (delayMs) => {
     void chrome.alarms
       .create(NATIVE_SETUP_RETRY_ALARM, { delayInMinutes: delayMs / 60_000 })
@@ -804,6 +821,7 @@ const {
   emitUiState,
   handleBridgeRequest,
   handleHostStatusMessage: (message) => {
+    if (extensionUpdates.handleMessage(message)) return true;
     if (mutationGate.handle(message)) return true;
     if (
       message &&
@@ -847,6 +865,7 @@ const {
   refreshSetupStatus,
   reply,
   handleDestinationDisconnect: () => {
+    extensionUpdates.disconnect();
     requestLifetimes.disconnect();
     artifactTransport.disconnect();
     journals.disconnect();
@@ -1235,6 +1254,15 @@ async function initializeState(): Promise<void> {
 /** Route a validated bridge request to the extension capability that should
 satisfy it. */
 async function handleBridgeRequest(request: BridgeRequest): Promise<void> {
+  const finish = extensionUpdates.beginRequest();
+  try {
+    await handleActiveBridgeRequest(request);
+  } finally {
+    finish();
+  }
+}
+
+async function handleActiveBridgeRequest(request: BridgeRequest): Promise<void> {
   await accessStateInitialization;
   let finish: () => void;
   try {

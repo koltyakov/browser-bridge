@@ -46,13 +46,13 @@ installation to fail rather than silently choosing another line.
 No Node.js, npm, or Go installation is needed. On macOS or Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.sh | BBX_VERSION=2.1 sh
+curl -fsSL https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.sh | sh
 ```
 
 On Windows, run in PowerShell:
 
 ```powershell
-& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.ps1'))) -Version '2.1'
+irm https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.ps1 | iex
 ```
 
 The installer verifies the release checksum, installs to `~/.local/bin`,

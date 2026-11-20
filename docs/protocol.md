@@ -68,6 +68,15 @@ present. For older hosts that omit it or report `false`, it recommends the
 platform-specific native installer script from Host Setup instead. A version
 number alone is not evidence of a configured updater.
 
+Native identity can advertise `extensionUpdateChecks: true` and the installed
+`extensionVersion`. The daemon compares versions only within the same
+`browserExtensionId`, and exposes observed versions in `connectedExtensions`.
+Capable older peers receive a bounded `host.update_check` signal through the
+native relay. Available store updates use `host.update_ready` /
+`host.update_cancel` and `host.update_apply` to drain outstanding requests before
+reload. These lifecycle signals do not enable page access or replay commands.
+Diagnostic health advertises `extensionUpdateSupported` for this coordination.
+
 Doctor compares the client's major version with the daemon and extension
 version lists and reports compatibility. A successful transport connection or
 `ok: true` health response alone does not establish version compatibility.

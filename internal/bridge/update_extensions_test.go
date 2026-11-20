@@ -2,7 +2,9 @@ package bridge
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -28,6 +30,20 @@ func TestUpdateNewestInstalledExtensionAcrossBrowsersAndPlatforms(t *testing.T) 
 				t.Fatal("ignored newer native identity", got)
 			}
 		})
+	}
+}
+
+func TestNativeUpdateStatusReportsInstalledExtensionForReadOnlyBootstrapDiscovery(t *testing.T) {
+	f := newNativeRegistrationFixture(t)
+	f.system.platform = runtime.GOOS
+	profile := installTestBrowserProfile(f.system, "chrome", "Default")
+	installTestWrite(t, filepath.Join(profile, "Preferences"), `{"extensions":{"settings":{"`+publishedExtensionID+`":{"manifest":{"version":"2.3.0"}}}}}`)
+	status, err := nativeUpdateStatus(f.config)
+	if err != nil || status.text("installedExtensionVersion") != "2.3.0" || status.text("updateLine") != "2.3.x" {
+		t.Fatal(status, err)
+	}
+	if _, err := os.Stat(f.config.home); !os.IsNotExist(err) {
+		t.Fatal("read-only status created installation state", err)
 	}
 }
 

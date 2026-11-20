@@ -582,6 +582,13 @@ func handleUpdateCommand(ctx context.Context, c config, args []string) (bool, er
 
 func nativeUpdateStatus(c config) (object, error) {
 	result := object{"runtime": value("go"), "runningVersion": value(version), "configured": value(false), "managed": value(false)}
+	// Installers can use a checksum-verified bootstrap for read-only profile
+	// discovery, without duplicating browser paths or requiring Node/Python.
+	installedExtension := updateInstalledExtensionVersion(context.Background(), "")
+	result["installedExtensionVersion"] = value[*string](nil)
+	if installedExtension != "" {
+		result["installedExtensionVersion"] = value(installedExtension)
+	}
 	if npmManagedRuntime() {
 		result["distribution"] = value("npm")
 	}
@@ -616,6 +623,9 @@ func nativeUpdateStatus(c config) (object, error) {
 	}
 	if state.LastExtensionVersion != "" {
 		result["updateLine"] = value(strings.Join(strings.Split(state.LastExtensionVersion, ".")[:2], ".") + ".x")
+	}
+	if newest := updateNewestVersion(state.LastExtensionVersion, installedExtension); newest != "" {
+		result["updateLine"] = value(strings.Join(strings.Split(newest, ".")[:2], ".") + ".x")
 	}
 	if trustErr != nil {
 		result["configurationError"] = value(trustErr.Error())

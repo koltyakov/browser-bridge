@@ -46,6 +46,10 @@ type peer struct {
 	pending               int
 	dataTargets           map[*peer]bool
 	legacyArtifactBarrier <-chan struct{}
+	lastUpdateCheck       time.Time
+	updateReadyAt         time.Time
+	updateVersion         string
+	updateApplySent       bool
 }
 
 type queuedMessage struct {
@@ -90,6 +94,7 @@ type daemon struct {
 	storage                           *storageExecutor
 	storagePruning                    bool
 	stopping                          bool
+	extensionVersions                 map[string]string
 	windowActions                     map[string]*pendingWindowAction
 	telemetry                         recoveryTelemetry
 	scheduler                         mutationScheduler
@@ -252,6 +257,7 @@ func runDaemon(ctx context.Context, c config) error {
 					})
 				}
 				d.baselines.prune()
+				d.checkExtensionUpdates(time.Now())
 				d.mu.Unlock()
 			}
 		}
@@ -492,6 +498,12 @@ func (d *daemon) identity(p *peer, message object) {
 	if message.boolean("mutationScheduling") {
 		p.identity["mutationScheduling"] = value(true)
 	}
+	if _, err := updateParseVersion(message.text("extensionVersion")); err == nil {
+		p.identity["extensionVersion"] = message["extensionVersion"]
+	}
+	if message.boolean("extensionUpdateChecks") {
+		p.identity["extensionUpdateChecks"] = value(true)
+	}
 }
 
 func (d *daemon) snapshot() []object {
@@ -506,6 +518,9 @@ func (d *daemon) snapshot() []object {
 		}
 		if p.identity.boolean("mutationScheduling") {
 			entry["mutationScheduling"] = value(true)
+		}
+		if v := p.identity["extensionVersion"]; v != nil {
+			entry["extensionVersion"] = v
 		}
 		for _, key := range []string{"browserExtensionId", "browserName", "profileLabel"} {
 			entry[key] = value[*string](nil)
@@ -588,6 +603,11 @@ func (d *daemon) handleEnvelope(p *peer, message, body object) {
 	case "extension.identity":
 		d.identity(p, message)
 		d.windows()
+		d.checkExtensionUpdates(time.Now())
+	case "extension.update_ready":
+		d.requestExtensionReload(p, message.text("version"))
+	case "extension.update_cancel":
+		d.cancelExtensionReload(p)
 	case "extension.access_update":
 		p.accessSettings = normalizeAccessSettingsSnapshot(message.object("accessSettings"))
 		previousWindow := p.window
@@ -651,6 +671,7 @@ func (d *daemon) health(result object, diagnostics bool) object {
 	// Advertise the usable feed-free command explicitly. Older releases can
 	// contain an update command but lack the configuration needed to use it.
 	result["nativeUpdateSupported"] = value(nativeUpdateFeedURL == "" && nativeUpdateKeysJSON == "" && updateGitHubValidateEndpoints() == nil)
+	result["extensionUpdateSupported"] = value(true)
 	result["transport"] = value(d.config.address)
 	proxy := object{"enabled": value(false), "endpoint": value[*string](nil)}
 	if d.config.network == "tcp" {
@@ -841,6 +862,14 @@ func (d *daemon) route(p *peer, request object) {
 	// identifier without stealing or cancelling each other's response.
 	routedID := uniqueID()
 	target := candidates[0]
+	if !target.updateReadyAt.IsZero() {
+		response := failure(id, "EXTENSION_DISCONNECTED", "This extension is applying a browser-store update. Reconnect after the update; browser actions are not replayed.")
+		errorDetails := response.object("error")
+		errorDetails["details"] = value(object{"reason": value("extension_updating"), "dispatched": value(false)})
+		response["error"] = value(errorDetails)
+		d.localResponse(p, request, response)
+		return
+	}
 	meta["transport_owner"] = value(p.owner)
 	meta["artifact_ack"] = value(true)
 	timeout := daemonOperationTimeout(method, params)
@@ -974,6 +1003,7 @@ func (d *daemon) finish(id string, response object) {
 		entry["caller"] = caller
 	}
 	d.pushServiceLog(entry)
+	d.grantExtensionReload(pending.target)
 }
 
 func (d *daemon) response(p *peer, response object) {

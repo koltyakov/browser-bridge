@@ -48,11 +48,32 @@ On Windows x64, run in PowerShell:
 irm https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.ps1 | iex
 ```
 
-The installers download the latest release, verify its SHA-256 against the release's `checksums.txt`, install to `~/.local/bin`, register supported browsers where the extension is detected, and restart the daemon. They also refresh existing native registrations. Windows adds the installation directory to your user `PATH`. Keep `~/.local/bin` on your shell's `PATH` on macOS and Linux.
+The installers select the latest stable native patch in the newest installed
+extension's `major.minor` line, or GitHub's latest stable release when no extension
+is detected. They verify SHA-256, install to `~/.local/bin`, register supported
+browsers, and restart the daemon. Existing native registrations are refreshed.
+Windows adds the installation directory to your user `PATH`. Keep `~/.local/bin`
+on your shell's `PATH` on macOS and Linux.
 
 After verifying the download, the installers try to remove an existing global `@browserbridge/bbx` npm package before installing the standalone CLI. If npm is unavailable, they skip this step. If detection or removal fails, they warn and continue without requesting elevated permissions.
 
-The extension's setup panel provides a copyable command targeting its major-minor release line, such as `BBX_VERSION=2.0` or `-Version '2.0'`. The installer checks published GitHub releases and selects the highest stable `2.0.x` patch, excluding drafts and prereleases. It fails if no matching release is available rather than installing another release line. An exact version such as `2.0.3` is also supported. Without a version, it installs GitHub's latest release.
+The setup panel shows the short commands above, with no version argument.
+Detection uses a checksum-verified latest binary as a read-only bootstrap.
+`bbx update status` runs with isolated temporary state and automatic updates off,
+using the shared native browser/profile scanner. No existing installation is
+changed during discovery. If the latest published binary predates discovery
+support, the installer warns and uses latest stable instead.
+
+After detecting an extension line, the installer scans published GitHub releases
+and selects its highest stable patch. It verifies that version's checksums even
+when the bootstrap can be reused, and fails if no matching release is available
+rather than substituting another line. This may download a second native binary
+when the extension line differs from latest.
+
+Optional `BBX_VERSION` or PowerShell `-Version` overrides detection. Use a line
+such as `2.0`, an exact version such as `2.0.3`, or `latest` to explicitly select
+GitHub's latest stable release. `BBX_BROWSER` and `-Browser` restrict registration,
+not version detection across other installed browsers.
 
 For an unpacked extension, set `BBX_EXTENSION_ID` for the Unix script or pass `-ExtensionId` to the PowerShell script. The Chrome Web Store ID is the default and is omitted from the setup command. Browsers are detected automatically; use `BBX_BROWSER` or `-Browser` to restrict installation to one supported browser, and `BBX_INSTALL_DIR` or `-InstallDir` for another installation directory. Run with `--help` or `-Help` for options.
 
@@ -167,6 +188,29 @@ never downgrades. Run `bbx restart` afterward when the result reports
 Use `bbx update check` to check without installing, and `bbx update status` to
 inspect the selected binary. These commands need no enabled browser page and
 operate only on the local installation.
+
+### Keeping browser extensions aligned
+
+When the daemon observes a newer extension in one browser/profile, it asks older
+connected profiles with the same extension ID to check their browser store.
+The extension calls `chrome.runtime.requestUpdateCheck()` at most once per day,
+with the cooldown retained across native reconnects and worker restarts.
+The daemon remembers observed versions while it runs, even if the newer
+browser closes; a closed older browser can check when it connects again.
+
+When a store update is available, the extension waits for local requests and
+setup actions to become idle. It then asks the daemon to drain existing calls
+and pause new dispatches to that profile. Only after the daemon grants reload
+does the extension call `runtime.reload()`. Calls are not replayed. A canceled
+or expired grant releases the drain so a failed update cannot block the profile
+indefinitely.
+
+This is best effort, not a bypass of browser update rules. Store rollouts,
+throttling, policy restrictions, and missing updates still apply. An unexpected
+major update is not force-applied based on evidence for another major.
+Unpacked builds use their separate development reload path. Legacy extensions
+without the update-check handler continue working but cannot be remotely
+triggered this way; they need a normal browser/store update first.
 
 ### One-time upgrade for unconfigured installations
 

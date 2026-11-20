@@ -68,6 +68,7 @@ export type NativeConnectionDeps = {
   checkDevelopmentUpdate?: () => Promise<void>;
   scheduleIdleReconnect?: (delayMs: number) => void;
   clearIdleReconnect?: () => void;
+  extensionUpdateChecks?: boolean;
 };
 
 export type HostStatusDeps = {
@@ -167,9 +168,14 @@ async function loadProfileLabel(chromeObj: {
 export function sendIdentity(
   port: Pick<chrome.runtime.Port, 'postMessage'>,
   chromeObj: {
-    runtime?: { id?: string; getManifest?: () => { version: string } };
+    runtime?: {
+      id?: string;
+      getManifest?: () => { version: string };
+      requestUpdateCheck?: unknown;
+    };
     storage: { local: ProfileStorage; session: ProfileStorage };
-  }
+  },
+  enableUpdateChecks = true
 ): void {
   void Promise.all([getBrowserName(), getProfileLabel(chromeObj)]).then(
     ([browserName, profileLabel]) => {
@@ -187,6 +193,9 @@ export function sendIdentity(
           windowAccessUpdates: true,
           windowActions: true,
           mutationScheduling: true,
+          ...(enableUpdateChecks && typeof chromeObj.runtime?.requestUpdateCheck === 'function'
+            ? { extensionUpdateChecks: true }
+            : {}),
           browserExtensionId:
             typeof chromeObj.runtime?.id === 'string' ? chromeObj.runtime.id : undefined,
         });
@@ -591,7 +600,7 @@ when it has recovered without requiring another connect/disconnect event. */
         requestNativeHostVersion(candidatePort, state);
         void deps.refreshActionIndicators();
         void deps.emitUiState();
-        sendIdentity(candidatePort, chromeObj);
+        sendIdentity(candidatePort, chromeObj, deps.extensionUpdateChecks !== false);
         sendActivityUpdate(candidatePort);
         if (state.enabledWindow) {
           sendAccessUpdate(true, candidatePort, state.enabledWindow, {

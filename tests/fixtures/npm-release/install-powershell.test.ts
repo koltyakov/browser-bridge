@@ -21,6 +21,60 @@ if ((Get-ExecutionPolicy -List | ConvertTo-Json -Compress) -ne $policyBefore) {
 }
 `;
 
+test('PowerShell bootstrap discovery is read-only, explicit-ID aware, and restores its environment', { skip: !available && 'PowerShell is not installed' }, async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'bbx-probe-ps-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', `${loadInstallerHelpers}
+$env:BROWSER_BRIDGE_HOME = 'protected-home'
+$env:BBX_REMOTE = 'protected-remote'
+$env:BBX_AUTO_UPDATE = 'compatible'
+$env:BROWSER_BRIDGE_EXTENSION_ID = 'protected-id'
+function Invoke-TestBootstrap {
+  if (($args -join ' ') -ne 'update status') { throw 'Unexpected bootstrap command' }
+  if ($env:BROWSER_BRIDGE_HOME -ne (Join-Path $env:PROBE_DIR 'detection')) { throw 'Probe was not isolated' }
+  if ($env:BBX_AUTO_UPDATE -ne 'off' -or $env:BBX_REMOTE) { throw 'Probe could update or route remotely' }
+  if ($env:BROWSER_BRIDGE_EXTENSION_ID -ne ('a' * 32)) { throw 'Lost extension ID override' }
+  $global:LASTEXITCODE = 0
+  if ($script:probeCase -eq 'failed') { $global:LASTEXITCODE = 1; return }
+  if ($script:probeCase -eq 'legacy') { return '{"runningVersion":"9.0.0"}' }
+  if ($script:probeCase -eq 'invalid') { return '{"runningVersion":"9.0.0","installedExtensionVersion":"bad"}' }
+  if ($script:probeCase -eq 'none') { return '{"runningVersion":"9.0.0","installedExtensionVersion":null}' }
+  return '{"runningVersion":"9.0.0","installedExtensionVersion":"2.3.0"}'
+}
+foreach ($caseName in @('installed','none','legacy','failed','invalid')) {
+  $script:probeCase = $caseName
+  $result = Get-BootstrapDetection 'Invoke-TestBootstrap' $env:PROBE_DIR ('a' * 32)
+  if ($caseName -eq 'installed' -and $result.installedExtensionVersion -ne '2.3.0') { throw 'Missed installed extension' }
+  if ($caseName -eq 'none' -and $null -ne $result.installedExtensionVersion) { throw 'Invented extension version' }
+  if ($caseName -in @('legacy','failed','invalid') -and $null -ne $result) { throw 'Accepted unavailable discovery' }
+  if ($env:BROWSER_BRIDGE_HOME -ne 'protected-home' -or $env:BBX_REMOTE -ne 'protected-remote' -or
+      $env:BBX_AUTO_UPDATE -ne 'compatible' -or $env:BROWSER_BRIDGE_EXTENSION_ID -ne 'protected-id') {
+    throw 'Probe changed caller environment'
+  }
+}
+`], { encoding: 'utf8', env: { ...process.env, INSTALLER: installer, PROBE_DIR: directory } });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+test('PowerShell selection resolves the newest stable numeric patch across pages', { skip: !available && 'PowerShell is not installed' }, () => {
+  const result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', `${loadInstallerHelpers}
+function Invoke-RestMethod {
+  param($Uri)
+  if ($Uri -match 'page=1$') {
+    $entries = @(0..98 | ForEach-Object { [pscustomobject]@{tag_name="v9.0.$_";draft=$false;prerelease=$false} })
+    $entries += [pscustomobject]@{tag_name='v2.3.9';draft=$false;prerelease=$false}
+    return ,$entries
+  }
+  return ,@(
+    [pscustomobject]@{tag_name='v2.3.12';draft=$false;prerelease=$false},
+    [pscustomobject]@{tag_name='v2.3.99';draft=$false;prerelease=$true}
+  )
+}
+if ((Resolve-ReleaseLine '2.3') -ne '2.3.12') { throw 'Wrong release selection' }
+`], { encoding: 'utf8', env: { ...process.env, INSTALLER: installer } });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
 test(
   'PowerShell installer prepends its directory and removes duplicate PATH entries',
   { skip: !available && 'PowerShell is not installed' },

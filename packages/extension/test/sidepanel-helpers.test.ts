@@ -37,7 +37,7 @@ test('npm setup targets the extension major-minor release line', () => {
   assert.equal(getNpmInstallCommand('invalid'), 'npm install -g @browserbridge/bbx');
 });
 
-test('standalone setup selects the GitHub installer and passes the version and extension ID', () => {
+test('standalone setup selects the GitHub installer without a version argument and preserves custom IDs', () => {
   const runtimeId = 'a'.repeat(32);
   for (const [os, arch, label] of [
     ['mac', 'arm64', 'macOS arm64 · Run in Terminal'],
@@ -54,12 +54,12 @@ test('standalone setup selects the GitHub installer and passes the version and e
     if (os === 'win') {
       assert.equal(
         view.command,
-        `& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.ps1'))) -Version '2.3' -ExtensionId '${runtimeId}'`
+        `& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.ps1'))) -ExtensionId '${runtimeId}'`
       );
     } else {
       assert.equal(
         view.command,
-        `curl -fsSL https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.sh | BBX_VERSION=2.3 BBX_EXTENSION_ID=${runtimeId} sh`
+        `curl -fsSL https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.sh | BBX_EXTENSION_ID=${runtimeId} sh`
       );
     }
   }
@@ -84,13 +84,13 @@ test('standalone setup omits the extension override for the Chrome Web Store ins
     const view = getStandaloneInstallView('2.3.4', { os, arch: 'x86-64' }, publishedId);
     assert.equal(
       view?.command,
-      'curl -fsSL https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.sh | BBX_VERSION=2.3 sh'
+      'curl -fsSL https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.sh | sh'
     );
   }
   const windows = getStandaloneInstallView('2.3.4', { os: 'win', arch: 'x86-64' }, publishedId);
   assert.equal(
     windows?.command,
-    "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.ps1'))) -Version '2.3'"
+    'irm https://raw.githubusercontent.com/koltyakov/browser-bridge/main/scripts/install.ps1 | iex'
   );
 });
 
