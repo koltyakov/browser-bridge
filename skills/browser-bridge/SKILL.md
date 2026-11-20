@@ -82,11 +82,6 @@ bbx call page.wait_for_load_state '{"url":"/dashboard","urlMatch":"contains","wa
 bbx call page.handle_dialog '{"action":"inspect"}' # inspect current JS dialog; never auto-accept
 ```
 
-On `DIALOG_BLOCKED`, inspect the native dialog with `page.handle_dialog`, then
-explicitly accept or dismiss using the inspected `dialogId` as `expectedDialogId`.
-Never replay the interrupted action or sequence automatically. It may already
-have taken effect or finish after dismissal. Inspect postconditions first.
-
 ### Interact & Patch
 
 For device, network, CPU, locale, timezone, or geolocation reproduction, use the [emulation workflow](references/emulation.md). Discover its compact methods with `bbx protocol describe emulation`.
@@ -144,40 +139,9 @@ In MCP mode, pass `destinationId` on any browser tool call instead; `browser_sta
 
 ## Access Flow
 
-Browser Bridge access is window-scoped. The user turns it on once for the current browser window in the popup or side panel.
+Access is window-scoped: the user enables it once per window in the Browser Bridge popup or side panel. Make a real call first; a denied tab-bound call surfaces the Enable cue (or call `access.request` once, never repeatedly while the window is pending). Ask the user to click `Enable`, then retry.
 
-### Settings and profiles
-
-The side panel can limit access to one tab and disable tab creation, user-tab closing, or cross-domain navigation. A denied policy returns `ACCESS_DENIED` with `details.reason=policy_setting_disabled` and `dispatched:false`: ask the user to change the setting instead of re-requesting access or bypassing it. With several profiles connected, pass the `extensionId` and `tabId` from `tabs.list` on every call; `TAB_MISMATCH` with `reason: ambiguous_browser_target` means pick one connection. Never disable unrelated windows to fix routing. Details: [access and recovery](references/access-and-recovery.md).
-
-To request access, call `access.request` (via `bbx access-request`, `browser_access` MCP tool, or `bbx call access.request`). This surfaces an Enable cue in the extension popup/side panel for the focused window.
-
-Do not call `access.request` repeatedly while the same window is still pending. If access is already requested, tell the user to enable that window and wait for them to confirm readiness.
-
-If a tab-bound call fails with `ACCESS_DENIED` because Browser Bridge is off, that failed call also surfaces an enable cue automatically.
-
-After the Enable cue appears:
-
-1. Ask the user to open the Browser Bridge popup or side panel and click `Enable`.
-2. After the user confirms, retry the call.
-
-After access is enabled:
-
-1. Your first tab-bound call binds your session to the active tab: that becomes your **working tab**.
-2. The working tab is sticky. If the user switches to their own tab, keep running in your working tab without taking focus back. Reads, input, navigation, and screenshots can run in background tabs. A different `active_tab_id` is informational, not an error to fix.
-3. Responses report `meta.tab_id`; when the user's active tab differs, the summary says so (`Ran in working tab 12; the user's active tab is 34`). If the user asks you to work in "this tab", pass that `tabId` once; the explicit tab becomes your new working tab. `tabs.create` and `tabs.activate` also move your working tab.
-4. If your working tab was closed, calls fail with `TAB_MISMATCH` (`reason: working_tab_closed`) instead of silently using another tab; pick a tab with `tabId` or `tabs.list` (which marks `working: true`).
-5. The binding expires after 15 idle minutes.
-6. Do not stop at a generic "no access" message before making a real Browser Bridge call, because the first denied call is what triggers the UI cue.
-7. CLI agents running separate `bbx` processes share one working tab unless each sets `BBX_SESSION=<name>`; MCP sessions are separated automatically.
-
-### Tab focus
-
-You may switch to tabs you opened for the current task without asking while the currently active tab is also one you are using for that task. Check `tabs.list` active state before switching. Track tabs you opened from your own `tabs.create` results; `working:true` identifies the routed tab, not ownership or foreground focus.
-
-If the user has switched to their own tab, continue in the background. Activate only at their request or with their permission. If something cannot work while the target tab is inactive, explain why and ask whether you may activate it. A timeout alone does not establish that activation is needed. Permission for one activation does not allow repeatedly taking focus back after the user switches away.
-
-These rules apply to `tabs.activate`, `active:true` on creation, and equivalent focus APIs. New tabs open in the background by default.
+Your first tab-bound call binds the active tab as your sticky **working tab**. Keep working there in the background when the user switches tabs; a different `active_tab_id` is informational. Pass `tabId` (and `extensionId` when several profiles are connected) to move it. Activate a tab only when you opened it and the active tab is also yours, or with the user's permission. Never disable unrelated windows to fix routing, and treat `ACCESS_DENIED` with `details.reason=policy_setting_disabled` as a user setting to change, not something to bypass. Working-tab expiry, `TAB_MISMATCH` reasons, `BBX_SESSION`, and full focus rules: [access and recovery](references/access-and-recovery.md).
 
 ## Error recovery
 
@@ -197,24 +161,23 @@ Decide from the method, its parameters, and each response's `recovery`, not the 
 10. **Avoid debugger first** - prefer DOM/content-script methods (`dom.*`, `styles.*`, `layout.get_box_model`, `page.get_console`, `page.get_text`, `page.get_storage`, `page.get_network`) before any debugger-backed method. Escalate to CDP only when those cannot answer the question.
 11. **Evaluate only when needed** - `page.evaluate` is powerful but debugger-backed; use it only when DOM, storage, console, network, or text reads cannot expose the needed state.
 12. **Treat exact storage as sensitive** - use `page.get_storage` for metadata first. Call `sensitive.read` for one exact key only when necessary; never batch or automatically retry it, and never repeat a failed attempt without new evidence.
-13. **Debugger-backed methods are last resort** - treat `page.evaluate`, `page.handle_dialog`, `dom.get_accessibility_tree` with the default CDP source (its cost grows with the whole page's accessibility tree, not `maxNodes`: seconds on large tables), `page.get_network` with `source: 'cdp'`, input with `executionMode: 'cdp'`, `viewport.resize`, `performance.get_metrics`, `screenshot.capture_*`, and all `cdp.*` methods as escalation steps because they attach `chrome.debugger`. `performance.get_metrics` is a raw browser-maintained CDP counter point sample, not Web Vitals.
+13. **Debugger-backed methods are last resort** - `page.evaluate`, `page.handle_dialog`, CDP-source `dom.get_accessibility_tree` (its cost grows with the whole page, not `maxNodes`), `source: 'cdp'` network, CDP input, `viewport.resize`, `performance.get_metrics` (raw counters, not Web Vitals), `screenshot.*`, and `cdp.*` attach `chrome.debugger`; use them as escalation steps.
 14. **Wait after change** - after editing source, wait for expected new text, a selector matching the changed attribute, or a detach/attach remount; waiting for `attached` on a selector that already exists does not prove HMR ran. Use `page.wait_for_load_state` for navigation, not HMR.
 15. **Prime event buffers** - before reproducing a console or fetch/XHR issue, call `page.get_console` and default `page.get_network` once with `clear: true`; then reproduce and read without clearing. CDP all-resource capture instead requires explicit `start`, reproduce, `read`, and `stop` calls.
-16. **Act on what you can name** - when you know the label but not the selector, put a locator straight into the input target (`{"role":"button","name":"Save"}`, `{"label":"Email"}`, `{"text":"Load more"}`, `{"placeholder":"Search"}`, `{"testId":"submit"}`; add `nth` to pick among matches). Use `dom.find_by_text` / `dom.find_by_role` only when you need to look before acting. A locator must prove uniqueness over the scanned document, so on very large pages (thousands of rows) it can fail with `RESULT_TRUNCATED`; add `selector` with a narrow container-scoped CSS selector (for example `{"label":"Email","selector":"form input"}`) or use the `elementRef` from a scoped read instead of retrying the same locator. Locators and finders search shadow DOM and iframes, use real accessible names (`<label for>`, wrapping labels, `aria-*`, `alt`), and skip hidden matches (`hiddenMatches` counts them; `includeHidden: true` lists them).
+16. **Act on what you can name** - put a locator straight into the input target (`{"role":"button","name":"Save"}`, `{"label":"Email"}`, `{"text":"Load more"}`, `{"placeholder":"Search"}`, `{"testId":"submit"}`, plus `nth`). Use `dom.find_by_*` only to look before acting. On `RESULT_TRUNCATED` from a very large page, add a container-scoped `selector` or use a scoped `elementRef` instead of retrying. Details: [interaction](references/interaction.md#action-rules-in-detail).
 17. **Text extraction** - use `page.extract_content` for articles/documentation, or `page.get_text` for all visible UI text, instead of `dom.query` on body.
 18. **Network monitoring** - use `page.get_network` to inspect API calls; auto-installs interceptor.
 19. **Overview with the DOM outline** - for "what can I do on this page?", call `dom.get_accessibility_tree` with `source: "dom"` (add `interactiveOnly: true` for controls only). It returns compact lines like `- button "Save" [el_k7q2_1f] disabled` whose refs work directly as input targets, includes shadow DOM and iframes, and needs no debugger. Reserve the default CDP source for accessibility audits.
 20. **Tailwind-aware** - when `page.get_state` returns `hints.tailwind: true`, load `references/tailwind.md`; avoid selecting by utility classes, prefer `find_by_text`/`find_by_role`; `dom.query` auto-escapes `[]` brackets.
-21. **Read the effects before reading the page** - click, press_key, set_checked, select_option, and submitting type/fill return `effects` after a short settle: same-document `url` changes, `navigation: "unloading"`, newly opened `dialogs`, alert/status/live-region `messages`, the `focused` element, `dom` churn, and the target's new state (`value`, `checked`, `expanded`, `removed`). The summary digests them (`Effects: URL → /done; alert: "Saved"`). Only follow up with a read when the effects do not answer the question; `changed: false` does not prove the action did not execute. Pass `observe: true` to other actions, or `observe: false` to skip the settle. The settle waits for fetch/XHR requests the action started, then about 75 ms of DOM quiet (150 ms on pages where requests cannot be tracked), up to 500 ms. An observed click usually costs 100-250 ms versus under 10 ms with `observe: false`; skip it in scripted loops that verify outcomes another way.
-22. **Let actions wait** - targeted actions wait up to `timeoutMs` (default 2500, max 15000, `0` disables) for the target to appear, become enabled/visible/unobscured, and stop animating. Do not add a separate `dom.wait_for` before an action. Honor the errors that remain after the wait, plus `resolution.waitedMs`. `cdp_press_key` and `scroll_into_view` use separate contracts; `input.fill.mode: auto` is a separate DOM setter/keystroke strategy.
-23. **Stale recovery stays opt-in** - prefer re-querying. Use `recoverStale: true` once only when the same document/URL and a strong unique semantic descriptor should still identify the target; inspect `recovered`, old/new refs, and matched fields. A scan with more than 100 same-tag candidates fails as `ELEMENT_AMBIGUOUS`/`scan_incomplete` because uniqueness is not provable.
-24. **Dialogs are explicit** - inspect first, then accept or dismiss only when intended. `expectedDialogId` is a pre-dispatch stale-decision check, not an atomic CDP binding; never auto-repeat `DIALOG_ACTION_CONFLICT`.
-25. **DOM diffs use explicit baselines** - call `dom.baseline.create` before the action, `dom.baseline.compare` afterward, then `dom.baseline.release`. Use a narrow selector and bounded evidence. Never substitute unrelated DOM reads for the retained baseline, and recreate it after `DOM_BASELINE_INVALIDATED`.
-    When semantic DOM evidence cannot verify CSS appearance, canvas/chart changes, or visual regressions, optionally use `screenshot.baseline.create/compare/release`. Read its signature with `protocol.describe` and the visual baseline section in `references/protocol.md`. Scope to a complete component including labels. Useful local changes return context-expanded before/after crops. Unchanged, `diff_not_useful` and `not_comparable` return no images by default. An unhelpful diff is a result, not an error: inspect DOM/state or narrow scope rather than polling, replaying the action, or automatically asking for more images. Only if needed, `fallback: "current"` explicitly requests one full current scoped image, never a full before/after pair. Suppressed diffs do not advance the reference even with `advance: true`; geometry changes require a new baseline. Release retained pixels when done. This is debugger-backed, never automatic and never proof of application success.
-26. **HAR export reads an armed capture** - use CDP capture `start`, reproduce, `network.export_har`/`bbx har`, then `stop`. Export never starts, stops, or clears capture. Inspect truncation plus `dropped`, `abandoned`, and `inflight` before claiming completeness.
-27. **Keep known steps inside the browser** - use one `input.perform` for authorized multi-step flows, such as fill fields, click, wait for success, then read the result. Set `returnLastResult: true` to get bounded final-step evidence without another tool call. For rhythm, games, or gestures, add `atMs` from the sequence start or `delayMs` after the previous step. Never issue input as parallel tool calls. Stop at decisions requiring new evidence or user approval, leave `continueOnError` off, and never blindly replay a partially completed flow.
-28. **Use trusted input when the page needs a user gesture** - DOM-mode events are untrusted, so Chrome may refuse audio or media start, popups, clipboard writes, and fullscreen. `executionMode: "auto"` picks debugger input only for file inputs, media, `target=_blank` links, rich-text editors, or when the debugger is already attached (`execution.selectionReason` says why). Use `executionMode: "cdp"` to force it (click, hover, drag, type, fill, press_key, touch); `input.perform` accepts it once for every step. If a DOM click appears ineffective, inspect application state first. `changed: false` alone does not justify repeating it through CDP; choose another deliberate action only when new evidence establishes it is still needed. CDP input is not available for targets inside iframes.
-29. **Simultaneous presses need touch** - a mouse has one pointer. For chords or multi-finger gestures use `input.touch` with several `points` (optionally `to` end positions for swipes and pinches); add `holdMs` to `input.click`/`input.press_key` when the press must last.
+21. **Read the effects before reading the page** - click, press_key, set_checked, select_option, and submitting type/fill return `effects` (URL change, navigation, dialogs, alert/status messages, focus, DOM churn, target state). Follow up with a read only when they do not answer the question; `changed: false` does not prove nothing ran. The settle waits for requests the action started, then ~75 ms of quiet (150 ms when requests cannot be tracked), up to 500 ms; `observe: false` skips it.
+22. **Let actions wait** - targeted actions wait up to `timeoutMs` (default 2500, max 15000, `0` disables) for the target to be present, enabled, visible, unobscured, and still. Do not add a separate `dom.wait_for` first; honor the errors that remain.
+23. **Stale recovery stays opt-in** - prefer re-querying; use `recoverStale: true` once only for the same document and a strong unique descriptor, then inspect what was recovered.
+24. **Dialogs are explicit** - on `DIALOG_BLOCKED`, inspect with `page.handle_dialog`, then accept or dismiss with the inspected `expectedDialogId`. Never replay the interrupted action; it may already have taken effect.
+25. **DOM diffs use explicit baselines** - `dom.baseline.create` before, `compare` after, `release` when done, with a narrow selector. Visual baselines (`screenshot.baseline.*`) are debugger-backed and only for evidence DOM cannot give. Details: [token efficiency](references/token-efficiency.md#debugger-escalation-and-baselines-in-detail).
+26. **HAR export reads an armed capture** - CDP capture `start`, reproduce, `network.export_har`, then `stop`; check truncation, `dropped`, `abandoned`, and `inflight` before claiming completeness.
+27. **Keep known steps inside the browser** - use one `input.perform` for authorized multi-step flows (`returnLastResult: true` for final evidence; `atMs`/`delayMs` for timing). Never issue input as parallel tool calls, keep `continueOnError` off, and never replay a partial flow.
+28. **Use trusted input when the page needs a user gesture** - DOM events are untrusted, so audio, popups, clipboard, and fullscreen may be refused. `executionMode: "auto"` picks debugger input when needed; `"cdp"` forces it (not inside iframes). `changed: false` alone does not justify repeating through CDP.
+29. **Simultaneous presses need touch** - use `input.touch` with several `points` for chords or multi-finger gestures; `holdMs` for long presses.
 
 ## Token Budget Quick Rules
 
@@ -273,10 +236,6 @@ Worked CLI sequences for CSS debugging, text fixes, API verification, HMR dev se
 - **[Workflows](references/workflows.md)** - worked CSS, text, API, HMR, bug, and user-flow sequences
 - **[CLI reference](references/cli-reference.md)** - raw parameter gotchas, artifacts, and CLI summary shapes
 - **[Tailwind CSS guide](references/tailwind.md)** - selector escaping, semantic alternatives, patching strategy (load when `hints.tailwind: true`)
-
-`bbx a11y-tree` and `dom.get_accessibility_tree` are sensitive to `maxDepth` and `maxNodes`. Shallow runs can undercount interactive nodes on real pages, so widen those limits before treating a low interactive count as a bug.
-
-For control discovery, prefer `compact: true` or `interactiveOnly: true`, then use role/name with `dom.find_by_role` to obtain an input ref. AX `interactive` means semantic/focusable, not currently visible, unobscured, or otherwise actionable; AX results are depth-limited partial topology and include truncation metadata even when `maxNodes` was not reached.
 
 > **MCP mode:** If Browser Bridge is connected via MCP, use its tools (`browser_call`, `browser_batch`, `browser_status`, `browser_health`, `browser_access`, `browser_skill`) instead of shelling out to `bbx`. `browser_call` reaches every method listed here.
 

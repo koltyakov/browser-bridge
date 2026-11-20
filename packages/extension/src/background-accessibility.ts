@@ -386,6 +386,9 @@ export async function fetchBoundedAXNodes(
   const nodes: Array<Record<string, unknown>> = [rootResult.node];
   const root = simplifyAXNode(rootResult.node);
   const byId = new Map([[root.nodeId, root]]);
+  // Raw children stay unparsed until visited: one wide container can hold
+  // thousands of rows, and only the first few reach the result.
+  const pendingRaw = new Map<string, Record<string, unknown>>();
   const parentById = new Map<string, string>();
   const stack: Array<{ nodeId: string; depth: number }> = [{ nodeId: root.nodeId, depth: 0 }];
   const deadline = Date.now() + (options.timeBudgetMs ?? 2_000);
@@ -396,8 +399,15 @@ export async function fetchBoundedAXNodes(
       return { nodes, complete: false, depthLimited };
     }
     const { nodeId, depth } = stack.pop() as { nodeId: string; depth: number };
-    const node = byId.get(nodeId);
-    if (!node) continue;
+    let node = byId.get(nodeId);
+    if (!node) {
+      const raw = pendingRaw.get(nodeId);
+      if (!raw) continue;
+      pendingRaw.delete(nodeId);
+      node = simplifyAXNode(raw);
+      byId.set(nodeId, node);
+      nodes.push(raw);
+    }
     const parentId = parentById.get(nodeId);
     if (isKeptAXNode(node, parentId ? byId.get(parentId) : undefined, options)) kept += 1;
     if (!node.childIds.length) continue;
@@ -405,25 +415,25 @@ export async function fetchBoundedAXNodes(
       depthLimited = true;
       continue;
     }
-    const children = (
-      (await send('Accessibility.getChildAXNodes', { id: nodeId })) as {
-        nodes?: Array<Record<string, unknown>>;
+    // Chrome answers for ignored children with their descendants as well, so
+    // a later visit may already have its children without another request.
+    if (!node.childIds.every((childId) => byId.has(childId) || pendingRaw.has(childId))) {
+      const children = (
+        (await send('Accessibility.getChildAXNodes', { id: nodeId })) as {
+          nodes?: Array<Record<string, unknown>>;
+        }
+      )?.nodes;
+      for (const raw of Array.isArray(children) ? children : []) {
+        const childId = raw.nodeId == null ? '' : String(raw.nodeId);
+        if (!childId || byId.has(childId) || pendingRaw.has(childId)) continue;
+        pendingRaw.set(childId, raw);
+        parentById.set(childId, raw.parentId == null ? nodeId : String(raw.parentId));
       }
-    )?.nodes;
-    const fetched: SimplifiedAXNode[] = [];
-    for (const raw of Array.isArray(children) ? children : []) {
-      const child = simplifyAXNode(raw);
-      if (!child.nodeId || byId.has(child.nodeId)) continue;
-      nodes.push(raw);
-      byId.set(child.nodeId, child);
-      parentById.set(child.nodeId, nodeId);
-      fetched.push(child);
     }
     // Visit children in page order: the stack pops the last push first.
-    const order = new Map(node.childIds.map((id, index) => [id, index]));
-    fetched.sort((a, b) => (order.get(a.nodeId) ?? 0) - (order.get(b.nodeId) ?? 0));
-    for (let index = fetched.length - 1; index >= 0; index -= 1) {
-      stack.push({ nodeId: fetched[index].nodeId, depth: depth + 1 });
+    for (let index = node.childIds.length - 1; index >= 0; index -= 1) {
+      const childId = node.childIds[index];
+      if (pendingRaw.has(childId)) stack.push({ nodeId: childId, depth: depth + 1 });
     }
   }
   return { nodes, complete: true, depthLimited };

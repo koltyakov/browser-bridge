@@ -312,6 +312,16 @@ function getRoutingRecovery(
       hint: 'Discover connectedExtensions with health.ping or list enabled profiles with MCP tabs.list. Select extensionId and tabId for the intended page. Do not disable unrelated windows or fall back to another profile.',
     };
   }
+  const stage = details && typeof details === 'object' && 'stage' in details ? details.stage : null;
+  if (code === ERROR_CODES.TIMEOUT && stage === 'Page.captureScreenshot') {
+    // The extension already retried on fresh debugger sessions; another full
+    // round would only double the wait.
+    return {
+      retry: false,
+      alternativeMethod: 'page.get_state',
+      hint: "Chrome produced no frame for this background tab after several fresh debugger sessions. Use structured reads, or capture after the tab is in front with the user's permission.",
+    };
+  }
   if (code === ERROR_CODES.ACCESS_DENIED && reason === 'no_enabled_browser_profiles') {
     return {
       retry: false,

@@ -111,9 +111,9 @@ For the full upgrade sequence, see [Migrate from v1 to v2](./migration-v1-to-v2.
 
 ## Screenshots of background tabs are slow or time out
 
-- On Windows and Linux, Chrome sometimes does not answer `Page.captureScreenshot` for a hidden tab. macOS was not affected in testing.
-- Up to three attempts run, bounded at 0.5 s, 1 s, and 5 s plus time for large images. A stalled attempt releases the tab's debugger session and the next one starts on a fresh session; in Windows testing every capture finished within 1.7 s.
-- If every attempt stalls, the call fails with `TIMEOUT` and later debugger-backed calls on that tab still work. Prefer structured reads, or capture while the tab is in front.
+- On Windows and Linux, Chrome sometimes never answers `Page.captureScreenshot` for a hidden tab; a single attempt left waiting 30 s still did not finish. macOS was not affected in testing. How often it happens depends on the Chrome session: one Windows session stalled on a few percent of captures, another on most captures after the first few in each tab. Disabling renderer backgrounding or `captureBeyondViewport` did not change this. Chrome rejects `fromSurface: false` ("Only screenshots from surface are allowed"), and `chrome.tabs.captureVisibleTab` needs the tab in front.
+- BBX makes up to three attempts, bounded at 0.5 s, 1 s, and 5 s plus time for large images. A stalled attempt releases the tab's debugger session, and the next attempt starts on a fresh one, which usually succeeds.
+- If every attempt stalls, the call fails with `TIMEOUT` after about 6.5 s. The MCP server does not retry it automatically, and later debugger-backed calls on that tab still work. Prefer structured reads, or capture while the tab is in front.
 
 ## CDP network capture or HAR export is empty or still armed
 

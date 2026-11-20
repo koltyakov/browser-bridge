@@ -68,3 +68,12 @@ test('tab-scope recovery does not claim the enabled window is disabled', () => {
   assert.match(recovery?.hint ?? '', /granted tabId/);
   assert.doesNotMatch(recovery?.hint ?? '', /Access is off|click Enable|access.wait_for_change/);
 });
+
+test('exhausted screenshot attempts are not retried automatically', () => {
+  const stalled = createFailure('shot', 'TIMEOUT', 'No frame', {
+    stage: 'Page.captureScreenshot',
+  });
+  assert.equal(stalled.error.recovery?.retry, false);
+  assert.equal(stalled.error.recovery?.alternativeMethod, 'page.get_state');
+  assert.equal(createFailure('slow', 'TIMEOUT', 'Slow').error.recovery?.retry, true);
+});

@@ -346,3 +346,39 @@ test('bounded AX reads walk child lists in page order and stop after maxNodes', 
   const shallow = await fetchBoundedAXNodes(send, { ...options, maxNodes: 50, maxDepth: 1 });
   assert.equal(shallow.depthLimited, true);
 });
+
+test('bounded AX reads reuse descendants Chrome returns through ignored wrappers', async () => {
+  const rows = Array.from({ length: 1000 }, (_, index) => ({
+    nodeId: `row${index}`,
+    parentId: 'body',
+    role: { value: 'button' },
+    name: { value: `Edit ${index}` },
+    childIds: [],
+  }));
+  const body = {
+    nodeId: 'body',
+    parentId: 'root',
+    ignored: true,
+    role: { value: 'none' },
+    childIds: rows.map((row) => row.nodeId),
+  };
+  const root = { nodeId: 'root', role: { value: 'RootWebArea' }, childIds: ['body'] };
+  const calls: string[] = [];
+  const send = async (method: string, params: Record<string, unknown>) => {
+    calls.push(`${method}:${String(params.id ?? '')}`);
+    if (method === 'Accessibility.getRootAXNode') return { node: root };
+    // Like Chrome, the ignored body arrives together with its descendants.
+    return params.id === 'root' ? { nodes: [body, ...rows] } : { nodes: [] };
+  };
+  const options = { compact: false, interactiveOnly: true, maxDepth: 20, maxNodes: 2 };
+  const result = await fetchBoundedAXNodes(send, options);
+
+  assert.equal(result.complete, false);
+  assert.deepEqual(calls, ['Accessibility.getRootAXNode:', 'Accessibility.getChildAXNodes:root']);
+  // Only visited rows are materialized, not the whole wide container.
+  assert.ok(result.nodes.length < 10);
+  assert.deepEqual(
+    buildAccessibilityTree(result.nodes, options).nodes.map((node) => node.name),
+    ['Edit 0', 'Edit 1']
+  );
+});
