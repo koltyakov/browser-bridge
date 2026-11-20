@@ -226,6 +226,13 @@ func runDaemon(ctx context.Context, c config) error {
 	}()
 	finished := make(chan struct{})
 	defer close(finished)
+	updateCtx, cancelUpdates := context.WithCancel(ctx)
+	defer cancelUpdates()
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		periodicNativeUpdates(updateCtx, c, ticker.C, updateCompatibleNative, restartUpdatedNative)
+	}()
 	go func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()

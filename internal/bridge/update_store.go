@@ -17,6 +17,7 @@ import (
 )
 
 type updateInstalled struct {
+	Source         string `json:"source,omitempty"`
 	Instance       string `json:"instance"`
 	Version        string `json:"version"`
 	Target         string `json:"target"`
@@ -176,6 +177,11 @@ func updateLoadState(root string) (updateState, error) {
 			return state, err
 		}
 	}
+	if state.LastExtensionVersion != "" {
+		if _, err := updateParseVersion(state.LastExtensionVersion); err != nil {
+			return state, err
+		}
+	}
 	if state.HighestSequence > 0 && !updateDigestPattern.MatchString(state.HighestDigest) {
 		return state, errors.New("invalid native update sequence watermark")
 	}
@@ -203,6 +209,9 @@ func updateSaveState(root string, state updateState) error {
 }
 
 func updateValidateRecord(record updateInstalled) error {
+	if record.Source != "" && record.Source != "github" {
+		return errors.New("invalid native release source")
+	}
 	if !updateInstancePattern.MatchString(record.Instance) {
 		return errors.New("invalid native release instance")
 	}
@@ -300,7 +309,12 @@ func updateReadProof(root string, record updateInstalled, trust updateTrust, now
 	if err != nil {
 		return updateArtifact{}, err
 	}
-	feed, err := updateVerifyFeed(raw, trust, now, false)
+	var feed updateVerifiedFeed
+	if record.Source == "github" {
+		feed, err = updateVerifyGitHubProof(raw, record.Target)
+	} else {
+		feed, err = updateVerifyFeed(raw, trust, now, false)
+	}
 	if err != nil {
 		return updateArtifact{}, err
 	}
@@ -316,7 +330,7 @@ func updateReadProof(root string, record updateInstalled, trust updateTrust, now
 			return artifact, nil
 		}
 	}
-	return updateArtifact{}, errors.New("installed native release is not authorized by its signed metadata")
+	return updateArtifact{}, errors.New("installed native release does not match its verified metadata")
 }
 
 func updateCheckWatermark(state updateState, feed updateVerifiedFeed) error {

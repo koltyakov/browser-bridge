@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestNpmDistributionSupportsSignedRuntimeUpdates(t *testing.T) {
+func TestNpmDistributionSupportsGitHubRuntimeUpdates(t *testing.T) {
 	t.Setenv("BBX_NPM_VERSION", version)
 	t.Setenv("BBX_AUTO_UPDATE", "compatible")
 	c := config{home: t.TempDir(), network: "invalid"}
@@ -19,11 +19,12 @@ func TestNpmDistributionSupportsSignedRuntimeUpdates(t *testing.T) {
 		t.Fatalf("unavailable local transport prevented npm startup: %v", err)
 	}
 	status, err := nativeUpdateStatus(c)
-	if err != nil || status.text("distribution") != "npm" || status.text("runningVersion") != version {
+	if err != nil || status.text("distribution") != "npm" || status.text("runningVersion") != version || !status.boolean("configured") || status.text("source") != "github" {
 		t.Fatalf("invalid npm update status: %v %v", status, err)
 	}
-	if handled, err := handleUpdateCommand(context.Background(), c, []string{"update", "apply"}); !handled || err == nil || !strings.Contains(err.Error(), "pinned native update") {
-		t.Fatal("npm update bypassed signed trust requirements", handled, err)
+	manager, err := newNativeUpdater(c)
+	if err != nil || !manager.GitHub {
+		t.Fatal("npm updater required a separate feed", manager, err)
 	}
 	_, launcher := installLauncher(c, filepath.Join(c.home, "bbx"))
 	if !strings.Contains(string(launcher), "BBX_NPM_VERSION") || !strings.Contains(string(launcher), version) {

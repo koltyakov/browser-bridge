@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import https from 'node:https';
 import net from 'node:net';
@@ -11,9 +11,10 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 interface FixtureRelease {
-  version: string;
-  protocolMajor: number;
-  artifacts: Record<string, { url: string; sha256: string; size: number }>;
+  tag_name: string;
+  draft: boolean;
+  prerelease: boolean;
+  assets: { name: string; browser_download_url: string; size: number }[];
 }
 
 const exec = promisify(execFile);
@@ -78,7 +79,7 @@ function initialize(child: ChildProcessWithoutNullStreams): Promise<string> {
 }
 
 test(
-  'extension upgrade activates its newest signed release line and replaces native/MCP processes',
+  'extension upgrade discovers its newest GitHub release line and replaces native/MCP processes without a feed',
   // Go uses the Windows system certificate store rather than SSL_CERT_FILE.
   { skip: process.platform === 'win32' || !available.every(Boolean), timeout: 120_000 },
   async (t) => {
@@ -133,18 +134,15 @@ test(
     const address = server.address();
     assert(address && typeof address !== 'string');
     const url = `https://127.0.0.1:${address.port}`;
-    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
-    const keys = JSON.stringify({
-      release: publicKey.export({ format: 'der', type: 'spki' }).subarray(-32).toString('base64'),
-    });
-    // Exercise legacy signed-update compatibility with fixture-only trust.
-    // Production builds do not embed a feed URL or signing configuration.
+    // Fixture endpoints are compiled into these temporary test executables.
+    // Production URLs cannot be replaced by environment or runtime settings.
     const packagePath = 'github.com/koltyakov/browser-bridge/internal/bridge';
-    const flags = `-X ${packagePath}.nativeUpdateFeedURL=${url}/feed -X '${packagePath}.nativeUpdateKeysJSON=${keys}'`;
+    const flags = `-X ${packagePath}.nativeUpdateGitHubAPI=${url}/repos/koltyakov/browser-bridge -X ${packagePath}.nativeUpdateGitHubDownloads=${url}/releases/download`;
     const target = `go-${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch === 'x64' ? 'amd64' : process.arch}`;
     const binaries: Record<string, string> = {};
     const releases: FixtureRelease[] = [];
-    for (const version of ['2.1.4', '2.2.2']) {
+    const assetName = `bbx-${process.platform}-${process.arch}${process.platform === 'win32' ? '.exe' : ''}`;
+    for (const version of ['2.2.1', '2.3.2']) {
       const binary = path.join(
         directory,
         `bbx-${version}${process.platform === 'win32' ? '.exe' : ''}`
@@ -165,48 +163,43 @@ test(
       );
       const bytes = await fs.readFile(binary);
       binaries[version] = binary;
-      responses.set(`/${version}`, bytes);
+      const base = `/releases/download/v${version}`;
+      const checksums = Buffer.from(
+        `${createHash('sha256').update(bytes).digest('hex')}  ${assetName}\n`
+      );
+      responses.set(`${base}/${assetName}`, bytes);
+      responses.set(`${base}/checksums.txt`, checksums);
       releases.push({
-        version,
-        protocolMajor: 2,
-        artifacts: {
-          [target]: {
-            url: `${url}/${version}`,
-            sha256: createHash('sha256').update(bytes).digest('hex'),
+        tag_name: `v${version}`,
+        draft: false,
+        prerelease: false,
+        assets: [
+          {
+            name: assetName,
+            browser_download_url: `${url}${base}/${assetName}`,
             size: bytes.length,
           },
-        },
+          {
+            name: 'checksums.txt',
+            browser_download_url: `${url}${base}/checksums.txt`,
+            size: checksums.length,
+          },
+        ],
       });
     }
     // An outside-line release must never be selected or probed.
-    releases.push({ ...releases[1], version: '2.3.9' });
-    const now = Date.now();
-    const payload = Buffer.from(
-      JSON.stringify({
-        schemaVersion: 1,
-        channel: 'stable',
-        sequence: 1,
-        issuedAt: new Date(now - 60_000).toISOString(),
-        expiresAt: new Date(now + 86_400_000).toISOString(),
-        releases,
-      })
-    );
+    releases.push({ ...releases[1], tag_name: 'v2.4.9' });
     responses.set(
-      '/feed',
-      Buffer.from(
-        JSON.stringify({
-          signed: payload.toString('base64'),
-          signatures: [
-            { keyId: 'release', signature: sign(null, payload, privateKey).toString('base64') },
-          ],
-        })
-      )
+      '/repos/koltyakov/browser-bridge/releases?per_page=100&page=1',
+      Buffer.from(JSON.stringify(releases))
     );
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       BROWSER_BRIDGE_HOME: home,
       BBX_AUTO_UPDATE: 'compatible',
-      BBX_NPM_VERSION: '2.1.4',
+      BBX_NPM_VERSION: '2.2.1',
+      HOME: path.join(directory, 'user'),
+      XDG_CONFIG_HOME: path.join(directory, 'user-config'),
       BBX_REMOTE: '',
       SSL_CERT_FILE: cert,
       BBX_TCP_PORT: String(await unusedPort()),
@@ -214,7 +207,7 @@ test(
       BBX_TCP_BIND_HOST: '127.0.0.1',
     };
     const start = (args: string[]) => {
-      const child = spawn(binaries['2.1.4'], args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = spawn(binaries['2.2.1'], args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
       children.push(child);
       child.stderr.on('data', (bytes: Buffer) => t.diagnostic(bytes.toString()));
       return child;
@@ -227,15 +220,15 @@ test(
       )
     );
     const mcp = start(['mcp', 'serve']);
-    assert.equal(await initialize(mcp), '2.1.4');
+    assert.equal(await initialize(mcp), '2.2.1');
     const oldPid = await fs.readFile(path.join(home, 'daemon.pid'), 'utf8');
     const host = start(['--native-host']);
     host.stdout.resume();
     const message = Buffer.from(
       JSON.stringify({
         type: 'host.identity',
-        extensionVersion: '2.2.1',
-        supported_versions: ['2.2'],
+        extensionVersion: '2.3.0',
+        supported_versions: ['2.3'],
         browserName: 'fixture',
         profileLabel: 'isolated-test',
       })
@@ -267,14 +260,16 @@ test(
       t.diagnostic(JSON.stringify({ oldPid, mcpExit: mcp.exitCode, hostExit: host.exitCode }));
       throw error;
     }
-    assert.equal(await initialize(start(['mcp', 'serve'])), '2.2.2');
+    assert.equal(await initialize(start(['mcp', 'serve'])), '2.3.2');
     const status = JSON.parse(
-      (await exec(binaries['2.1.4'], ['update', 'status'], { env })).stdout
+      (await exec(binaries['2.2.1'], ['update', 'status'], { env })).stdout
     ) as {
       version: string;
       verified: boolean;
+      source: string;
     };
-    assert.equal(status.version, '2.2.2');
+    assert.equal(status.version, '2.3.2');
     assert.equal(status.verified, true);
+    assert.equal(status.source, 'github');
   }
 );

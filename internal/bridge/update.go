@@ -24,6 +24,7 @@ type updateManager struct {
 	Version          string
 	Target           string
 	Trust            updateTrust
+	GitHub           bool
 	HTTP             updateHTTPClient
 	Now              func() time.Time
 	Probe            func(context.Context, string, string, string) error
@@ -36,9 +37,14 @@ func newNativeUpdater(c config) (*updateManager, error) {
 	if c.remote {
 		return nil, errors.New("native updates can only manage the local installation")
 	}
-	trust, err := updateProductionTrust()
-	if err != nil {
-		return nil, err
+	github := nativeUpdateFeedURL == "" && nativeUpdateKeysJSON == ""
+	var trust updateTrust
+	var err error
+	if !github {
+		trust, err = updateProductionTrust()
+		if err != nil {
+			return nil, err
+		}
 	}
 	target, err := updatePlatformTarget(runtime.GOOS, runtime.GOARCH)
 	if err != nil {
@@ -56,12 +62,19 @@ func newNativeUpdater(c config) (*updateManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &updateManager{Root: root, Executable: executable, Version: version, Target: target, Trust: trust, HTTP: updateDefaultHTTPClient(), Now: time.Now, Probe: func(ctx context.Context, path, candidateVersion, candidateTarget string) error {
+	client := updateDefaultHTTPClient()
+	if github {
+		if err := updateGitHubValidateEndpoints(); err != nil {
+			return nil, err
+		}
+		client = updateGitHubHTTPClient()
+	}
+	return &updateManager{Root: root, Executable: executable, Version: version, Target: target, Trust: trust, GitHub: github, HTTP: client, Now: time.Now, Probe: func(ctx context.Context, path, candidateVersion, candidateTarget string) error {
 		if err := updateProbeExecutable(ctx, path, candidateVersion, candidateTarget); err != nil {
 			return err
 		}
 		// Verify that the candidate understands managed activation and carries
-		// usable pinned trust. This also tests the selected proof after commit.
+		// usable release discovery. This also tests the proof after commit.
 		raw, err := updateProbeCommand(ctx, path, []string{"update", "status"}, c.home)
 		if err != nil {
 			return err
@@ -112,9 +125,12 @@ func (manager *updateManager) stage(ctx context.Context, feed updateVerifiedFeed
 func (manager *updateManager) stageFrom(ctx context.Context, feed updateVerifiedFeed, release updateRelease, source string) (updateInstalled, error) {
 	artifact, exists := release.Artifacts[manager.Target]
 	if !exists {
-		return updateInstalled{}, errors.New("signed native release has no artifact for this platform")
+		return updateInstalled{}, errors.New("native release has no artifact for this platform")
 	}
 	record := updateInstalled{Instance: uniqueID(), Version: release.Version, Target: manager.Target, SHA256: artifact.SHA256, Size: artifact.Size, ManifestDigest: feed.Digest}
+	if manager.GitHub {
+		record.Source = "github"
+	}
 	if err := updateValidatePayloadDirectories(manager.Root, record, true); err != nil {
 		return record, err
 	}
@@ -288,8 +304,10 @@ func (manager *updateManager) run(ctx context.Context, action string, supported 
 	if action != "check" && action != "apply" && action != "install" && action != "repair" && action != "rollback" {
 		return nil, fmt.Errorf("unknown native update action %q", action)
 	}
-	if err := updateValidateTrust(manager.Trust); err != nil {
-		return nil, err
+	if !manager.GitHub {
+		if err := updateValidateTrust(manager.Trust); err != nil {
+			return nil, err
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
@@ -306,12 +324,13 @@ func (manager *updateManager) run(ctx context.Context, action string, supported 
 	if err != nil {
 		return nil, err
 	}
-	if len(supported) == 0 {
+	defaultSupported := len(supported) == 0
+	if defaultSupported {
 		supported = updateDefaultProtocols(current)
 	}
 	if action == "rollback" {
 		if state.Previous == nil {
-			return nil, errors.New("no signed previous native release is available for rollback")
+			return nil, errors.New("no verified previous native release is available for rollback")
 		}
 		if installContains(state.BlockedVersions, state.Previous.Version) {
 			return nil, errors.New("the previous release was already rolled back and is blocked")
@@ -325,6 +344,17 @@ func (manager *updateManager) run(ctx context.Context, action string, supported 
 		return manager.activate(ctx, state, *state.Previous, false, true)
 	}
 	if manager.Automatic {
+		// The newest observed browser determines the line, not whichever older
+		// profile happens to reconnect or issue the next CLI request.
+		if state.LastExtensionVersion != "" {
+			if manager.ExtensionVersion == "" {
+				manager.ExtensionVersion = state.LastExtensionVersion
+			} else if comparison, err := updateCompareVersions(state.LastExtensionVersion, manager.ExtensionVersion); err != nil {
+				return nil, err
+			} else if comparison > 0 {
+				manager.ExtensionVersion = state.LastExtensionVersion
+			}
+		}
 		newExtension := false
 		if manager.ExtensionVersion != "" {
 			if state.LastExtensionVersion == "" {
@@ -340,22 +370,50 @@ func (manager *updateManager) run(ctx context.Context, action string, supported 
 		if !newExtension && !state.LastCheck.IsZero() && manager.Now().Sub(state.LastCheck) >= 0 && manager.Now().Sub(state.LastCheck) < 24*time.Hour {
 			return object{"updated": value(false), "reason": value("check_throttled"), "previousVersion": value(current)}, nil
 		}
-		state.LastCheck = manager.Now()
 		if newExtension {
 			state.LastExtensionVersion = manager.ExtensionVersion
+			// A failed check for a newer line must not inherit yesterday's
+			// throttle for the old line and suppress retries for a full day.
+			state.LastCheck = time.Time{}
 		}
 		if err := updateSaveState(manager.Root, state); err != nil {
 			return nil, err
 		}
 	}
-	feed, err := manager.fetch(ctx, state)
+	line := ""
+	if manager.Automatic || manager.GitHub {
+		line = manager.ExtensionVersion
+		if line == "" {
+			line = state.LastExtensionVersion
+		}
+		if line == "" {
+			line = current
+		}
+		if action == "repair" {
+			line = current
+		}
+	}
+	if manager.GitHub && (defaultSupported || manager.Automatic) {
+		supported = updateDefaultProtocols(line)
+	}
+	var feed updateVerifiedFeed
+	if manager.GitHub {
+		feed, err = manager.fetchGitHub(ctx, current, action, line, supported, state.BlockedVersions)
+	} else {
+		feed, err = manager.fetch(ctx, state)
+	}
 	if err != nil {
 		return nil, err
 	}
-	if err := updateAtomicWrite(filepath.Join(manager.Root, "metadata", feed.Digest+".json"), feed.Envelope, 0600); err != nil {
-		return nil, err
+	if feed.Digest != "" {
+		if err := updateAtomicWrite(filepath.Join(manager.Root, "metadata", feed.Digest+".json"), feed.Envelope, 0600); err != nil {
+			return nil, err
+		}
 	}
-	state.HighestSequence, state.HighestDigest, state.LastCheck = feed.Manifest.Sequence, feed.Digest, manager.Now()
+	if !manager.GitHub {
+		state.HighestSequence, state.HighestDigest = feed.Manifest.Sequence, feed.Digest
+	}
+	state.LastCheck = manager.Now()
 	if err := updateSaveState(manager.Root, state); err != nil {
 		return nil, err
 	}
@@ -364,20 +422,13 @@ func (manager *updateManager) run(ctx context.Context, action string, supported 
 	if action == "repair" {
 		pinned = current
 	}
-	line := ""
-	if manager.Automatic {
-		line = manager.ExtensionVersion
-		if line == "" {
-			line = current
-		}
-	}
 	selected, err := updateSelectRelease(feed, manager.Target, current, supported, state.BlockedVersions, allowEqual, pinned, line)
 	if err != nil {
 		return nil, err
 	}
 	if selected == nil {
 		if action == "repair" || action == "install" {
-			return nil, errors.New("no signed, unblocked, non-downgrade release matches this installation and platform")
+			return nil, errors.New("no verified, unblocked, non-downgrade release matches this installation and platform")
 		}
 		return object{"updated": value(false), "reason": value("no_compatible_update"), "previousVersion": value(current)}, nil
 	}
@@ -387,7 +438,7 @@ func (manager *updateManager) run(ctx context.Context, action string, supported 
 	if state.Current != nil && selected.Version == state.Current.Version {
 		artifact := selected.Artifacts[manager.Target]
 		if artifact.SHA256 != state.Current.SHA256 || artifact.Size != state.Current.Size {
-			return nil, errors.New("signed release contents changed for an already-installed version; publish a new release version")
+			return nil, errors.New("release contents changed for an already-installed version; publish a new release version")
 		}
 		if action == "install" && manager.verifyInstalled(*state.Current) == nil {
 			return object{"updated": value(false), "reason": value("already_installed"), "version": value(selected.Version)}, nil
@@ -521,6 +572,7 @@ func handleUpdateCommand(ctx context.Context, c config, args []string) (bool, er
 	if err != nil {
 		return true, err
 	}
+	manager.ExtensionVersion = updateInstalledExtensionVersion(ctx, "")
 	result, err := manager.run(ctx, action, nil)
 	if err != nil {
 		return true, err
@@ -550,8 +602,21 @@ func nativeUpdateStatus(c config) (object, error) {
 	if err != nil {
 		return nil, err
 	}
-	trust, trustErr := updateProductionTrust()
+	var trust updateTrust
+	var trustErr error
+	github := nativeUpdateFeedURL == "" && nativeUpdateKeysJSON == ""
+	if github {
+		trustErr = updateGitHubValidateEndpoints()
+	} else {
+		trust, trustErr = updateProductionTrust()
+	}
 	result["configured"] = value(trustErr == nil)
+	if github {
+		result["source"], result["repository"] = value("github"), value(updateGitHubRepository)
+	}
+	if state.LastExtensionVersion != "" {
+		result["updateLine"] = value(strings.Join(strings.Split(state.LastExtensionVersion, ".")[:2], ".") + ".x")
+	}
 	if trustErr != nil {
 		result["configurationError"] = value(trustErr.Error())
 	}
@@ -643,15 +708,28 @@ func updateCompatibleNative(ctx context.Context, c config, extensionVersion stri
 	if pinned {
 		return unchanged("version_pinned"), nil
 	}
-	extension, err := updateParseVersion(extensionVersion)
-	if err != nil || !updateProtocolSupported(extension[0], supportedVersions) {
-		return unchanged("invalid_extension_version"), nil
-	}
 	if _, err := updateParseVersion(version); err != nil {
 		return unchanged("invalid_installed_version"), nil
 	}
-	if _, err := updateProductionTrust(); err != nil {
-		return unchanged("updates_unconfigured"), nil
+	if extensionVersion != "" {
+		extension, err := updateParseVersion(extensionVersion)
+		if err != nil || !updateProtocolSupported(extension[0], supportedVersions) {
+			return unchanged("invalid_extension_version"), nil
+		}
+	}
+	extensionVersion = updateInstalledExtensionVersion(ctx, extensionVersion)
+	if extensionVersion != "" {
+		extension, err := updateParseVersion(extensionVersion)
+		if err != nil {
+			return unchanged("invalid_extension_version"), nil
+		}
+		// Installed extensions can be newer than the connected browser. Their
+		// own release line supplies compatibility rather than the older peer.
+		if !updateProtocolSupported(extension[0], supportedVersions) {
+			supportedVersions = updateDefaultProtocols(extensionVersion)
+		}
+	} else {
+		supportedVersions = updateDefaultProtocols(version)
 	}
 	manager, err := newNativeUpdater(c)
 	if err != nil {

@@ -368,14 +368,14 @@ func updateDownload(ctx context.Context, client updateHTTPClient, url string, li
 		return 0, errors.New("compressed native update responses are not accepted")
 	}
 	if response.ContentLength > limit {
-		return 0, errors.New("native update download exceeds its signed size limit")
+		return 0, errors.New("native update download exceeds its size limit")
 	}
 	written, err := io.Copy(out, io.LimitReader(response.Body, limit+1))
 	if err != nil {
 		return written, err
 	}
 	if written > limit {
-		return written, errors.New("native update download exceeds its signed size limit")
+		return written, errors.New("native update download exceeds its size limit")
 	}
 	return written, nil
 }

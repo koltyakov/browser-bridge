@@ -64,7 +64,7 @@ Use Doctor's `protocol` diagnostics for the compatibility result.
 
 ## Updating a mismatched installation
 
-For npm installations, npm owns the runtime version:
+To manually refresh an npm installation:
 
 ```bash
 npm install -g @browserbridge/bbx@latest
@@ -76,9 +76,13 @@ The npm launcher downloads a stable GitHub release independently of its package
 version and verifies its release checksum. Set `BBX_VERSION` during installation
 to select the extension's release line or an exact native version.
 
-Standalone installations should install the desired versioned release binary
-and restart the bridge. Standard builds do not configure feed-based automatic
-updates. See [native runtime](../internal/bridge/README.md) for distribution details.
+Binaries with the GitHub updater automatically select the latest stable patch
+in the newest installed extension's `major.minor` release line, on extension
+reconnect and periodic checks. No separate feed is used. Standalone installs
+follow the same policy.
+
+Older unconfigured binaries need a one-time native upgrade; updating the extension
+cannot add this support. See [migration requirements](./native-cli.md#one-time-upgrade-for-unconfigured-installations).
 
 ## Changing the protocol
 

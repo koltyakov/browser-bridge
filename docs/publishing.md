@@ -117,9 +117,17 @@ launcher selects a stable release, verifies its size and SHA-256 checksum, and
 runs the executable self-test before installation.
 
 Release publishing does not require signing keys, a separate metadata release,
-or a renewal job. Standard builds do not embed a metadata feed or trust keys for
-feed-based automatic updates. Upgrade through npm or install the desired
-versioned native binary, then restart the bridge.
+or a renewal job. Standard binaries discover stable versioned GitHub releases
+directly and verify each native asset against that version's `checksums.txt`.
+Publish the complete native asset set and checksums before exposing a release
+as public. Existing versioned assets remain immutable.
+
+The newest installed extension selects the automatic `major.minor` release
+line. Reconnect checks and periodic daemon checks install the latest patch in
+that line. Existing binaries without a configured updater need a one-time native
+upgrade to a release containing this implementation; an extension update cannot
+add the missing native code. See [automatic native updates](./native-cli.md#automatic-native-updates)
+and [migration requirements](./native-cli.md#one-time-upgrade-for-unconfigured-installations).
 
 ## Chrome Web Store Submission
 

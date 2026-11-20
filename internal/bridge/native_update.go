@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 )
 
 // Identity arrives on Chrome's native messaging pipe after every extension
@@ -23,6 +24,28 @@ func checkExtensionNativeUpdate(ctx context.Context, c config, identity object, 
 	if err != nil {
 		// stdout is reserved for Chrome's framed native-messaging protocol.
 		fmt.Fprintln(os.Stderr, "Automatic Browser Bridge native update failed:", err)
+	}
+}
+
+// A running daemon checks even if no browser reconnects or agent sends a command.
+// The manager shares its daily throttle and installation lock with native hosts.
+func periodicNativeUpdates(ctx context.Context, c config, ticks <-chan time.Time, update compatibleNativeUpdate, restart func(config, string) error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case _, ok := <-ticks:
+			if !ok {
+				return
+			}
+			result, err := update(ctx, c, "", nil)
+			if err == nil && result.boolean("updated") {
+				err = restart(c, result.text("executable"))
+			}
+			if err != nil && ctx.Err() == nil {
+				fmt.Fprintln(os.Stderr, "Periodic Browser Bridge native update failed:", err)
+			}
+		}
 	}
 }
 

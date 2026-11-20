@@ -103,9 +103,67 @@ Set `BBX_VERSION` during installation to select an exact native version or
 release line. Standalone installations can replace their binary with the
 desired versioned release asset after verifying `checksums.txt`.
 
-Standard builds do not configure feed-based automatic updates. Existing
-signed-update verification and repair code is retained for legacy installations;
-it is not part of the normal release or installation path.
+### Automatic native updates
+
+Both npm and standalone binaries automatically discover stable versioned releases
+in `koltyakov/browser-bridge` on GitHub. There is no separate update feed, signing
+configuration, or renewal job.
+
+The newest installed BBX extension across supported browser profiles selects the
+`major.minor` line. For example, Chrome extension `2.2.1` and Edge extension `2.3.0`
+select the newest stable `2.3.x` native binary, including patches newer than the
+extension. Other release lines and prereleases are ignored. Updates never downgrade.
+Registered extension manifests and native identity supply versions; stale extension
+directories and disabled extensions do not raise the line. The newest observed
+version is retained, so an older browser reconnect cannot lower it.
+
+An extension update triggers an immediate check on native reconnect. While the
+daemon runs, it wakes hourly and checks GitHub at most once every 24 hours, even
+without an extension reconnect or an agent command. CLI/MCP startup can also check.
+Periodic checks use the newest observed extension line, or the running binary's
+line if no extension version is known. A newer extension bypasses the daily throttle.
+
+Downloads use HTTPS to the fixed repository and GitHub's asset servers. Before
+activation, BBX verifies the versioned release's `checksums.txt`, exact asset size,
+and SHA-256 digest, then runs the executable self-test for its version and native
+OS/architecture. This trusts GitHub repository ownership and TLS, not an independent
+publisher signature. API, network, checksum, or probe failures keep the installed
+selection unchanged.
+
+Activation preserves the bootstrap executable and verified rollback payloads.
+It restarts the daemon and native host and requests MCP restarts from their owning
+agents. No browser action is replayed. `bbx update status` reports the GitHub
+source, selected line, and payload integrity. Explicit commands are `bbx update
+check`, `apply`, `install`, `repair`, and `rollback`; plain `bbx rollback` still
+rolls back browser patches.
+
+Disable automatic updates with `bbx config set auto-update off` or
+`BBX_AUTO_UPDATE=off`. Re-enable with `bbx config set auto-update compatible`.
+Exact `BBX_VERSION=X.Y.Z` installation selectors remain pinned, including direct
+MCP launches. Release-line selectors and the default latest selection permit
+automatic updates. Remote destinations never update the local installation.
+
+### One-time upgrade for unconfigured installations
+
+An existing binary reporting `configured: false` in `bbx update status` cannot
+gain this updater from an extension update. This includes older builds expecting
+an unconfigured signed feed. They need one manual native upgrade to a published
+release containing the GitHub updater. Do not reinstall an older release and
+expect the extension to supply the missing native code.
+
+For npm, install a release containing this implementation with
+`npm install -g @browserbridge/bbx@latest`, then run `bbx restart`. For standalone
+installs, download that release's native OS/architecture asset, verify
+`checksums.txt`, replace the installed binary, and run `bbx install` and
+`bbx restart`. Restart older agents once if they predate coordinated MCP restart.
+Confirm `bbx update status` shows `configured: true` and `source: "github"`.
+Remove an exact native version pin through reinstalling with a release-line or
+default selector if automatic updating is wanted.
+
+Previously signed managed payloads remain subject to their original signature
+checks; they are not silently accepted as GitHub checksum records. A fresh native
+installation may be needed if an old managed selection cannot be verified.
+These are migration instructions, not an automatic migration of existing machines.
 
 ## Scheduled mutations and verified flows
 
@@ -135,6 +193,6 @@ make pack
 
 Build all targets after tests so every release binary uses the current source and version. Packaging writes executables to `dist/cli` and prints their sizes. Each binary must be smaller than 12,000,000 bytes. The npm prepack step checks the six expected files directly and generates the manifest from their exact bytes. The manifest is generated output and must not be committed.
 
-Native builds compress their embedded catalog and skill assets and omit Go's bundled HTTP/2 implementation to leave room for installed skill files within the fresh-install budget. Native update downloads use HTTPS over HTTP/1.1 with normal certificate and signature verification. This does not change browser networking or the bridge's socket, TCP, native-messaging, or MCP transports.
+Native builds compress their embedded catalog and skill assets and omit Go's bundled HTTP/2 implementation to leave room for installed skill files within the fresh-install budget. Native update downloads use HTTPS over HTTP/1.1 with certificate and release-checksum verification. This does not change browser networking or the bridge's socket, TCP, native-messaging, or MCP transports.
 
 The release workflow uploads and verifies all six native assets on the public `v<version>` GitHub release before publishing npm. It also packages the Chrome extension. See [publishing](./publishing.md) and the [native runtime README](../internal/bridge/README.md).

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestExtensionIdentityTriggersUpdateAndReplacement(t *testing.T) {
@@ -42,4 +43,40 @@ func TestExtensionIdentityTriggersUpdateAndReplacement(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPeriodicNativeUpdateChecksWithoutExtensionEvents(t *testing.T) {
+	ticks := make(chan time.Time, 3)
+	for i := 0; i < 3; i++ {
+		ticks <- time.Now()
+	}
+	close(ticks)
+	checks, restarts := 0, 0
+	periodicNativeUpdates(context.Background(), config{}, ticks,
+		func(_ context.Context, _ config, extension string, protocols []string) (object, error) {
+			checks++
+			if extension != "" || len(protocols) != 0 {
+				t.Fatal("periodic check required a connected browser", extension, protocols)
+			}
+			if checks == 1 {
+				return nil, errors.New("offline")
+			}
+			return object{"updated": value(checks == 2), "executable": value("/verified/bbx")}, nil
+		},
+		func(_ config, executable string) error {
+			restarts++
+			if executable != "/verified/bbx" {
+				t.Fatal(executable)
+			}
+			return nil
+		})
+	if checks != 3 || restarts != 1 {
+		t.Fatal(checks, restarts)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	periodicNativeUpdates(ctx, config{}, make(chan time.Time), func(context.Context, config, string, []string) (object, error) {
+		t.Fatal("check after shutdown")
+		return nil, nil
+	}, nil)
 }

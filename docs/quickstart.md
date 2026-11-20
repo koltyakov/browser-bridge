@@ -34,7 +34,7 @@ Update an npm-managed installation with:
 npm install -g @browserbridge/bbx@latest
 ```
 
-The npm package selects a native release independently of its own version. Set `BBX_VERSION` during installation to match your extension's release line or select an exact native version. Rerun the installation command to refresh that selection, then run `bbx restart`. Standard binaries do not use a separate automatic-update feed.
+The npm package selects a native release independently of its own version. Set `BBX_VERSION` during installation to select a release line or exact native version. Binaries with the GitHub updater automatically install the latest stable patch in the newest installed extension's `major.minor` line, on extension reconnect and periodic checks. Exact version pins opt out. Older unconfigured binaries need a [one-time native upgrade](./native-cli.md#one-time-upgrade-for-unconfigured-installations); updating the extension alone cannot enable their updater.
 
 If the extension does not connect itself during setup, run:
 

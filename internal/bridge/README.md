@@ -68,11 +68,23 @@ releases, verifies `checksums.txt` and asset size, and runs an executable
 self-test. Its native version selection is independent of the npm package
 version. `BBX_VERSION` selects an exact version or release line.
 
-Standard build scripts do not embed a metadata feed URL or update trust keys.
-There is no separate metadata release or scheduled renewal in the publishing
-pipeline. Upgrade by reinstalling through npm or installing the desired native
-release binary, then run `bbx restart`.
+The native updater uses the fixed GitHub repository's release list and each
+version's `checksums.txt`, without a metadata feed or signing configuration.
+The newest installed extension across browser profiles selects `major.minor`;
+BBX chooses the highest stable patch in that line without downgrading.
+Native identity after reconnect triggers immediate checks for a newer extension.
+An hourly daemon timer also runs checks, with a shared daily throttle, even
+without browser activity. The latest observed extension line survives older
+browser reconnects; a binary without any known extension uses its own line.
 
-The runtime retains signed-update verification and repair compatibility for
-older installations. Removing the publishing infrastructure does not turn
-those checks into unsigned update downloads.
+Activation verifies HTTPS release metadata, checksum and exact size, and the
+candidate self-test before atomically selecting a payload outside the bootstrap.
+Daemon/native/MCP processes restart through that selection. Local cached
+integrity records allow offline startup and rollback; these are not publisher
+signatures. GitHub repository ownership, TLS, and the local account are trusted.
+Remote destinations, exact native version pins, and `auto-update off` opt out.
+
+Legacy signed records retain their original verification path and are not
+reinterpreted as GitHub integrity records. Existing unconfigured binaries need
+a one-time native reinstall from a release containing the GitHub updater.
+See [update behavior and migration](../../docs/native-cli.md#automatic-native-updates).

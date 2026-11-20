@@ -109,14 +109,15 @@ For npm installations, upgrade with `npm install -g @browserbridge/bbx@latest`,
 then run `bbx restart`. The npm version does not constrain the native version.
 Exact native selectors such as `BBX_VERSION=2.2.2` remain pinned.
 
-Refresh an npm installation with `npm install -g @browserbridge/bbx@latest`,
-then run `bbx restart`. The launcher selects a stable native release and
-verifies its release checksum. `BBX_VERSION` selects a release line or exact
-native version during installation.
+The native updater discovers versioned GitHub releases without a separate feed.
+The newest installed extension selects the `major.minor` line; extension
+reconnects and periodic daemon checks install the latest stable patch in that
+line. `bbx update status` reports configuration and integrity.
+`bbx config set auto-update off` disables automatic updates.
 
-For standalone installations, install the desired versioned GitHub release
-binary and restart the bridge. Standard builds do not configure feed-based
-automatic updates. See [native CLI](./native-cli.md).
+Existing binaries with an unconfigured updater need a one-time manual native
+upgrade to a release containing this support. Updating the extension alone does
+not upgrade them. See [native CLI](./native-cli.md#automatic-native-updates).
 
 When upgrading from a Browser Bridge version that predates coordinated MCP
 restart, restart the agent once. MCP processes launched afterward register for
