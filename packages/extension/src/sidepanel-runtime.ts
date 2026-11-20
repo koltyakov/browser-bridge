@@ -54,6 +54,7 @@ export type UiSnapshot = {
   nativeConnected: boolean;
   nativeUnstable?: boolean;
   nativeHostVersion: string | null;
+  nativeUpdateSupported?: boolean;
   daemonProxy: DaemonProxyStatus | null;
   currentTab: SidePanelCurrentTab | null;
   accessSettings?: import('./access-settings.js').AccessSettings;

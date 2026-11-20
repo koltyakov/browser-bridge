@@ -1,6 +1,6 @@
 import { normalizeBridgeCaller } from '../../../protocol/src/caller.js';
 
-export type VersionMismatchView = { key: string; message: string };
+export type VersionMismatchView = { key: string; message: string; advisory?: true };
 
 export function getAgentTabsInlineHeight(
   availableHeight: number,
@@ -190,16 +190,33 @@ export function getStandaloneInstallView(
   };
 }
 
-/** Match the protocol's major-version compatibility contract. Independent
-minor and patch releases do not require users to reinstall anything. */
+/** Minor drift is advisory, never a connection or access gate. Only recommend
+the update command when the host explicitly advertises feed-free support. */
 export function getVersionMismatchView(
   extensionVersion: string | null | undefined,
-  cliVersion: string | null | undefined
+  cliVersion: string | null | undefined,
+  update: { nativeUpdateSupported?: boolean; installCommand?: string | null } = {}
 ): VersionMismatchView | null {
   const extensionMajor = getMajorVersion(extensionVersion);
   const cliMajor = getMajorVersion(cliVersion);
-  if (!extensionMajor || !cliMajor || extensionMajor === cliMajor) {
+  if (!extensionMajor || !cliMajor) {
     return null;
+  }
+  if (extensionMajor === cliMajor) {
+    const extensionMinor = Number(extensionVersion?.split('.')[1]);
+    const cliMinor = Number(cliVersion?.split('.')[1]);
+    // Patch differences and a newer native host require no binary upgrade.
+    if (extensionMinor <= cliMinor) return null;
+    const recommendation = update.nativeUpdateSupported
+      ? 'Run `bbx update`, then `bbx restart`.'
+      : update.installCommand
+        ? `Run the native installer script: ${update.installCommand}`
+        : 'Run the native installer script shown in Host Setup.';
+    return {
+      key: `${extensionVersion}:${cliVersion}:${update.nativeUpdateSupported ? 'update' : 'installer'}`,
+      advisory: true,
+      message: `BBX v${cliVersion} is older than extension v${extensionVersion}. The major versions match, so Browser Bridge can keep working. Updating the BBX binary is recommended. ${recommendation}`,
+    };
   }
 
   return {

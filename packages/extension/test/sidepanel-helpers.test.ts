@@ -122,16 +122,41 @@ test('tab activity age uses compact minute/second labels and handles missing tim
   assert.equal(formatTabActivityAge(Date.now()), '<1m');
 });
 
-test('getVersionMismatchView accepts independent minor releases and warns on major drift', () => {
+test('getVersionMismatchView accepts patch differences and a newer native minor, and warns on major drift', () => {
   assert.equal(getVersionMismatchView('1.8.1', '1.8.9'), null);
   assert.equal(getVersionMismatchView('1.8', '1.8.0'), null);
   assert.equal(getVersionMismatchView('invalid', '1.8.0'), null);
-  assert.equal(getVersionMismatchView('1.8.1', '1.7.9'), null);
+  assert.equal(getVersionMismatchView('1.8.1', '1.9.0'), null);
   assert.deepEqual(getVersionMismatchView('2.0.0', '1.8.1'), {
     key: '2.0.0:1.8.1',
     message:
       'CLI v1.8.1 and extension v2.0.0 use different protocol versions. Update the CLI and extension to compatible releases.',
   });
+});
+
+test('older native minors get a non-blocking recommendation based on explicit updater support', () => {
+  const legacy = getVersionMismatchView('2.3.0', '2.2.1');
+  assert.equal(legacy?.advisory, true);
+  assert.match(legacy?.message ?? '', /major versions match.*keep working/);
+  assert.match(legacy?.message ?? '', /installer script.*Host Setup/);
+  assert.doesNotMatch(legacy?.message ?? '', /bbx update/);
+  // A newer version number alone does not establish updater support.
+  assert.doesNotMatch(getVersionMismatchView('2.9.0', '2.8.0')?.message ?? '', /bbx update/);
+  const supported = getVersionMismatchView('2.3.0', '2.2.1', { nativeUpdateSupported: true });
+  assert.equal(supported?.advisory, true);
+  assert.match(supported?.message ?? '', /bbx update.*bbx restart/);
+  assert.notEqual(supported?.key, legacy?.key);
+  for (const os of ['mac', 'linux', 'win']) {
+    const script = getStandaloneInstallView(
+      '2.3.0',
+      { os, arch: 'x86-64' },
+      'jjjkmmcdkpcgamlopogicbnnhdgebhie'
+    );
+    assert.ok(script);
+    const view = getVersionMismatchView('2.3.0', '2.2.1', { installCommand: script.command });
+    assert.ok(view?.message.includes(script.command));
+    assert.doesNotMatch(view?.message ?? '', /bbx update/);
+  }
 });
 
 test('getSetupStatusView renders loading and unavailable setup states', () => {

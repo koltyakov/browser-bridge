@@ -109,6 +109,7 @@ export type ExtensionState = {
   nativePort: chrome.runtime.Port | null;
   pendingNativePort: chrome.runtime.Port | null;
   nativeHostVersion: string | null;
+  nativeUpdateSupported?: boolean;
   nativeHostVersionRequestId: string | null;
   daemonProxy: DaemonProxyStatus | null;
   enabledWindow: EnabledWindowState | null;
@@ -180,6 +181,7 @@ export function createExtensionState(): ExtensionState {
     nativePort: null,
     pendingNativePort: null,
     nativeHostVersion: null,
+    nativeUpdateSupported: false,
     nativeHostVersionRequestId: null,
     daemonProxy: null,
     enabledWindow: null,

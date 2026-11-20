@@ -95,6 +95,7 @@ export function isSetupStatus(value: unknown): value is SetupStatus {
 export function clearSetupStatus(state: ExtensionState, errorMessage: string | null = null): void {
   clearSetupStatusTimer(state);
   state.nativeHostVersion = null;
+  state.nativeUpdateSupported = false;
   state.nativeHostVersionRequestId = null;
   state.daemonProxy = null;
   state.otherEnabledWindows = [];
@@ -504,6 +505,7 @@ when it has recovered without requiring another connect/disconnect event. */
     }
     deps.clearSetupStatus(errorMessage);
     state.nativeHostVersion = null;
+    state.nativeUpdateSupported = false;
     state.nativeHostVersionRequestId = null;
 
     if (updateDisconnectedUi) {
@@ -694,12 +696,23 @@ export function handleHostStatusMessage(
     if (response?.id === state.nativeHostVersionRequestId) {
       state.nativeHostVersionRequestId = null;
       const nextVersion = response.ok ? getNativeHostVersion(response.result) : null;
+      const nextUpdateSupported =
+        response.ok &&
+        response.result !== null &&
+        typeof response.result === 'object' &&
+        'nativeUpdateSupported' in response.result &&
+        response.result.nativeUpdateSupported === true;
       const nextProxy = response.ok ? getDaemonProxyStatus(response.result) : null;
       const proxyChanged =
         state.daemonProxy?.enabled !== nextProxy?.enabled ||
         state.daemonProxy?.endpoint !== nextProxy?.endpoint;
-      if (state.nativeHostVersion !== nextVersion || proxyChanged) {
+      if (
+        state.nativeHostVersion !== nextVersion ||
+        (state.nativeUpdateSupported === true) !== nextUpdateSupported ||
+        proxyChanged
+      ) {
         state.nativeHostVersion = nextVersion;
+        state.nativeUpdateSupported = nextUpdateSupported;
         state.daemonProxy = nextProxy;
         void deps.emitUiState().catch(reportAsyncError);
       }

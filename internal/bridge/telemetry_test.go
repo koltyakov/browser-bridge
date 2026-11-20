@@ -113,6 +113,25 @@ func TestDaemonHealthAuthoritativeFieldsAndRetryTelemetry(t *testing.T) {
 	}
 }
 
+func TestDaemonHealthAdvertisesNativeUpdateSupportWithoutTrustingExtensionClaims(t *testing.T) {
+	beforeFeed, beforeKeys := nativeUpdateFeedURL, nativeUpdateKeysJSON
+	t.Cleanup(func() { nativeUpdateFeedURL, nativeUpdateKeysJSON = beforeFeed, beforeKeys })
+	d := serviceTestDaemon(t)
+	for _, legacy := range []bool{false, true} {
+		nativeUpdateFeedURL, nativeUpdateKeysJSON = "", ""
+		if legacy {
+			nativeUpdateFeedURL = "https://example.com/legacy-feed"
+		}
+		result := d.health(object{"nativeUpdateSupported": value(legacy)}, true)
+		if result.boolean("nativeUpdateSupported") == legacy {
+			t.Fatal("extension claim overrode native update capability", result)
+		}
+		if result := d.health(object{"nativeUpdateSupported": value(true)}, false); result["nativeUpdateSupported"] != nil {
+			t.Fatal("diagnostic capability leaked into lightweight health", result)
+		}
+	}
+}
+
 func TestDaemonLogsSanitizeIncidentalDataAndBoundStorage(t *testing.T) {
 	d := serviceTestDaemon(t)
 	d.pushServiceLog(object{"token": value("secret"), "url": value("https://user:password@example.com/?q=private#fragment"), "filename": value("/Users/person/private/evidence.json"), "message": value("Authorization: Bearer hidden\nCookie: a=secret\nfailed /home/user/private/file.txt")})

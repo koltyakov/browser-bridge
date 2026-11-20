@@ -18,6 +18,11 @@ a client advertising `1.12` are compatible in either direction.
 `make check-release-version` checks the major version; tests also enforce
 that the npm package and lockfile versions match.
 
+A same-major minor mismatch does not disable the extension, native host, or
+browser access. When the extension is on a newer minor line, the side panel
+shows a dismissible update recommendation while normal work continues. A newer
+native minor or a patch-only difference does not require a binary upgrade.
+
 ## Requests and health
 
 The Go client registers an authenticated agent connection, then sends requests
@@ -56,6 +61,12 @@ identifies the available browser/profile connections. See the
 `health.ping` is compact by default. Use `bbx call health.ping '{"diagnostics":true}'`
 for build identity, debugger/capture status, DOM baseline metrics, transport/proxy
 details, and recovery telemetry. Doctor requests these details automatically.
+Diagnostic health also reports `nativeUpdateSupported`. A value of `true`
+advertises the feed-free `bbx update` command. The side panel recommends
+`bbx update`, followed by `bbx restart`, only when that capability is explicitly
+present. For older hosts that omit it or report `false`, it recommends the
+platform-specific native installer script from Host Setup instead. A version
+number alone is not evidence of a configured updater.
 
 Doctor compares the client's major version with the daemon and extension
 version lists and reports compatibility. A successful transport connection or

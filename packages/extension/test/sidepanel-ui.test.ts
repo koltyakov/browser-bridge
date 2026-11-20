@@ -17,6 +17,7 @@ type SidepanelStateSync = {
   state: {
     nativeConnected: true;
     nativeHostVersion: string | null;
+    nativeUpdateSupported?: boolean;
     currentTab: SidepanelCurrentTab | null;
     accessSettings?: import('../src/access-settings.js').AccessSettings;
     agentTabs?: import('../src/background-ui.js').AgentTabUiState[];
@@ -1426,8 +1427,25 @@ test('sidepanel UI shows the global host CLI and harness version', async (t) => 
 
     portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '1.3.0'));
     assert.equal(mismatchBanner.hidden, true, 'minor-only differences remain compatible');
+    portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '1.1.9'));
+    assert.equal(mismatchBanner.hidden, false, 'an older minor gets an advisory');
+    assert.equal(mismatchBanner.getAttribute('role'), 'status');
+    assert.match(mismatchMessage.textContent ?? '', /major versions match.*keep working/);
+    assert.match(mismatchMessage.textContent ?? '', /native installer script/);
+    assert.doesNotMatch(mismatchMessage.textContent ?? '', /bbx update/);
+    assert.equal(document.getElementById('installation-section')?.hidden, false);
+    portPair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, '1.1.9', [], { nativeUpdateSupported: true })
+    );
+    assert.match(mismatchMessage.textContent ?? '', /bbx update.*bbx restart/);
+    dismissMismatch.click();
+    portPair.left.dispatchMessage(
+      createSidepanelStateSync(true, null, '1.1.9', [], { nativeUpdateSupported: true })
+    );
+    assert.equal(mismatchBanner.hidden, true, 'advisories remain dismissible');
     portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '2.0.0'));
     assert.equal(mismatchBanner.hidden, false);
+    assert.equal(mismatchBanner.getAttribute('role'), 'alert');
     assert.equal(
       mismatchMessage.textContent,
       'CLI v2.0.0 and extension v1.2.9 use different protocol versions. Update the CLI and extension to compatible releases.'

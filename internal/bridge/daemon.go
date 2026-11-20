@@ -648,6 +648,9 @@ func (d *daemon) health(result object, diagnostics bool) object {
 		return result
 	}
 	result["socketPath"] = value(d.config.address)
+	// Advertise the usable feed-free command explicitly. Older releases can
+	// contain an update command but lack the configuration needed to use it.
+	result["nativeUpdateSupported"] = value(nativeUpdateFeedURL == "" && nativeUpdateKeysJSON == "" && updateGitHubValidateEndpoints() == nil)
 	result["transport"] = value(d.config.address)
 	proxy := object{"enabled": value(false), "endpoint": value[*string](nil)}
 	if d.config.network == "tcp" {

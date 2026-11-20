@@ -15,7 +15,13 @@ test('Go daemon accepts same-major protocol versions and rejects incompatible ma
   const client = await connectTestClient(ctx);
   try {
     const current = getProtocolVersion();
-    for (const version of [current, `${current.split('.')[0]}.99`, '99.0', '0.5']) {
+    for (const version of [
+      current,
+      `${current.split('.')[0]}.0`,
+      `${current.split('.')[0]}.99`,
+      '99.0',
+      '0.5',
+    ]) {
       const response = await client.request({
         method: 'health.ping',
         meta: { protocol_version: version },

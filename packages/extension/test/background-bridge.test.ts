@@ -147,3 +147,34 @@ test('background bridge forwards validated native-port requests to the backgroun
   assert.equal(forwarded[0].id, 'req-valid');
   assert.equal(forwarded[0].method, 'health.ping');
 });
+
+test('native-port requests continue across older and newer minors in the same major', () => {
+  const major = getProtocolVersion().split('.')[0];
+  const forwarded: BridgeRequest[] = [];
+  const replies: BridgeResponse[] = [];
+  const listener = createNativePortMessageListener({
+    handleHostStatusMessage: () => false,
+    async handleBridgeRequest(request) {
+      forwarded.push(request);
+    },
+    reply(response) {
+      replies.push(response);
+    },
+    reportAsyncError(error) {
+      assert.fail(String(error));
+    },
+  });
+  for (const version of [`${major}.0`, `${major}.999`]) {
+    listener(
+      createRequest({
+        id: `minor-${version}`,
+        method: 'dom.query',
+        params: { selector: 'main' },
+        meta: { protocol_version: version },
+      })
+    );
+  }
+  assert.equal(replies.length, 0);
+  assert.equal(forwarded.length, 2);
+  assert.ok(forwarded.every((request) => request.method === 'dom.query'));
+});

@@ -1027,6 +1027,7 @@ summary {
 
 .version-mismatch-banner p {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .version-mismatch-banner button {

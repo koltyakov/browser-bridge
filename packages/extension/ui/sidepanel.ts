@@ -91,6 +91,7 @@ export type UiSnapshot = {
   nativeConnected: boolean;
   nativeUnstable?: boolean;
   nativeHostVersion: string | null;
+  nativeUpdateSupported?: boolean;
   daemonProxy: DaemonProxyStatus | null;
   currentTab: SidePanelCurrentTab | null;
   accessSettings?: import('../src/access-settings.js').AccessSettings;
@@ -196,6 +197,7 @@ for (const [index, tab] of setupInstallTabs.entries()) {
     setupInstallTabs[next].button.focus();
   });
 }
+let standaloneInstallCommand: string | null = null;
 void renderStandaloneInstall();
 const controlSection = document.getElementById('control-section') as HTMLElement;
 const installationSection = document.getElementById('installation-section') as HTMLDetailsElement;
@@ -255,6 +257,10 @@ async function renderStandaloneInstall(): Promise<void> {
     const hint = document.getElementById('setup-native-hint') as HTMLElement;
     const pathHint = document.getElementById('setup-native-path-hint') as HTMLElement;
     command.textContent = view.command;
+    // The same platform-specific script repairs legacy hosts that cannot
+    // update themselves. Re-render if a version snapshot arrived first.
+    standaloneInstallCommand = view.command;
+    renderVersionMismatch(latestState?.nativeHostVersion ?? null);
     command.hidden = false;
     hint.textContent = view.label;
     hint.hidden = false;
@@ -1090,7 +1096,10 @@ function renderHostVersion(hostVersion: string | null): void {
 function renderVersionMismatch(cliVersion: string | null): void {
   const extensionVersion =
     typeof chrome.runtime.getManifest === 'function' ? chrome.runtime.getManifest().version : null;
-  const view = getVersionMismatchView(extensionVersion, cliVersion);
+  const view = getVersionMismatchView(extensionVersion, cliVersion, {
+    nativeUpdateSupported: latestState?.nativeUpdateSupported === true,
+    installCommand: standaloneInstallCommand,
+  });
   currentVersionMismatchKey = view?.key ?? null;
   if (!view || view.key === dismissedVersionMismatchKey) {
     versionMismatchBanner.hidden = true;
@@ -1099,6 +1108,7 @@ function renderVersionMismatch(cliVersion: string | null): void {
   }
 
   versionMismatchMessage.textContent = view.message;
+  versionMismatchBanner.setAttribute('role', view.advisory ? 'status' : 'alert');
   versionMismatchBanner.hidden = false;
 }
 

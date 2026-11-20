@@ -113,6 +113,11 @@ The newest installed BBX extension across supported browser profiles selects the
 `major.minor` line. For example, Chrome extension `2.2.1` and Edge extension `2.3.0`
 select the newest stable `2.3.x` native binary, including patches newer than the
 extension. Other release lines and prereleases are ignored. Updates never downgrade.
+Different minor versions within the same major remain compatible while an update
+is pending, unavailable, or disabled. The extension shows a non-blocking update
+recommendation for an older native minor, using `bbx update` only if diagnostic
+health advertises `nativeUpdateSupported: true`; otherwise it offers the native
+installer script. It does not disable browser access merely for minor drift.
 Registered extension manifests and native identity supply versions; stale extension
 directories and disabled extensions do not raise the line. The newest observed
 version is retained, so an older browser reconnect cannot lower it.

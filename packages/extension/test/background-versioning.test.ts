@@ -38,6 +38,12 @@ test('getVersionNegotiationPayload returns supported list without warning for mi
   assert.deepEqual(getVersionNegotiationPayload(SUPPORTED_VERSIONS[0]), {
     supported_versions: SUPPORTED_VERSIONS,
   });
+  const major = SUPPORTED_VERSIONS[0].split('.')[0];
+  for (const version of [`${major}.0`, `${major}.999`]) {
+    assert.deepEqual(getVersionNegotiationPayload(version), {
+      supported_versions: SUPPORTED_VERSIONS,
+    });
+  }
 });
 
 test('getVersionNegotiationPayload warns when the extension is newer than the client', () => {

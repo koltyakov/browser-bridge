@@ -81,6 +81,7 @@ type StateSyncMessage = {
 
 type TestBackgroundState = {
   nativePort: NativePort | null;
+  nativeUpdateSupported?: boolean;
   uiPorts: Map<object, { scopeTabId?: number }>;
   actionLog: ActionLogEntry[];
   setupStatus: { mcpClients: unknown[]; skillTargets: unknown[] } | null;
@@ -356,6 +357,20 @@ test('background UI port syncs current state and updates scoped tab state on req
       actionLog: [state.actionLog[1]],
     },
   });
+  state.nativeUpdateSupported = true;
+  portPair.left.dispatchMessage({ type: 'state.request', scopeTabId: 41 });
+  await flushAsyncWork();
+  assert.equal(
+    getStateSyncMessages(portPair.left.postedMessages).at(-1)?.state.nativeUpdateSupported,
+    true
+  );
+  state.nativeUpdateSupported = false;
+  portPair.left.dispatchMessage({ type: 'state.request', scopeTabId: 41 });
+  await flushAsyncWork();
+  assert.equal(
+    getStateSyncMessages(portPair.left.postedMessages).at(-1)?.state.nativeUpdateSupported,
+    undefined
+  );
 });
 
 test('background UI port waits for persisted window access to be restored before syncing', async () => {

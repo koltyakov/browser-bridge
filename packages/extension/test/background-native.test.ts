@@ -24,6 +24,8 @@ import {
 import type { SetupStatus } from '../../../protocol/src/types.js';
 import {
   createNativeConnectionController,
+  clearSetupStatus,
+  handleHostStatusMessage,
   refreshSetupStatus,
   sendIdentity,
 } from '../src/background-native.js';
@@ -208,6 +210,61 @@ test('native host version prefers the development label and falls back for older
       typeof daemonVersionName === 'string' && daemonVersionName ? daemonVersionName : '1.2.0'
     );
   }
+});
+
+test('native updater support requires an explicit health capability and resets on disconnect', async () => {
+  for (const supported of [undefined, false, 'true', 1, true]) {
+    const nativePort = createNativePort([], { nativeUpdateSupported: supported });
+    const loaded = await loadBackground({
+      chrome: createChromeFake({ runtime: { connectNative: () => nativePort } }),
+      query: `test-native-update-capability-${typeof supported}-${String(supported)}`,
+    });
+    await flushAsyncWork();
+    const state = getNativeModule(loaded).getStateForTest();
+    assert.equal(state.nativeUpdateSupported, supported === true);
+    clearSetupStatus(state);
+    assert.equal(state.nativeUpdateSupported, false);
+  }
+});
+
+test('native updater capability changes refresh the UI even at the same host version', async () => {
+  const state = createExtensionState();
+  state.nativeHostVersion = '2.2.1';
+  state.nativeHostVersionRequestId = 'version-check';
+  let emissions = 0;
+  const deps = {
+    async appendActionLogEntry() {},
+    async emitUiState() {
+      emissions++;
+    },
+    getSetupActionMethodLabel() {
+      return '';
+    },
+    getSetupActionSuccessSummary() {
+      return '';
+    },
+    getSetupActionErrorSummary() {
+      return '';
+    },
+    refreshSetupStatus() {},
+  };
+  assert.equal(
+    handleHostStatusMessage(
+      {
+        type: 'host.bridge_response',
+        response: createSuccess('version-check', {
+          daemonVersion: '2.2.1',
+          nativeUpdateSupported: true,
+        }),
+      },
+      state,
+      deps
+    ),
+    true
+  );
+  await flushAsyncWork();
+  assert.equal(state.nativeUpdateSupported, true);
+  assert.equal(emissions, 1);
 });
 
 async function waitForCondition(predicate: () => boolean): Promise<void> {
