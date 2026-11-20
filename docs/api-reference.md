@@ -460,8 +460,15 @@ Verify with a targeted wait or structured read.
   conditions across full and SPA navigation. `waitForLoad` means Chrome tab
   status `complete`, not `networkidle`.
 - AX results may filter `compact` or `interactiveOnly` before `maxNodes` and
-  always report depth-limited partial-topology metadata. Semantic interactivity
-  is not current actionability.
+  report partial-topology metadata when incomplete. CDP `maxDepth` counts raw
+  AX edges before filtering, including ignored wrapper nodes. The unscoped root
+  is depth 0; filtering wrappers out of the result does not recover depth.
+  Semantic interactivity is not current actionability.
+  Incremental large-page reads report `truncation.reason: "timeBudget"` when
+  their traversal time budget expires, not `"maxNodes"`. `truncation.reasons`
+  also includes `"maxDepth"` if a depth boundary was encountered. Counts then
+  describe only the nodes read. Narrow the selector or use `source: "dom"`
+  rather than increasing `maxNodes` to address time-budget exhaustion.
 - `page.get_network` defaults to fetch/XHR entries
   `{method,url,status,duration,type,ts,size}` in capture order. `source: "cdp"`
   requires explicit start/read/clear/stop lifecycle, captures broader resource

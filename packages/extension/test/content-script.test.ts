@@ -1321,6 +1321,103 @@ test('active DOM patches survive read-registry eviction and retain exact detache
   );
 });
 
+for (const change of [
+  'insert-light',
+  'ancestor-style',
+  'ancestor-class',
+  'insert-open-shadow',
+  'insert-closed-shadow',
+  'attach-root',
+  'insert-shadow-host',
+  'shadow-ancestor-style',
+] as const) {
+  test(`observation discovers ${change} dialogs without dropping existing-dialog filtering`, async (t) => {
+    await withDocument(
+      '<html><body><div role="dialog" aria-label="Existing"></div><div id="host"></div><section id="ancestor" style="display:none"><div role="dialog" aria-label="New"></div></section></body></html>',
+      async ({ document }) => {
+        const saved = captureGlobals(['location', 'getComputedStyle']);
+        try {
+          Reflect.set(globalThis, 'location', { href: 'https://example.test/' });
+          Reflect.set(globalThis, 'getComputedStyle', (element: Element) => {
+            let current: Element | null = element;
+            while (current) {
+              if (
+                (current as HTMLElement).style.display === 'none' ||
+                current.classList.contains('concealed')
+              )
+                return { display: 'none', visibility: 'visible' };
+              const parent: ParentNode | null = current.parentNode;
+              current =
+                parent?.nodeType === 11 ? (parent as ShadowRoot).host : current.parentElement;
+            }
+            return { display: 'block', visibility: 'visible' };
+          });
+          const closedRoots = new WeakMap<Element, ShadowRoot>();
+          const host = document.getElementById('host') as HTMLElement;
+          const ancestor = document.getElementById('ancestor') as HTMLElement;
+          let shadow: ShadowRoot | null = null;
+          if (change === 'insert-open-shadow' || change === 'insert-closed-shadow') {
+            shadow = host.attachShadow({
+              mode: change === 'insert-closed-shadow' ? 'closed' : 'open',
+            });
+            closedRoots.set(host, shadow);
+          }
+          if (change === 'shadow-ancestor-style') {
+            host.style.display = 'none';
+            shadow = host.attachShadow({ mode: 'open' });
+            shadow.innerHTML = '<div role="dialog" aria-label="New"></div>';
+          }
+          if (change === 'ancestor-class') {
+            ancestor.style.display = '';
+            ancestor.className = 'concealed';
+          }
+          const harness = createChromeHarness();
+          await loadContentScript(t, {
+            withHelpers: true,
+            preserveDomGlobals: true,
+            chrome: {
+              ...harness.chrome,
+              dom: {
+                openOrClosedShadowRoot: (element: Element) => closedRoots.get(element) ?? null,
+              },
+            },
+          });
+          const listener = harness.getListener();
+          const started = await executeBridgeMethod(listener, 'input.observe_start', {});
+          if (change === 'ancestor-style') ancestor.style.display = '';
+          else if (change === 'ancestor-class') ancestor.className = '';
+          else if (change === 'shadow-ancestor-style') host.style.display = '';
+          else {
+            if (change === 'attach-root') shadow = host.attachShadow({ mode: 'open' });
+            if (change === 'insert-shadow-host') {
+              const inserted = document.createElement('x-dialog-host');
+              document.body.appendChild(inserted);
+              shadow = inserted.attachShadow({ mode: 'closed' });
+              closedRoots.set(inserted, shadow);
+            }
+            const dialog = document.createElement('dialog');
+            dialog.setAttribute('open', '');
+            dialog.setAttribute('aria-label', 'New');
+            (shadow ?? document.body).appendChild(dialog);
+          }
+          const result = await executeBridgeMethod(listener, 'input.observe_finish', {
+            observationId: started.observationId,
+            settleMs: 0,
+          });
+          assert(Array.isArray(result.dialogs));
+          assert.deepEqual(
+            result.dialogs.map((dialog: unknown) => expectRecord(dialog).name),
+            ['New']
+          );
+          assert.equal(expectRecord(result.observation).status, 'completed');
+        } finally {
+          restoreGlobals(saved);
+        }
+      }
+    );
+  });
+}
+
 test('failed, discarded, and evicted input observations release observers and unload listeners', async (t) => {
   await withDocument(
     '<html><body><button>Not editable</button></body></html>',
@@ -2159,6 +2256,46 @@ test('frame wait probes preserve scoped descendant-text matching', async (t) => 
         });
         assert.deepEqual(result, { found });
       }
+    }
+  );
+});
+
+test('text input refuses incomplete uniqueness scans before dispatching a top-of-page match', async (t) => {
+  await withDocument(
+    `<html><body><button id="first">Save profile</button>${'<p>Unrelated row</p>'.repeat(6000)}<button>Save profile</button></body></html>`,
+    async ({ document }) => {
+      let now = 0;
+      t.mock.method(performance, 'now', () => now);
+      const first = document.getElementById('first')!;
+      Reflect.set(first, 'getBoundingClientRect', () => ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        width: 100,
+        height: 20,
+      }));
+      Reflect.set(first, 'checkVisibility', () => {
+        now = 2001;
+        return true;
+      });
+      let clicks = 0;
+      first.addEventListener('click', () => clicks++);
+      const harness = createChromeHarness();
+      await loadContentScript(t, {
+        withHelpers: true,
+        preserveDomGlobals: true,
+        chrome: harness.chrome,
+      });
+      const result = await executeBridgeMethod(harness.getListener(), 'input.click', {
+        target: { text: 'Save profile', exact: true },
+        observe: false,
+        timeoutMs: 0,
+      });
+      const error = expectRecord(result.error);
+      assert.equal(error.code, 'RESULT_TRUNCATED');
+      assert.equal(expectRecord(expectRecord(error.details).aftermath).dispatch, 'not_started');
+      assert.equal(clicks, 0);
     }
   );
 });

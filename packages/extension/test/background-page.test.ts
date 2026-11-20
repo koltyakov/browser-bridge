@@ -5,6 +5,7 @@ import { createChromeEvent } from '../../../tests/_helpers/chromeFake.ts';
 import { createRequest, ERROR_CODES, getProtocolVersion } from '../../../protocol/src/index.js';
 import type { BridgeRequest, BridgeResponse } from '../../../protocol/src/types.js';
 import type { ArtifactDescriptor } from '../../../protocol/src/types.js';
+import type { AccessibilityTreeResult } from '../../../protocol/src/types.js';
 import type { ExtensionState } from '../src/background-state.js';
 import { createPageRequestController } from '../src/background-page.js';
 import type { DebuggerRunOptions } from '../src/debugger-coordinator.js';
@@ -29,6 +30,7 @@ function createController(
     }>;
     waitForDialog?: () => Promise<Record<string, unknown> | null>;
     sendCommandError?: (method: string) => Error | null;
+    sendCommandResult?: (method: string, params: Record<string, unknown>) => unknown;
     onSendCommand?: (
       method: string,
       setDialog: (value: Record<string, unknown> | null) => void
@@ -142,7 +144,7 @@ function createController(
       options.onSendCommand?.(method, setDialog);
       const commandError = options.sendCommandError?.(method);
       if (commandError) throw commandError;
-      return { ok: true };
+      return options.sendCommandResult?.(method, params) ?? { ok: true };
     },
     sendTabMessage: options.sendTabMessage ?? (async () => ({})),
     contentScriptTimeoutMs: 5_000,
@@ -990,6 +992,113 @@ test('debugger replay is opt-in only for proven page and CDP reads', async () =>
     { retryDetached: true, releaseAfterRun: true },
     { retryDetached: true, releaseAfterRun: true },
   ]);
+});
+
+for (const maxDepth of [2, 20]) {
+  test(`AX time-budget responses preserve partial evidence and depth metadata at depth ${maxDepth}`, async (t) => {
+    let now = 0;
+    t.mock.method(Date, 'now', () => now);
+    const raw = (nodeId: string, role: string, childIds: string[] = []) => ({
+      nodeId,
+      role: { value: role },
+      childIds,
+    });
+    const all = [
+      raw('root', 'RootWebArea', ['save', 'group', 'slow']),
+      raw('save', 'button'),
+      raw('group', 'group', ['cut']),
+      raw('cut', 'group', ['below']),
+      raw('below', 'generic'),
+      raw('slow', 'group', ['late']),
+      raw('late', 'button'),
+    ];
+    const byId = new Map(all.map((node) => [node.nodeId, node]));
+    const { controller, commands } = createController({
+      sendCommandResult(method, params) {
+        if (method === 'Runtime.evaluate') return { result: { value: 10000 } };
+        if (method === 'Accessibility.getRootAXNode') return { node: all[0] };
+        if (method === 'Accessibility.getChildAXNodes') {
+          if (params.id === 'slow') now = 2001;
+          return {
+            nodes: (byId.get(String(params.id))?.childIds ?? []).map((id) => byId.get(id)),
+          };
+        }
+        return {};
+      },
+    });
+    const response = await controller.handleAccessibilityTree(
+      createRequest({
+        id: `ax-time-budget-${maxDepth}`,
+        method: 'dom.get_accessibility_tree',
+        params: { interactiveOnly: true, maxNodes: 50, maxDepth },
+      })
+    );
+    assert(response.ok);
+    const result = response.result as AccessibilityTreeResult;
+    assert.deepEqual(
+      result.nodes.map((node) => node.nodeId),
+      ['save']
+    );
+    assert.equal(result.count, 1);
+    assert.equal(result.total, 1);
+    assert.equal(result.truncated, true);
+    assert.equal(result.truncation.reason, 'timeBudget');
+    assert.deepEqual(result.truncation.reasons, [
+      'timeBudget',
+      ...(maxDepth === 2 ? ['maxDepth'] : []),
+    ]);
+    assert.equal(result.truncation.omitted, 0);
+    assert.equal(result.truncation.partialTopology, true);
+    assert.match(result.continuationHint, /time budget/);
+    assert.match(result.continuationHint, /only the nodes read/);
+    assert.match(result.continuationHint, /selector.*source "dom"/);
+    assert.doesNotMatch(result.continuationHint, /reached maxNodes|larger maxNodes/);
+    assert.equal(response.meta?.result_truncated, true);
+    assert.equal(response.meta?.continuation_hint, result.continuationHint);
+    assert.equal(commands.at(-1)?.method, 'Accessibility.disable');
+    assert.equal(
+      commands.some(({ method }) => method === 'Accessibility.getFullAXTree'),
+      false
+    );
+  });
+}
+
+test('bounded AX responses still identify genuine maxNodes exhaustion', async () => {
+  const buttons = Array.from({ length: 12 }, (_, index) => ({
+    nodeId: `button-${index}`,
+    role: { value: 'button' },
+    childIds: [],
+  }));
+  const { controller } = createController({
+    sendCommandResult(method) {
+      if (method === 'Runtime.evaluate') return { result: { value: 10000 } };
+      if (method === 'Accessibility.getRootAXNode')
+        return {
+          node: {
+            nodeId: 'root',
+            role: { value: 'RootWebArea' },
+            childIds: buttons.map((node) => node.nodeId),
+          },
+        };
+      return { nodes: buttons };
+    },
+  });
+  const response = await controller.handleAccessibilityTree(
+    createRequest({
+      id: 'ax-node-budget',
+      method: 'dom.get_accessibility_tree',
+      params: { interactiveOnly: true, maxNodes: 10 },
+    })
+  );
+  assert(response.ok);
+  const result = response.result as AccessibilityTreeResult;
+  assert.equal(result.count, 10);
+  assert.equal(result.truncated, true);
+  assert.equal(result.truncation.reason, 'maxNodes');
+  assert.deepEqual(result.truncation.reasons, ['maxNodes']);
+  assert.equal(result.truncation.omitted, 1);
+  assert.match(result.continuationHint, /reached maxNodes 10/);
+  assert.doesNotMatch(result.continuationHint, /time budget/);
 });
 
 test('HAR export returns inline HAR without mutating capture lifecycle', async () => {

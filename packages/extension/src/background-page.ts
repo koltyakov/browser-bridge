@@ -700,22 +700,24 @@ descriptions, and interactive states. */
           }
           const cdpResult = result as { nodes?: Array<Record<string, unknown>> };
           const rawNodes = cdpResult.nodes || [];
-          const built = buildAccessibilityTree(rawNodes, params);
-          // A bounded read stops after maxNodes plus one retained node, so the
-          // unread rest of the page is reported as maxNodes truncation.
-          const tree = bounded && !bounded.complete ? { ...built, truncated: true } : built;
+          const tree = buildAccessibilityTree(rawNodes, params);
+          const timeLimited = bounded?.stopReason === 'timeBudget';
+          const nodeLimited = tree.truncated || bounded?.stopReason === 'maxNodes';
           const depthHint =
             params.maxDepth < 20
               ? 'retry with a larger maxDepth to inspect potentially omitted descendants'
               : 'narrow the selector to inspect potentially omitted descendants';
           const depthLimited = bounded ? bounded.depthLimited : tree.missingChildCount > 0;
-          const continuationHint = tree.truncated
-            ? bounded && !bounded.complete
-              ? `The AX result reached maxNodes ${params.maxNodes}; this large page was read incrementally, so total counts only the nodes read. Retry with a larger maxNodes, a selector, or source "dom".`
-              : `The AX result reached maxNodes ${params.maxNodes}; retry with a larger maxNodes or ${depthHint}.`
-            : depthLimited
-              ? `The AX source was depth-limited to ${params.maxDepth}; ${depthHint}.`
-              : null;
+          const truncated = timeLimited || nodeLimited || depthLimited;
+          const continuationHint = timeLimited
+            ? 'The AX traversal exhausted its time budget; total counts only the nodes read. Narrow the selector or use source "dom".'
+            : nodeLimited
+              ? bounded && !bounded.complete
+                ? `The AX result reached maxNodes ${params.maxNodes}; this large page was read incrementally, so total counts only the nodes read. Retry with a larger maxNodes, a selector, or source "dom".`
+                : `The AX result reached maxNodes ${params.maxNodes}; retry with a larger maxNodes or ${depthHint}.`
+              : depthLimited
+                ? `The AX source was depth-limited to ${params.maxDepth}; ${depthHint}.`
+                : null;
           return createSuccess(
             request.id,
             {
@@ -731,25 +733,32 @@ descriptions, and interactive states. */
               source: 'cdp-accessibility',
               compact: params.compact,
               interactiveOnly: params.interactiveOnly,
-              truncated: tree.truncated || depthLimited,
+              truncated,
               truncation: {
-                reason: tree.truncated ? 'maxNodes' : depthLimited ? 'maxDepth' : null,
+                reason: timeLimited
+                  ? 'timeBudget'
+                  : nodeLimited
+                    ? 'maxNodes'
+                    : depthLimited
+                      ? 'maxDepth'
+                      : null,
                 reasons: [
-                  ...(tree.truncated ? ['maxNodes'] : []),
+                  ...(timeLimited ? ['timeBudget'] : []),
+                  ...(nodeLimited ? ['maxNodes'] : []),
                   ...(depthLimited ? ['maxDepth'] : []),
                 ],
                 maxNodes: params.maxNodes,
                 maxDepth: params.maxDepth,
                 omitted: tree.omitted,
                 missingChildCount: tree.missingChildCount,
-                partialTopology: tree.truncated || depthLimited,
+                partialTopology: truncated,
               },
               continuationHint,
             },
             {
               method: request.method,
               debugger_backed: true,
-              result_truncated: tree.truncated || depthLimited,
+              result_truncated: truncated,
               continuation_hint: continuationHint,
             }
           );

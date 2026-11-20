@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { normalizeAccessibilityTreeParams } from '../../../protocol/src/index.js';
 
 import {
   fetchBoundedAXNodes,
@@ -326,6 +327,7 @@ test('bounded AX reads walk child lists in page order and stop after maxNodes', 
 
   const complete = await fetchBoundedAXNodes(send, { ...options, maxNodes: 50 });
   assert.equal(complete.complete, true);
+  assert.equal(complete.stopReason, null);
   assert.deepEqual(
     buildAccessibilityTree(complete.nodes, { ...options, maxNodes: 50 }).nodes,
     buildAccessibilityTree(all, { ...options, maxNodes: 50 }).nodes
@@ -334,6 +336,7 @@ test('bounded AX reads walk child lists in page order and stop after maxNodes', 
   calls.length = 0;
   const partial = await fetchBoundedAXNodes(send, { ...options, maxNodes: 1 });
   assert.equal(partial.complete, false);
+  assert.equal(partial.stopReason, 'maxNodes');
   assert.deepEqual(
     buildAccessibilityTree(partial.nodes, { ...options, maxNodes: 1 }).nodes.map(
       (node) => node.name
@@ -345,6 +348,89 @@ test('bounded AX reads walk child lists in page order and stop after maxNodes', 
 
   const shallow = await fetchBoundedAXNodes(send, { ...options, maxNodes: 50, maxDepth: 1 });
   assert.equal(shallow.depthLimited, true);
+  assert.equal(shallow.complete, true);
+  assert.equal(shallow.stopReason, null);
+});
+
+test('bounded AX reads distinguish elapsed time from retained-node exhaustion', async (t) => {
+  let now = 0;
+  t.mock.method(Date, 'now', () => now);
+  const root = { nodeId: 'root', role: { value: 'RootWebArea' }, childIds: ['save', 'slow'] };
+  const save = { nodeId: 'save', role: { value: 'button' }, childIds: [] };
+  const slow = { nodeId: 'slow', role: { value: 'group' }, childIds: ['late'] };
+  const calls: string[] = [];
+  const send = async (method: string, params: Record<string, unknown>) => {
+    calls.push(`${method}:${String(params.id ?? '')}`);
+    if (method === 'Accessibility.getRootAXNode') return { node: root };
+    if (params.id === 'root') {
+      now = 2000; // The existing deadline is inclusive.
+      return { nodes: [save, slow] };
+    }
+    now = 2001;
+    return { nodes: [{ nodeId: 'late', role: { value: 'button' }, childIds: [] }] };
+  };
+  const options = { compact: false, interactiveOnly: true, maxNodes: 50, maxDepth: 6 };
+  const result = await fetchBoundedAXNodes(send, options);
+  assert.equal(result.complete, false);
+  assert.equal(result.stopReason, 'timeBudget');
+  assert.equal(result.depthLimited, false);
+  assert.deepEqual(
+    buildAccessibilityTree(result.nodes, options).nodes.map((node) => node.nodeId),
+    ['save']
+  );
+  assert.deepEqual(calls, [
+    'Accessibility.getRootAXNode:',
+    'Accessibility.getChildAXNodes:root',
+    'Accessibility.getChildAXNodes:slow',
+  ]);
+});
+
+test('bounded AX depth counts ignored wrappers before interactive filtering without changing defaults', async () => {
+  const raw = (nodeId: string, role: string, childIds: string[] = [], ignored = false) => ({
+    nodeId,
+    role: { value: role },
+    childIds,
+    ignored,
+  });
+  const all = [
+    raw('root', 'RootWebArea', ['html']),
+    raw('html', 'none', ['body'], true),
+    raw('body', 'none', ['header', 'main'], true),
+    raw('header', 'banner', ['email', 'save']),
+    raw('email', 'textbox'),
+    raw('save', 'button'),
+    raw('main', 'main', ['table']),
+    raw('table', 'table', ['rows']),
+    raw('rows', 'rowgroup', ['row']),
+    raw('row', 'row', ['cell']),
+    raw('cell', 'cell', ['edit']),
+    raw('edit', 'button'),
+  ];
+  const byId = new Map(all.map((node) => [node.nodeId, node]));
+  const send = async (method: string, params: Record<string, unknown>) => {
+    if (method === 'Accessibility.getRootAXNode') return { node: all[0] };
+    return {
+      nodes: (byId.get(String(params.id))?.childIds ?? []).map((id) => byId.get(id)),
+    };
+  };
+  const defaults = normalizeAccessibilityTreeParams();
+  assert.equal(defaults.maxDepth, 6);
+  assert.equal(defaults.maxNodes, 500);
+  const options = { ...defaults, interactiveOnly: true, maxNodes: 50 };
+  const shallow = await fetchBoundedAXNodes(send, options);
+  assert.equal(shallow.complete, true);
+  assert.equal(shallow.depthLimited, true);
+  assert.equal(shallow.stopReason, null);
+  assert.deepEqual(
+    buildAccessibilityTree(shallow.nodes, options).nodes.map((node) => node.nodeId),
+    ['email', 'save']
+  );
+  const deep = await fetchBoundedAXNodes(send, { ...options, maxDepth: 8 });
+  assert.equal(deep.depthLimited, false);
+  assert.deepEqual(
+    buildAccessibilityTree(deep.nodes, options).nodes.map((node) => node.nodeId),
+    ['email', 'save', 'edit']
+  );
 });
 
 test('bounded AX reads reuse descendants Chrome returns through ignored wrappers', async () => {

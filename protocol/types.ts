@@ -1710,6 +1710,7 @@ export interface NormalizedTabCloseParams extends BridgeParams {
 
 export interface AccessibilityTreeParams {
   selector?: string;
+  /** CDP depth counts raw AX edges before filtering, including ignored nodes; the unscoped root is depth 0. */
   maxDepth?: number;
   maxNodes?: number;
   compact?: boolean;
@@ -1821,8 +1822,8 @@ export interface AccessibilityTreeResult {
   interactiveOnly: boolean;
   truncated: boolean;
   truncation: {
-    reason: 'maxNodes' | 'maxDepth';
-    reasons: Array<'maxNodes' | 'maxDepth'>;
+    reason: 'maxNodes' | 'maxDepth' | 'timeBudget';
+    reasons: Array<'maxNodes' | 'maxDepth' | 'timeBudget'>;
     maxNodes: number;
     maxDepth: number;
     omitted: number;

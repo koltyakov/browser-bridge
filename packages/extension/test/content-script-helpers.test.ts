@@ -33,6 +33,7 @@ type WaitElement = {
 };
 type Helpers = {
   querySelectorDeep: (selector: string, root?: ParentNode) => Element | null;
+  querySelectorAllDeepNative: (selector: string, root?: ParentNode) => Element[];
   clamp: (value: number, min: number, max: number) => number;
   delay: (ms: number) => Promise<void>;
   truncateText: (
@@ -96,6 +97,98 @@ test('first shadow match preserves outer-root precedence over nested roots', asy
     assert.equal(helpers.querySelectorDeep('#save'), shadow.querySelector('#save'));
     assert.equal(helpers.querySelectorDeep('#missing'), null);
     assert.throws(() => helpers.querySelectorDeep('['));
+  });
+});
+
+test('native deep queries avoid per-element selector matching on sparse large pages', async () => {
+  await withDocument(
+    `<html><body><dialog open id="dialog"></dialog>${'<i></i>'.repeat(6000)}</body></html>`,
+    ({ document }) => {
+      for (const element of document.querySelectorAll('i')) {
+        Reflect.set(element, 'matches', () => {
+          throw new Error('generic selector walk');
+        });
+      }
+      assert.deepEqual(helpers.querySelectorAllDeepNative('dialog[open]'), [
+        document.getElementById('dialog'),
+      ]);
+    }
+  );
+});
+
+test('native deep queries preserve host, nested closed shadow, and light-child ordering', async () => {
+  await withDocument(
+    '<html><body><x-shell role="dialog" id="host"><div role="dialog" id="light"></div></x-shell><div role="dialog" id="after"></div></body></html>',
+    ({ document }) => {
+      const savedChrome = globalThis.chrome;
+      const host = document.getElementById('host') as HTMLElement;
+      const shadow = host.attachShadow({ mode: 'open' });
+      shadow.innerHTML =
+        '<section role="dialog" id="nested"></section><div role="dialog" id="shadow-after"></div>';
+      const nested = shadow.getElementById('nested') as HTMLElement;
+      const closed = nested.attachShadow({ mode: 'closed' });
+      closed.innerHTML = '<div role="dialog" id="closed"></div>';
+      Reflect.set(globalThis, 'chrome', {
+        dom: { openOrClosedShadowRoot: (element: Element) => (element === nested ? closed : null) },
+      });
+      try {
+        assert.deepEqual(
+          helpers.querySelectorAllDeepNative('[role="dialog"]').map((element) => element.id),
+          ['host', 'nested', 'closed', 'shadow-after', 'light', 'after']
+        );
+        assert.deepEqual(
+          helpers.querySelectorAllDeepNative('[role="dialog"]', host).map((element) => element.id),
+          ['nested', 'closed', 'shadow-after', 'light']
+        );
+      } finally {
+        Reflect.set(globalThis, 'chrome', savedChrome);
+      }
+    }
+  );
+});
+
+test('native deep queries rediscover roots attached to existing hosts and use the legacy fallback', async () => {
+  await withDocument('<html><body><div id="host"></div></body></html>', ({ document }) => {
+    assert.deepEqual(helpers.querySelectorAllDeepNative('dialog[open]'), []);
+    const shadow = (document.getElementById('host') as HTMLElement).attachShadow({ mode: 'open' });
+    shadow.innerHTML = '<dialog open></dialog>';
+    const dialog = shadow.querySelector('dialog');
+    assert.deepEqual(helpers.querySelectorAllDeepNative('dialog[open]'), [dialog]);
+    Reflect.set(document, 'createTreeWalker', undefined);
+    assert.deepEqual(helpers.querySelectorAllDeepNative('dialog[open]'), [dialog]);
+    assert.throws(() => helpers.querySelectorAllDeepNative('['));
+  });
+});
+
+test('native deep queries retain exact traversal limits and reject elapsed-time exhaustion', async (t) => {
+  await withDocument('<html><body></body></html>', ({ document }) => {
+    const element = document.createElement('td');
+    let visits = 0;
+    t.mock.method(performance, 'now', () => 0);
+    t.mock.method(
+      document,
+      'createTreeWalker',
+      () =>
+        ({
+          nextNode() {
+            visits += 1;
+            return element;
+          },
+        }) as unknown as TreeWalker
+    );
+    assert.throws(() => helpers.querySelectorAllDeepNative('dialog'), {
+      code: 'RESULT_TRUNCATED',
+      details: { scanLimit: 200000 },
+    });
+    assert.equal(visits, 200001);
+  });
+  t.mock.restoreAll();
+  await withDocument('<html><body></body></html>', () => {
+    let calls = 0;
+    t.mock.method(performance, 'now', () => (calls++ < 3 ? 0 : 1001));
+    assert.throws(() => helpers.querySelectorAllDeepNative('dialog'), {
+      code: 'RESULT_TRUNCATED',
+    });
   });
 });
 

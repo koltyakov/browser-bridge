@@ -29,7 +29,12 @@ type QueryApi = {
   locateElements: (
     locator: Record<string, unknown>,
     options?: { maxResults?: number }
-  ) => { matches: Element[]; truncationReason: string | null; scanned: number };
+  ) => {
+    matches: Element[];
+    truncationReason: string | null;
+    scanned: number;
+    hiddenMatches: number;
+  };
   waitForDom: (params: Record<string, unknown>) => Promise<{
     found: boolean;
     elementRef: string | null;
@@ -1082,6 +1087,147 @@ test('pruned text scans keep innermost, split, cross-node, and shadow light-chil
       assert.deepEqual(ids('Light child'), ['light']);
       assert.ok(ids('Shadow words').includes('span'));
       assert.deepEqual(ids('absent phrase'), []);
+    }
+  );
+});
+
+test('scan-local matchers preserve whitespace, case, part boundaries, and fresh query values', async () => {
+  await withQuery(
+    '<button id="upper">Save \n Profile</button><button id="lower">save profile</button><input id="spaced" placeholder="Save \n Profile"><input id="flat" placeholder="Save Profile"><span id="parts" title="Other | Save Profile">Unrelated</span>',
+    ({ document, query }) => {
+      const ids = (locator: Record<string, unknown>) =>
+        query.locateElements(locator, { maxResults: 10 }).matches.map((element) => element.id);
+      assert.deepEqual(ids({ text: ' \tSave \n Profile ', exact: true }), [
+        'upper',
+        'spaced',
+        'flat',
+        'parts',
+      ]);
+      assert.deepEqual(ids({ text: ' SAVE PROFILE ' }), [
+        'upper',
+        'lower',
+        'spaced',
+        'flat',
+        'parts',
+      ]);
+      assert.deepEqual(ids({ role: 'button', name: ' Save \n Profile ', exact: true }), ['upper']);
+      // Placeholder substring matching intentionally does not collapse its raw haystack.
+      assert.deepEqual(ids({ placeholder: 'Save Profile' }), ['flat']);
+      assert.deepEqual(ids({ placeholder: 'Save Profile', exact: true }), ['spaced', 'flat']);
+      document.getElementById('upper')!.textContent = 'Changed action';
+      assert.deepEqual(ids({ text: 'Changed action', exact: true }), ['upper']);
+      assert.deepEqual(ids({ role: 'button', name: 'Save Profile', exact: true }), []);
+    }
+  );
+});
+
+test('pruned text keeps accessible attributes, attribute-free live values, and split own text', async (t) => {
+  await withQuery(
+    '<section id="scope"><button id="aria" aria-label="Target phrase">Other</button><span id="name" name="Target phrase">Other</span><input id="placeholder" placeholder="Target phrase"><div id="title" title="Other | Target phrase">Other</div><p id="split">Target <b>noise</b> phrase</p></section>',
+    ({ document, query }) => {
+      const scope = document.getElementById('scope')!;
+      const live = document.createElement('input');
+      Object.defineProperty(live, 'value', { value: 'Target \n phrase', writable: true });
+      scope.appendChild(live);
+      assert.equal(live.hasAttributes(), false);
+      const plain = document.createElement('p');
+      plain.textContent = 'Other text';
+      scope.appendChild(plain);
+      t.mock.method(plain, 'getAttribute', () => {
+        throw new Error('attribute-free pruned elements should not read attributes');
+      });
+      const found = query.locateElements(
+        { text: 'Target phrase', exact: true },
+        { maxResults: 10 }
+      );
+      assert.equal(found.truncationReason, null);
+      assert.deepEqual(
+        found.matches.map((element) => (element === live ? 'live' : element.id)),
+        ['aria', 'name', 'placeholder', 'title', 'split', 'live']
+      );
+      Reflect.set(live, 'value', 'Changed value');
+      assert.deepEqual(query.locateElements({ text: 'Changed value', exact: true }).matches, [
+        live,
+      ]);
+    }
+  );
+});
+
+test('compiled name and label matchers preserve associated, referenced, and alternate names', async () => {
+  await withQuery(
+    '<label for="labelled">Target \n phrase</label><input id="labelled"><span id="reference">Target phrase</span><input id="referenced" aria-labelledby="reference"><img id="image" alt="Target phrase"><button id="title" title="Target phrase"></button>',
+    ({ query }) => {
+      assert.deepEqual(
+        query
+          .locateElements({ label: ' Target \n phrase ', exact: true }, { maxResults: 10 })
+          .matches.map((element) => element.id),
+        ['labelled', 'referenced', 'image', 'title']
+      );
+      assert.equal(
+        query.findByRole({ role: 'textbox', name: ' Target \n phrase ', exact: true }).count,
+        2
+      );
+      assert.equal(query.findByRole({ role: 'img', name: 'Target phrase', exact: true }).count, 1);
+    }
+  );
+});
+
+test('text scans retain late accessible-attribute duplicates beyond thousands of unrelated rows', async () => {
+  const rows = '<p>Unrelated <span>row</span></p>'.repeat(6000);
+  await withQuery(
+    `<button id="first">Unique action</button>${rows}<button id="late" aria-label="Unique action">Other</button>`,
+    ({ query }) => {
+      const located = query.locateElements(
+        { text: 'Unique action', exact: true },
+        { maxResults: 2 }
+      );
+      assert.equal(located.truncationReason, null);
+      assert(located.scanned > 12000);
+      assert.deepEqual(
+        located.matches.map((element) => element.id),
+        ['first', 'late']
+      );
+      const found = query.findByText({ text: 'Unique action', exact: true, maxResults: 2 });
+      assert.equal(found.count, 2);
+      assert.equal(found.truncated, false);
+    }
+  );
+});
+
+test('compiled text matching retains closed roots, nested roots, host light children, and hidden matches', async () => {
+  await withQuery(
+    '<div id="host"><span id="light">Shared needle</span></div><div id="closed-host"></div><script>Shared needle</script>',
+    ({ document, query }) => {
+      const savedChrome = globalThis.chrome;
+      const open = (document.getElementById('host') as HTMLElement).attachShadow({ mode: 'open' });
+      open.innerHTML = '<span id="shadow" title="Shared needle">Other</span>';
+      const closedHost = document.getElementById('closed-host') as HTMLElement;
+      const closed = closedHost.attachShadow({ mode: 'closed' });
+      closed.innerHTML =
+        '<button id="closed">Shared <b>needle</b></button><div id="nested"></div><span style="display:none">Shared needle</span>';
+      const nested = (closed.getElementById('nested') as HTMLElement).attachShadow({
+        mode: 'open',
+      });
+      nested.innerHTML = '<span id="nested-match" aria-label="Shared needle">Other</span>';
+      Reflect.set(globalThis, 'chrome', {
+        dom: {
+          openOrClosedShadowRoot: (element: Element) => (element === closedHost ? closed : null),
+        },
+      });
+      try {
+        const found = query.locateElements(
+          { text: 'Shared needle', exact: true },
+          { maxResults: 10 }
+        );
+        assert.equal(found.truncationReason, null);
+        assert.equal(found.hiddenMatches, 1);
+        assert.deepEqual(
+          found.matches.map((element) => element.id),
+          ['shadow', 'light', 'closed', 'nested-match']
+        );
+      } finally {
+        Reflect.set(globalThis, 'chrome', savedChrome);
+      }
     }
   );
 });

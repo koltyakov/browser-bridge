@@ -139,6 +139,18 @@ the final frame-local condition.
 
 The default `source: "cdp"` returns Chrome's AX tree through the debugger. Use it for accessibility audits (`compact`, `interactiveOnly`, `maxDepth`, `format: "outline"`); its nodes have no refs.
 
+CDP `maxDepth` counts raw AX edges before `compact` or `interactiveOnly`
+filtering, including ignored wrappers. The unscoped root is depth 0. A control
+behind ignored wrappers and table containers can be deeper than the default
+6 even when the filtered result looks shallow. Check depth-truncation metadata
+before treating a low control count as complete, then deliberately widen
+`maxDepth` if needed. The default and depth semantics do not change with filtering.
+
+An incremental large-page AX read that runs out of traversal time returns
+`truncation.reason: "timeBudget"`; `truncation.reasons` can also include
+`"maxDepth"`. Counts cover only the nodes read. Narrow the selector or use
+`source: "dom"` instead of increasing `maxNodes` for a time-budget limit.
+
 ## Multi-Tab Workflows
 
 Access is window-scoped. Your first call binds your session to the active tab in the enabled window, which becomes your working tab, and later calls stay there even when the user switches tabs. Responses include `meta.tab_id`; when the user is looking at a different tab, the summary names both. `tabs.list` marks your tab with `working: true`. Passing `tabId`, `tabs.create`, or `tabs.activate` moves your working tab. A closed working tab fails with `TAB_MISMATCH` (`working_tab_closed`) rather than switching to whatever tab is active.

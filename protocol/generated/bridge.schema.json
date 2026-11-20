@@ -7951,7 +7951,8 @@
               "type": "string",
               "enum": [
                 "maxNodes",
-                "maxDepth"
+                "maxDepth",
+                "timeBudget"
               ]
             },
             "reasons": {
@@ -7960,7 +7961,8 @@
                 "type": "string",
                 "enum": [
                   "maxNodes",
-                  "maxDepth"
+                  "maxDepth",
+                  "timeBudget"
                 ]
               }
             },

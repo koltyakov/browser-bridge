@@ -378,11 +378,13 @@ export async function fetchBoundedAXNodes(
   nodes: Array<Record<string, unknown>>;
   complete: boolean;
   depthLimited: boolean;
+  stopReason: 'maxNodes' | 'timeBudget' | null;
 }> {
   const rootResult = (await send('Accessibility.getRootAXNode', {})) as {
     node?: Record<string, unknown>;
   };
-  if (!rootResult?.node) return { nodes: [], complete: true, depthLimited: false };
+  if (!rootResult?.node)
+    return { nodes: [], complete: true, depthLimited: false, stopReason: null };
   const nodes: Array<Record<string, unknown>> = [rootResult.node];
   const root = simplifyAXNode(rootResult.node);
   const byId = new Map([[root.nodeId, root]]);
@@ -395,9 +397,10 @@ export async function fetchBoundedAXNodes(
   let kept = 0;
   let depthLimited = false;
   while (stack.length) {
-    if (kept > options.maxNodes || Date.now() > deadline) {
-      return { nodes, complete: false, depthLimited };
-    }
+    if (kept > options.maxNodes)
+      return { nodes, complete: false, depthLimited, stopReason: 'maxNodes' };
+    if (Date.now() > deadline)
+      return { nodes, complete: false, depthLimited, stopReason: 'timeBudget' };
     const { nodeId, depth } = stack.pop() as { nodeId: string; depth: number };
     let node = byId.get(nodeId);
     if (!node) {
@@ -411,6 +414,7 @@ export async function fetchBoundedAXNodes(
     const parentId = parentById.get(nodeId);
     if (isKeptAXNode(node, parentId ? byId.get(parentId) : undefined, options)) kept += 1;
     if (!node.childIds.length) continue;
+    // Depth counts raw AX edges, including ignored nodes, before filtering.
     if (depth >= options.maxDepth) {
       depthLimited = true;
       continue;
@@ -436,5 +440,5 @@ export async function fetchBoundedAXNodes(
       if (pendingRaw.has(childId)) stack.push({ nodeId: childId, depth: depth + 1 });
     }
   }
-  return { nodes, complete: true, depthLimited };
+  return { nodes, complete: true, depthLimited, stopReason: null };
 }

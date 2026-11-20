@@ -524,6 +524,58 @@ shadow roots. Light-DOM matches come first. */
     return [...querySelectorMatchesDeep(selector, root)];
   }
 
+  /** Complete, sparse selector reads use native matching in each tree. Only
+  potential shadow hosts need root lookup; TreeWalker preserves the existing
+  host -> shadow -> light-child order without calling matches on every node.
+  Do not retain roots between reads: an existing host can acquire a shadow root
+  without a light-DOM mutation. */
+  function querySelectorAllDeepNative(selector: string, root: ParentNode = document): Element[] {
+    if (typeof document.createTreeWalker !== 'function')
+      return querySelectorAllDeep(selector, root);
+    const started = performance.now();
+    let scanned = 0;
+    let found = 0;
+    const results: Element[] = [];
+    const stack: Array<{ walker: TreeWalker; matches: Set<Element> }> = [];
+    const checkBudget = () => {
+      if (scanned > DEEP_WALK_LIMIT || performance.now() - started > DEEP_WALK_TIME_MS)
+        throw scanLimitError();
+    };
+    const enter = (scope: ParentNode) => {
+      checkBudget();
+      const matches = scope.querySelectorAll(selector);
+      found += matches.length;
+      if (found > DEEP_WALK_LIMIT) throw scanLimitError();
+      checkBudget();
+      stack.push({
+        walker: document.createTreeWalker(scope as Node, 1),
+        matches: new Set(matches),
+      });
+    };
+    enter(root);
+    const rootShadow =
+      'nodeType' in root && root.nodeType === 1 ? getShadowRoot(root as Element) : null;
+    if (rootShadow) enter(rootShadow);
+    while (stack.length) {
+      const frame = stack[stack.length - 1];
+      const element = frame.walker.nextNode() as Element | null;
+      if (!element) {
+        stack.pop();
+        continue;
+      }
+      scanned += 1;
+      // Sample elapsed time, but retain the exact element-work limit.
+      if (scanned > DEEP_WALK_LIMIT || scanned % 128 === 0) checkBudget();
+      if (frame.matches.has(element)) results.push(element);
+      const tag = element.tagName.toUpperCase();
+      if (!tag.includes('-') && !SHADOW_HOST_TAGS.has(tag)) continue;
+      const shadow = getShadowRoot(element);
+      if (shadow) enter(shadow);
+    }
+    checkBudget();
+    return results;
+  }
+
   /** Iterate selector matches without scanning later subtrees when a bounded
 consumer has enough results. Complete scans still enforce the work limit. */
   function* querySelectorMatchesDeep(
@@ -840,6 +892,7 @@ content for name-from-content roles, title, and placeholder. */
     isElementVisible,
     isNodeAttached,
     querySelectorAllDeep,
+    querySelectorAllDeepNative,
     querySelectorMatchesDeep,
     querySelectorDeep,
     walkElementsDeep,

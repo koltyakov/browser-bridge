@@ -20,6 +20,7 @@
         isElementVisible: (element: Element) => boolean;
         isNodeAttached: (node: Node | null | undefined) => boolean;
         querySelectorAllDeep: (selector: string, root?: ParentNode) => Element[];
+        querySelectorAllDeepNative: (selector: string, root?: ParentNode) => Element[];
         delay: (ms: number) => Promise<void>;
       };
     }
@@ -61,6 +62,7 @@
     isElementVisible,
     isNodeAttached,
     querySelectorAllDeep,
+    querySelectorAllDeepNative,
   } = contentHelpers;
   const { rememberElement, resolveTarget, resolveInputReference } = registry;
   const MAX_INPUT_CANDIDATES = 25;
@@ -2451,7 +2453,9 @@ to `timeoutMs`. Saves agents a separate wait call plus a retry round trip. */
   }
 
   function visibleDialogs(): Element[] {
-    return querySelectorAllDeep(DIALOG_SELECTOR).filter((element) => isElementVisible(element));
+    return querySelectorAllDeepNative(DIALOG_SELECTOR).filter((element) =>
+      isElementVisible(element)
+    );
   }
 
   function describeEffectElement(element: Element): { role: string; name?: string; ref: string } {

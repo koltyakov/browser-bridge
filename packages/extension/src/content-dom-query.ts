@@ -634,13 +634,28 @@ element reference. */
     return LOCATOR_KEYS.some((key) => typeof record[key] === 'string' && record[key] !== '');
   }
 
-  function textMatches(haystack: string, needle: string, exact: boolean): boolean {
-    if (!haystack) return false;
-    const collapsedNeedle = collapseText(needle, 10_000);
-    const collapsedHaystack = exact ? collapseText(haystack, 100_000) : haystack;
-    return exact
-      ? collapsedHaystack === collapsedNeedle
-      : collapsedHaystack.toLowerCase().includes(collapsedNeedle.toLowerCase());
+  type TextMatcher = (haystack: string) => boolean;
+
+  /** Normalize the needle once per scan, not once per element or text part.
+  Substring haystacks intentionally keep their existing whitespace semantics. */
+  function createTextMatcher(needle: string, exact: boolean): TextMatcher {
+    const normalized = collapseText(needle, 10_000);
+    if (exact)
+      return (haystack) => Boolean(haystack) && collapseText(haystack, 100_000) === normalized;
+    const lowered = normalized.toLowerCase();
+    return (haystack) => Boolean(haystack) && haystack.toLowerCase().includes(lowered);
+  }
+
+  function textPartsMatch(text: string, matches: TextMatcher): boolean {
+    return text.includes(' | ') ? text.split(' | ').some(matches) : matches(text);
+  }
+
+  function textValueMatches(value: unknown, matches: TextMatcher): boolean {
+    return (
+      typeof value === 'string' &&
+      value.length > 0 &&
+      textPartsMatch(collapseText(value, 100_000), matches)
+    );
   }
 
   /** Full collapsed subtree text used for innermost text matching. Shadow hosts
@@ -650,6 +665,7 @@ contribute their shadow content. */
   }
 
   type TextIndex = {
+    matches: TextMatcher;
     text: (element: Element) => string;
     excluded: (element: Element) => boolean;
     /** Whether the element's complete subtree text provably lacks the needle. */
@@ -660,7 +676,7 @@ contribute their shadow content. */
 complete subtree text without the needle proves that no descendant included
 in it can match by subtree text either. Without this, a document-order scan
 re-reads every ancestor's whole subtree, which is quadratic on large pages. */
-  function createTextIndex(needle: string): TextIndex {
+  function createTextIndex(needle: string, exact = false): TextIndex {
     const lowered = collapseText(needle, 10_000).toLowerCase();
     const texts = new Map<Element, string>();
     const excluded = new WeakSet<Element>();
@@ -674,6 +690,7 @@ re-reads every ancestor's whole subtree, which is quadratic on large pages. */
       return getShadowRoot(parent as Element) ? null : (parent as Element);
     };
     return {
+      matches: createTextMatcher(needle, exact),
       text(element) {
         let text = texts.get(element);
         if (text === undefined) {
@@ -741,22 +758,24 @@ value or default button name, and subtree text that lacks it. */
   /** extractElementText matching for an element whose subtree text lacks the
 needle. Its text nodes are then only a match when the element joins
 several of them across child elements; attributes and values still count. */
-  function excludedOwnTextMatches(element: Element, needle: string, exact: boolean): boolean {
-    const matches = (value: unknown) =>
-      typeof value === 'string' &&
-      collapseText(value, 100_000)
-        .split(' | ')
-        .some((part) => textMatches(part, needle, exact));
-    for (const attribute of OWN_TEXT_ATTRIBUTES) {
-      if (matches(element.getAttribute(attribute))) return true;
+  function excludedOwnTextMatches(element: Element, matches: TextMatcher): boolean {
+    // Most table cells carry no attributes. Keep attributes and live values
+    // eligible even when their subtree text has been ruled out.
+    if (element.hasAttributes?.() !== false) {
+      for (const attribute of OWN_TEXT_ATTRIBUTES) {
+        if (textValueMatches(element.getAttribute(attribute), matches)) return true;
+      }
     }
-    if ('value' in element && matches((element as { value?: unknown }).value)) return true;
+    if ('value' in element && textValueMatches((element as { value?: unknown }).value, matches))
+      return true;
     // One text node is part of the subtree text, which lacks the needle.
+    const children = element.childNodes;
+    if (children.length < 2) return false;
     let textNodes = 0;
-    for (const node of element.childNodes) {
+    for (const node of children) {
       if (node.nodeType === 3 && (node.textContent ?? '').trim() && ++textNodes > 1) {
         const own = extractElementText(element);
-        return Boolean(own) && own.split(' | ').some((part) => textMatches(part, needle, exact));
+        return Boolean(own) && textPartsMatch(own, matches);
       }
     }
     return false;
@@ -768,34 +787,40 @@ descendant text matches (so `<button><b>Place</b> order</button>` matches
 "Place order" on the button, not on `<body>`). */
   function matchesTextLocator(
     element: Element,
-    needle: string,
-    exact: boolean,
+    matches: TextMatcher,
     index: TextIndex | null = null
   ): boolean {
     if (NON_RENDERED_TAGS.has(element.tagName)) return false;
-    if (index?.excluded(element)) return excludedOwnTextMatches(element, needle, exact);
+    if (index?.excluded(element)) return excludedOwnTextMatches(element, matches);
     const own = extractElementText(element);
-    if (own && own.split(' | ').some((part) => textMatches(part, needle, exact))) return true;
+    if (own && textPartsMatch(own, matches)) return true;
     const text = index ? index.text(element) : getMatchableText(element);
-    if (!textMatches(text, needle, exact)) return false;
+    if (!matches(text)) return false;
     for (const child of element.children ?? []) {
       const childText = index
         ? index.excluded(child)
           ? ''
           : index.text(child)
         : getMatchableText(child);
-      if (textMatches(childText, needle, exact)) return false;
+      if (matches(childText)) return false;
     }
     return true;
   }
 
+  type LocatorTextMatchers = {
+    placeholder: TextMatcher | null;
+    label: TextMatcher | null;
+    name: TextMatcher | null;
+    text: TextMatcher | null;
+  };
+
   function matchesLocator(
     element: Element,
     locator: ElementLocator,
+    matchers: LocatorTextMatchers,
     textIndex: TextIndex | null = null,
     labelIndex: TextIndex | null = null
   ): boolean {
-    const exact = locator.exact === true;
     if (NON_RENDERED_TAGS.has(element.tagName)) return false;
     if (locator.role && !getElementRoles(element).includes(locator.role.toLowerCase())) {
       return false;
@@ -806,25 +831,22 @@ descendant text matches (so `<button><b>Place</b> order</button>` matches
     ) {
       return false;
     }
-    if (
-      locator.placeholder &&
-      !textMatches(element.getAttribute('placeholder') ?? '', locator.placeholder, exact)
-    ) {
+    if (matchers.placeholder && !matchers.placeholder(element.getAttribute('placeholder') ?? '')) {
       return false;
     }
     if (
-      locator.label &&
+      matchers.label &&
       (element.tagName === 'LABEL' ||
         getElementRoles(element).length === 0 ||
         (labelIndex !== null && nameCannotContain(element, labelIndex)) ||
-        !textMatches(getAccessibleName(element), locator.label, exact))
+        !matchers.label(getAccessibleName(element)))
     ) {
       return false;
     }
-    if (locator.name && !textMatches(getAccessibleName(element), locator.name, exact)) {
+    if (matchers.name && !matchers.name(getAccessibleName(element))) {
       return false;
     }
-    if (locator.text && !matchesTextLocator(element, locator.text, exact, textIndex)) {
+    if (matchers.text && !matchesTextLocator(element, matchers.text, textIndex)) {
       return false;
     }
     return true;
@@ -841,8 +863,15 @@ excluded unless `includeHidden` is set. */
     const scanLimit = options.scanLimit ?? LOCATE_EVALUATION_LIMIT;
     const traversalLimit = Math.max(scanLimit, DEEP_WALK_LIMIT);
     const scope = locator.selector && locator.selector !== '*' ? locator.selector : null;
-    const textIndex = locator.text ? createTextIndex(locator.text) : null;
-    const labelIndex = locator.label ? createTextIndex(locator.label) : null;
+    const exact = locator.exact === true;
+    const textIndex = locator.text ? createTextIndex(locator.text, exact) : null;
+    const labelIndex = locator.label ? createTextIndex(locator.label, exact) : null;
+    const matchers: LocatorTextMatchers = {
+      text: textIndex?.matches ?? null,
+      label: labelIndex?.matches ?? null,
+      name: locator.name ? createTextMatcher(locator.name, exact) : null,
+      placeholder: locator.placeholder ? createTextMatcher(locator.placeholder, exact) : null,
+    };
 
     const candidates: Iterable<Element> = scope
       ? querySelectorMatchesDeep(escapeTailwindSelector(scope))
@@ -870,7 +899,7 @@ excluded unless `includeHidden` is set. */
       scanned += 1;
       if (locator.role && !getElementRoles(element).includes(locator.role.toLowerCase())) continue;
       evaluated += 1;
-      if (!matchesLocator(element, locator, textIndex, labelIndex)) continue;
+      if (!matchesLocator(element, locator, matchers, textIndex, labelIndex)) continue;
       if (locator.includeHidden !== true && !isElementVisible(element)) {
         hiddenMatches += 1;
         continue;
@@ -1023,11 +1052,12 @@ locator target. Hidden matches count: the action decides actionability. */
     text: string,
     index: TextIndex | null = null
   ): boolean {
+    const matches = index?.matches ?? createTextMatcher(text, false);
     return (
-      matchesTextLocator(element, text, false, index) ||
+      matchesTextLocator(element, matches, index) ||
       (!NON_RENDERED_TAGS.has(element.tagName) &&
         !index?.excluded(element) &&
-        textMatches(index ? index.text(element) : getMatchableText(element), text, false))
+        matches(index ? index.text(element) : getMatchableText(element)))
     );
   }
 
