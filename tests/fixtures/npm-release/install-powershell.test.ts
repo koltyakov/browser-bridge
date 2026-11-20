@@ -21,10 +21,19 @@ if ((Get-ExecutionPolicy -List | ConvertTo-Json -Compress) -ne $policyBefore) {
 }
 `;
 
-test('PowerShell bootstrap discovery is read-only, explicit-ID aware, and restores its environment', { skip: !available && 'PowerShell is not installed' }, async (t) => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'bbx-probe-ps-'));
-  t.after(() => fs.rm(directory, { recursive: true, force: true }));
-  const result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', `${loadInstallerHelpers}
+test(
+  'PowerShell bootstrap discovery is read-only, explicit-ID aware, and restores its environment',
+  { skip: !available && 'PowerShell is not installed' },
+  async (t) => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'bbx-probe-ps-'));
+    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    const result = spawnSync(
+      powershell,
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `${loadInstallerHelpers}
 $env:BROWSER_BRIDGE_HOME = 'protected-home'
 $env:BBX_REMOTE = 'protected-remote'
 $env:BBX_AUTO_UPDATE = 'compatible'
@@ -52,12 +61,25 @@ foreach ($caseName in @('installed','none','legacy','failed','invalid')) {
     throw 'Probe changed caller environment'
   }
 }
-`], { encoding: 'utf8', env: { ...process.env, INSTALLER: installer, PROBE_DIR: directory } });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-});
+`,
+      ],
+      { encoding: 'utf8', env: { ...process.env, INSTALLER: installer, PROBE_DIR: directory } }
+    );
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+  }
+);
 
-test('PowerShell selection resolves the newest stable numeric patch across pages', { skip: !available && 'PowerShell is not installed' }, () => {
-  const result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', `${loadInstallerHelpers}
+test(
+  'PowerShell selection resolves the newest stable numeric patch across pages',
+  { skip: !available && 'PowerShell is not installed' },
+  () => {
+    const result = spawnSync(
+      powershell,
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `${loadInstallerHelpers}
 function Invoke-RestMethod {
   param($Uri)
   if ($Uri -match 'page=1$') {
@@ -71,9 +93,55 @@ function Invoke-RestMethod {
   )
 }
 if ((Resolve-ReleaseLine '2.3') -ne '2.3.12') { throw 'Wrong release selection' }
-`], { encoding: 'utf8', env: { ...process.env, INSTALLER: installer } });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-});
+`,
+      ],
+      { encoding: 'utf8', env: { ...process.env, INSTALLER: installer } }
+    );
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+  }
+);
+
+test(
+  'PowerShell verifies selected checksums before reusing a bootstrap',
+  { skip: !available && 'PowerShell is not installed' },
+  async (t) => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'bbx-verified-ps-'));
+    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    const result = spawnSync(
+      powershell,
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `${loadInstallerHelpers}
+$fixtureBytes=[System.Text.Encoding]::UTF8.GetBytes('native fixture')
+$fixtureBinary=Join-Path $env:VERIFY_DIR 'expected-binary'
+[System.IO.File]::WriteAllBytes($fixtureBinary,$fixtureBytes)
+$script:expectedDigest=(Get-FileHash -LiteralPath $fixtureBinary -Algorithm SHA256).Hash.ToLowerInvariant()
+$script:binaryDownloads=0
+function Invoke-WebRequest {
+  param([switch]$UseBasicParsing,[string]$Uri,[string]$OutFile)
+  if($Uri.EndsWith('/checksums.txt')){
+    [System.IO.File]::WriteAllText($OutFile,"$script:expectedDigest  bbx-windows-x64.exe")
+  }else{
+    $script:binaryDownloads++
+    [System.IO.File]::WriteAllBytes($OutFile,$fixtureBytes)
+  }
+}
+$verified=Save-VerifiedBinary 'https://fixture/latest' 'bbx-windows-x64.exe' $env:VERIFY_DIR
+$reused=Save-VerifiedBinary 'https://fixture/v2.3.12' 'bbx-windows-x64.exe' $env:VERIFY_DIR -Reuse
+if($script:binaryDownloads -ne 1 -or $verified -ne $reused){throw 'Did not reuse verified bootstrap'}
+$script:expectedDigest='0'*64
+$rejected=$false
+try{$null=Save-VerifiedBinary 'https://fixture/bad' 'bbx-windows-x64.exe' $env:VERIFY_DIR -Reuse}catch{$rejected=$true}
+if(-not $rejected){throw 'Accepted incorrect checksum'}
+`,
+      ],
+      { encoding: 'utf8', env: { ...process.env, INSTALLER: installer, VERIFY_DIR: directory } }
+    );
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+  }
+);
 
 test(
   'PowerShell installer prepends its directory and removes duplicate PATH entries',

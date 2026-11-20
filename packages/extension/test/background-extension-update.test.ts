@@ -148,17 +148,18 @@ test('disconnect and grant expiry cancel draining without replaying an update ch
   assert.equal(f.sent.at(-1)?.type, 'host.update_cancel');
   f.controller.handleMessage({ type: 'host.update_apply', version: '2.3.0' });
   assert.equal(f.calls.reloads, 0);
-  f.signal();
+  const restarted = createExtensionUpdateController(f.chrome, f.deps);
+  restarted.handleMessage({ type: 'host.update_check', version: '2.3.0' });
   await flush();
   f.tick();
   assert.equal(f.calls.checks, 1);
   f.tick(20_000);
   assert.equal(f.sent.at(-1)?.type, 'host.update_cancel');
-  f.controller.handleMessage({ type: 'host.update_apply', version: '2.3.0' });
+  restarted.handleMessage({ type: 'host.update_apply', version: '2.3.0' });
   assert.equal(f.calls.reloads, 0);
 });
 
-test('browser errors and storage failures never authorize repeated checks', async (t) => {
+test('browser errors never authorize repeated checks', async (t) => {
   const f = fixture(t);
   f.chrome.runtime.requestUpdateCheck = async () => {
     f.calls.checks++;
@@ -171,4 +172,37 @@ test('browser errors and storage failures never authorize repeated checks', asyn
   assert.equal(f.calls.checks, 1);
   assert.equal(f.errors.length, 1);
   assert.deepEqual(f.sent, []);
+});
+
+test('storage failure stops the check before calling the browser API', async (t) => {
+  const f = fixture(t);
+  f.chrome.storage.local.set = async () => {
+    throw new Error('storage unavailable');
+  };
+  f.signal();
+  await flush();
+  assert.equal(f.calls.checks, 0);
+  assert.equal(f.errors.length, 1);
+  assert.deepEqual(f.sent, []);
+});
+
+test('busy setup actions delay reload and reload failure releases the drain', async (t) => {
+  const f = fixture(t);
+  f.response.status = 'update_available';
+  f.response.version = '2.3.0';
+  f.calls.busy = true;
+  f.signal();
+  await flush();
+  f.tick();
+  assert.equal(f.sent.length, 0);
+  f.calls.busy = false;
+  f.tick();
+  f.controller.handleMessage({ type: 'host.update_apply', version: '2.3.0' });
+  f.chrome.runtime.reload = () => {
+    throw new Error('reload blocked');
+  };
+  f.tick();
+  assert.equal(f.sent.at(-1)?.type, 'host.update_cancel');
+  assert.equal(f.errors.length, 1);
+  assert.equal(f.calls.reloads, 0);
 });

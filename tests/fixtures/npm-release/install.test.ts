@@ -218,9 +218,9 @@ test(
       assert.match(urls, /api.github.com/);
       if (bootstrapVersion === '9.0.0') {
         assert.match(urls, /releases\/download\/v2.3.12\/bbx-linux-x64/);
-    } else {
-      assert.match(urls, /releases\/download\/v2.3.12\/checksums.txt/);
-      assert.doesNotMatch(urls, /releases\/download\/v2.3.12\/bbx-linux-x64/);
+      } else {
+        assert.match(urls, /releases\/download\/v2.3.12\/checksums.txt/);
+        assert.doesNotMatch(urls, /releases\/download\/v2.3.12\/bbx-linux-x64/);
       }
     }
   }

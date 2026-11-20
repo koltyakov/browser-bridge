@@ -464,7 +464,7 @@ test('sidepanel UI smoke test flips the action label between enable and disable 
     const standaloneCommand = document.getElementById('setup-native-cmd');
     assert.equal(standaloneCommand?.hidden, false);
     assert.ok(standaloneCommand?.textContent?.includes('/main/scripts/install.sh'));
-    assert.ok(standaloneCommand?.textContent?.includes('BBX_VERSION=1.8 '));
+    assert.doesNotMatch(standaloneCommand?.textContent ?? '', /BBX_VERSION=/);
     assert.ok(standaloneCommand?.textContent?.includes(`BBX_EXTENSION_ID=${'a'.repeat(32)} sh`));
     assert.equal(
       document.getElementById('setup-native-hint')?.textContent,

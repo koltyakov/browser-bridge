@@ -78,6 +78,29 @@ type NativeBackgroundModule = {
 };
 type StateSyncMessage = { type: 'state.sync'; state: Record<string, unknown> };
 
+test('native identity advertises store-update checks only when enabled and available', async () => {
+  const messages: Record<string, unknown>[] = [];
+  const chromeObj = {
+    runtime: {
+      id: 'a'.repeat(32),
+      getManifest: () => ({ version: '2.3.0' }),
+      requestUpdateCheck: async () => ({ status: 'no_update' }),
+    },
+    storage: { local: createStorageArea(), session: createStorageArea() },
+  };
+  const port = {
+    postMessage(message: Record<string, unknown>) {
+      messages.push(message);
+    },
+  };
+  sendIdentity(port, chromeObj);
+  await waitForCondition(() => messages.length === 1);
+  assert.equal(messages.at(-1)?.extensionUpdateChecks, true);
+  sendIdentity(port, chromeObj, false);
+  await waitForCondition(() => messages.length === 2);
+  assert.equal(messages.at(-1)?.extensionUpdateChecks, undefined);
+});
+
 test('native identity waits for Brave detection and never advertises it as Chrome', async () => {
   const priorNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   let resolveBrave: (value: boolean) => void = () => {};
