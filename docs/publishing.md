@@ -6,7 +6,7 @@ start with [quickstart](./quickstart.md).
 This repo publishes three kinds of release artifacts:
 
 1. The Chrome extension ZIP on GitHub Releases and for manual Chrome Web Store submission
-2. Five Go executables on the public GitHub `v<version>` release
+2. Six Go executables on the public GitHub `v<version>` release
 3. The npm bootstrap/launcher package, which selects native releases at installation
 
 The extension depends on the local native host installed by `bbx install`. npm is the bootstrap and launcher, with zero runtime npm dependencies; the Go executable provides the CLI, native host, daemon, and MCP server. Global npm installation downloads the latest stable binary, or a native version selected with `BBX_VERSION`, and initializes browser registration. Local dependency installation does not register browsers. If scripts were skipped, the first command downloads the binary and the user runs `bbx install` explicitly.
@@ -89,7 +89,6 @@ verifies every attached expected asset before uploading anything, rejects unknow
 attachments, and uploads only missing assets. It then re-reads the release and
 verifies the complete required set before changing only its draft status.
 The title, notes, prerelease status, and existing asset bytes are preserved.
-The signed-feed step runs only after the release is confirmed public.
 Failed uploads or verification leave the draft unpublished for a later rerun.
 If publication succeeded but its response was lost, a rerun verifies the public
 release without publishing it again. Missing tags and mismatched assets fail
@@ -100,7 +99,6 @@ For a manual fallback, run checks and build the extension first, then:
 ```bash
 make package-native-all
 make publish-release
-make publish-update-feed
 make pack-dry-run
 make pack
 make publish-npm ARGS=--provenance
@@ -108,121 +106,20 @@ make publish-npm ARGS=--provenance
 
 Authenticate `gh` with permission to create releases in `koltyakov/browser-bridge`. The release tag must already exist remotely. `make package-npm` packs only the launcher and does not build or publish native assets. `make publish-npm` selects the resolved version's tarball; override it with `TARBALL=path` if needed.
 
-The tag workflow publishes npm through trusted publishing with OIDC. The package job uses the `release` environment and `contents: write` for GitHub assets. A dependent npm job downloads that run's tarball and uses `id-token: write` without an environment, preserving the npm publisher's OIDC identity. Neither npm publication nor its job receives the release-signing private key. The workflow retains the npm tarball and extension ZIP as artifacts.
+The tag workflow publishes npm through trusted publishing with OIDC. The package job uses the `release` environment and `contents: write` for GitHub assets. A dependent npm job downloads that run's tarball and uses `id-token: write` without an environment, preserving the npm publisher's OIDC identity. The workflow retains the npm tarball and extension ZIP as artifacts.
 
 Trusted publishing requires npm CLI `11.5.1+`. The release workflow upgrades npm explicitly before running `npm publish`; if publish fails with `E404` or authentication issues, verify the workflow still prints an npm version at or above that threshold.
 
-## Signed native updates
+## Native distribution
 
-The release workflow requires signing configuration before building binaries.
-It embeds the public keys, publishes immutable binaries, then signs and
-publishes `native-updates/stable.json` on a separate prerelease. The prerelease
-does not become GitHub's latest stable binary release.
+Native binaries are distributed through versioned GitHub releases. The npm
+launcher selects a stable release, verifies its size and SHA-256 checksum, and
+runs the executable self-test before installation.
 
-Use the same signing names and scopes as Control and Expose, with BBX's own key:
-
-| Name | Type and scope | Value |
-| --- | --- | --- |
-| `RELEASE_SIGNING_PUBLIC_KEYS` | Repository variable | JSON map of stable key IDs to base64 raw 32-byte Ed25519 public keys |
-| `RELEASE_SIGNING_KEY_ID` | Repository variable | Active key ID, currently `release-2026-11-17` |
-| `RELEASE_SIGNING_PRIVATE_KEY` | Secret in the `release` environment | Matching Ed25519 PKCS#8 PEM private key |
-
-Public configuration is available to unsigned builds. Never keep a second copy of
-the private key as a repository secret. Control additionally checks the public map
-against its reviewed source pins. Keypairs must not be shared between projects.
-
-The `release` environment permits release tags matching `v*.*.*` and the `main`
-branch. The branch permission is required for weekly feed renewal and manual
-renewal from the default branch. Do not allow all branches or tags. Required
-environment approvals also gate renewals; configure them only if someone will
-approve the weekly job before the feed expires. npm trusted publishing remains
-OIDC-based and independent of this signing key.
-
-- Do not configure `RELEASE_FEED_INITIALIZE`. It is obsolete; remove any existing
-  repository or environment variable with that name. The release workflow rejects
-  an enabled legacy value before publishing assets.
-- For the first release only, manually dispatch the **Release** workflow on the
-  version tag with its `initialize_feed` input enabled, for example:
-
-  ```sh
-  gh workflow run release.yml --repo koltyakov/browser-bridge \
-    --ref vX.Y.Z -f initialize_feed=true
-  ```
-
-  Select a tag, not a branch. Normal tag pushes never initialize or reset a feed.
-  Initialization creates an unpublished draft, verifies its signed metadata, then
-  publishes it. Reruns resume that tag's initialization draft or authenticate an
-  already-published feed, preserving its sequence and immutable release records.
-  Missing metadata on a public release fails closed and must be restored.
-  Locally, after verifying public release assets, `make initialize-update-feed`
-  performs the same explicit one-time action. Do not delete the feed or version
-  tags to recover from an ordinary failed pipeline.
-
-Local files live under `~/.ssh/github/`: `bbx.pem` is PKCS#8 private PEM,
-`bbx.pub` is SPKI public PEM, and `bbx.json` is the public JSON map.
-Control uses the basename `control`; Expose uses `expose`.
-For a new key only, generate outside the checkout with Node:
-
-```sh
-node --input-type=module -e '
-import { generateKeyPairSync } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-const directory = join(homedir(), ".ssh", "github");
-mkdirSync(directory, {recursive:true,mode:0o700});
-const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-writeFileSync(join(directory, "bbx.pem"), privateKey.export({type:"pkcs8",format:"pem"}), {mode:0o600,flag:"wx"});
-writeFileSync(join(directory, "bbx.pub"), publicKey.export({type:"spki",format:"pem"}), {mode:0o644,flag:"wx"});
-writeFileSync(join(directory, "bbx.json"), JSON.stringify({"release-2026-11-17":publicKey.export({type:"spki",format:"der"}).subarray(-32).toString("base64")}) + "\n", {mode:0o644,flag:"wx"});
-'
-```
-
-Keep the directory at mode `0700` and the private key at `0600`. Keep an encrypted
-offline backup. Never commit, print, or attach private keys to release artifacts.
-Configure GitHub from the files:
-
-```sh
-gh secret set RELEASE_SIGNING_PRIVATE_KEY --repo koltyakov/browser-bridge --env release \
-  < "$HOME/.ssh/github/bbx.pem"
-gh variable set RELEASE_SIGNING_PUBLIC_KEYS --repo koltyakov/browser-bridge \
-  --body "$(cat "$HOME/.ssh/github/bbx.json")"
-gh variable set RELEASE_SIGNING_KEY_ID --repo koltyakov/browser-bridge --body release-2026-11-17
-```
-
-Remove superseded signing secrets and variables after verifying the replacements.
-The signer checks that the selected ID's public key matches the private key and
-writes that same ID into the feed signature. No `release` alias is required.
-
-`make publish-update-feed` adds the current native release only after
-`make publish-release` has verified the public assets. It authenticates the
-previous feed before retaining its releases, increases the sequence, and
-refuses to change an existing signed version. Only the signed metadata asset
-uses `--clobber`; executable assets remain immutable. Publishing jobs share a
-concurrency group so scheduled renewal cannot race a release.
-
-`make check-update-feed` validates signing and remote initialization state without
-remote writes. CI runs it before tests/builds, then runs
-`make check-update-feed-release` after building and before publishing any assets.
-The latter also rejects changes to an already-signed version. Authentication,
-network, download, and signature failures never trigger initialization.
-
-The feed expires after 14 days. The weekly `native-update-feed.yml` workflow
-renews it without changing binary assets; `make renew-update-feed` does the
-same manually. Monitor that workflow. Expired or invalid metadata fails closed
-and leaves the installed version selected. Keep both old and new public keys
-embedded during signing-key rotation until existing installations can verify
-the new feed.
-
-For planned rotation, add the next public key under a new stable ID, publish
-bridge binaries trusting both keys while still signing with the old key, then
-switch `RELEASE_SIGNING_KEY_ID` and the environment secret. Remove the old public
-pin only after installations have crossed the bridge. Never rename an existing
-key ID or replace its public key after publication.
-
-Existing binaries without embedded trust and the native identity update hook
-need a one-time reinstall. An extension update cannot add updater code to an
-older binary. See [native updates](../internal/bridge/README.md#native-updates).
+Release publishing does not require signing keys, a separate metadata release,
+or a renewal job. Standard builds do not embed a metadata feed or trust keys for
+feed-based automatic updates. Upgrade through npm or install the desired
+versioned native binary, then restart the bridge.
 
 ## Chrome Web Store Submission
 

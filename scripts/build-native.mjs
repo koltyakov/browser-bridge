@@ -5,7 +5,6 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolveVersion } from './version.mjs';
 import { nativePlatforms, nativeMaxBytes } from '../packages/npm/src/install-targets.js';
-import { nativeUpdateLinkerFlags } from './native-update-config.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const { version } = resolveVersion({ root });
@@ -36,8 +35,7 @@ for (const target of targets) {
       'build',
       '-trimpath',
       '-buildvcs=false',
-      // The native HTTP client only downloads update metadata and assets.
-      // HTTP/1.1 and portable Go implementations keep those infrequent HTTPS
+      // HTTP/1.1 and portable Go implementations keep infrequent HTTPS
       // requests within the fresh-install budget, including Windows PE overhead.
       '-tags=nethttpomithttp2,purego',
       // Inlining trades executable size for call-site speed. This I/O-oriented
@@ -46,7 +44,7 @@ for (const target of targets) {
       '-ldflags',
       // Eight-byte function alignment reduces padding without removing code or
       // runtime checks. This runtime favors payload size over CPU throughput.
-      `-s -w -funcalign=8 -X github.com/koltyakov/browser-bridge/internal/bridge.version=${version} -X github.com/koltyakov/browser-bridge/internal/bridge.buildTarget=go-${target} ${nativeUpdateLinkerFlags()}`,
+      `-s -w -funcalign=8 -X github.com/koltyakov/browser-bridge/internal/bridge.version=${version} -X github.com/koltyakov/browser-bridge/internal/bridge.buildTarget=go-${target}`,
       '-o',
       output,
       './cmd/bbx',

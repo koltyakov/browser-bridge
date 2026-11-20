@@ -94,15 +94,18 @@ No Node.js, npm, or Go installation is needed to run these binaries. Return to t
 
 ## Versions and updates
 
-Release binaries enable signed automatic updates by default for npm and standalone installations. An extension update to `2.2.1` triggers a binary update check on native reconnect. If bbx `2.2.2` is available, bbx `2.1.4` updates to it. The extension's major/minor line selects the newest patch, not its exact version and not an unrelated newer minor. Updates never downgrade.
+The npm launcher downloads a stable native binary from a versioned GitHub
+release and verifies its size, release checksum, and executable self-test.
+Rerun `npm install -g @browserbridge/bbx@latest` to refresh that selection,
+independently of the npm package version, then run `bbx restart`.
 
-Checks also run before local CLI browser commands and MCP startup. Checks are throttled to once per day, with one immediate check when the extension version changes. After verification and activation, a detached restart worker restarts the daemon and asks registered MCP processes to exit for relaunch by their owning agents. Chrome reconnects its native host through the selected binary. Running executables are not overwritten, including on Windows. In-flight calls may disconnect during restart; they are not replayed.
+Set `BBX_VERSION` during installation to select an exact native version or
+release line. Standalone installations can replace their binary with the
+desired versioned release asset after verifying `checksums.txt`.
 
-Use `bbx update status` to inspect configuration, policy, the selected version, and integrity. Disable automatic updates with `bbx config set auto-update off` or `BBX_AUTO_UPDATE=off`; re-enable with `bbx config set auto-update compatible`. Explicit npm native selectors such as `BBX_VERSION=2.2.2` create a pin beside the binary, honored by direct MCP launches too. Release-line selectors such as `BBX_VERSION=2.2` and the default latest selection allow automatic updates.
-
-The npm bootstrap still caches its initial selection and verifies it on every launch. That executable forwards to the verified signed update selection. Rerunning `npm install -g @browserbridge/bbx` refreshes bootstrap selection independently of the npm version. Offline installs reuse cached metadata when available; a fresh install needs network access. Binaries and retained rollback payloads live outside `node_modules` and consume disk space in addition to the active executable.
-
-Updates require a signed release feed and embedded public keys. Source builds without those keys do not auto-update. Previously published binaries without update support need a one-time reinstall. Release signing setup is described in [publishing](./publishing.md#signed-native-updates).
+Standard builds do not configure feed-based automatic updates. Existing
+signed-update verification and repair code is retained for legacy installations;
+it is not part of the normal release or installation path.
 
 ## Scheduled mutations and verified flows
 

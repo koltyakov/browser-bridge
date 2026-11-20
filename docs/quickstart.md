@@ -34,7 +34,7 @@ Update an npm-managed installation with:
 npm install -g @browserbridge/bbx@latest
 ```
 
-The npm package selects a native release independently of its own version. Set `BBX_VERSION` during installation to match your extension's release line or select an exact native version. Release binaries auto-update to the latest signed patch in the extension's major/minor line. Exact native version selectors remain pinned. Use `bbx update status` to inspect configuration or `bbx config set auto-update off` to opt out.
+The npm package selects a native release independently of its own version. Set `BBX_VERSION` during installation to match your extension's release line or select an exact native version. Rerun the installation command to refresh that selection, then run `bbx restart`. Standard binaries do not use a separate automatic-update feed.
 
 If the extension does not connect itself during setup, run:
 
@@ -105,8 +105,7 @@ An existing shared host pointing to a different installation is not redirected b
 a Brave install. Use the same bridge home for both browsers.
 
 Reinstalling through npm or the standalone installer refreshes registrations.
-`bbx update repair` repairs the signed native binary selection, not browser
-registration; use `bbx install --browser brave` to repair native-host discovery.
+Use `bbx install --browser brave` to repair native-host discovery.
 
 On Ubuntu, the default Chromium package is usually a strict snap, and Flatpak
 Chromium is similarly sandboxed. If Chromium still reports the extension as

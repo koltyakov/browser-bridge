@@ -9,10 +9,12 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import {
-  nativeUpdateFeedURL,
-  nativeUpdateLinkerFlags,
-} from '../../scripts/native-update-config.mjs';
+
+interface FixtureRelease {
+  version: string;
+  protocolMajor: number;
+  artifacts: Record<string, { url: string; sha256: string; size: number }>;
+}
 
 const exec = promisify(execFile);
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -135,13 +137,13 @@ test(
     const keys = JSON.stringify({
       release: publicKey.export({ format: 'der', type: 'spki' }).subarray(-32).toString('base64'),
     });
-    const flags = nativeUpdateLinkerFlags({ RELEASE_SIGNING_PUBLIC_KEYS: keys }).replace(
-      nativeUpdateFeedURL,
-      `${url}/feed`
-    );
+    // Exercise legacy signed-update compatibility with fixture-only trust.
+    // Production builds do not embed a feed URL or signing configuration.
+    const packagePath = 'github.com/koltyakov/browser-bridge/internal/bridge';
+    const flags = `-X ${packagePath}.nativeUpdateFeedURL=${url}/feed -X '${packagePath}.nativeUpdateKeysJSON=${keys}'`;
     const target = `go-${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch === 'x64' ? 'amd64' : process.arch}`;
     const binaries: Record<string, string> = {};
-    const releases: import('../../scripts/native-update-feed.mjs').UpdateRelease[] = [];
+    const releases: FixtureRelease[] = [];
     for (const version of ['2.1.4', '2.2.2']) {
       const binary = path.join(
         directory,

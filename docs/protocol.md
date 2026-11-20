@@ -72,19 +72,13 @@ bbx restart
 bbx doctor
 ```
 
-The npm launcher downloads a stable GitHub release independently of its package version and
-verifies its release checksum. `bbx update status` reports `distribution: "npm"`;
-the selected executable can forward to a newer, signature-verified native release.
+The npm launcher downloads a stable GitHub release independently of its package
+version and verifies its release checksum. Set `BBX_VERSION` during installation
+to select the extension's release line or an exact native version.
 
-Both installation types enable signed automatic updates by default when the
-binary contains update trust keys. Native reconnect after an extension update,
-or a local health check before CLI browser work or MCP startup, can trigger an
-update. The extension selects the major/minor release line: extension `2.2.1`
-selects the newest signed `2.2.x` binary, including `2.2.2`, without downgrades.
-Exact npm version pins and an explicit `auto-update` policy of `off` opt out. Remote
-destinations do not update the local installation, and browser actions are
-not replayed after an update. See [native runtime](../internal/bridge/README.md)
-for signed update configuration.
+Standalone installations should install the desired versioned release binary
+and restart the bridge. Standard builds do not configure feed-based automatic
+updates. See [native runtime](../internal/bridge/README.md) for distribution details.
 
 ## Changing the protocol
 

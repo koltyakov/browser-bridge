@@ -27,7 +27,6 @@ bbx install --all
 bbx doctor
 bbx status
 bbx restart
-bbx update status
 bbx logs
 bbx tabs
 bbx tab-activate <tabId>
@@ -110,26 +109,14 @@ For npm installations, upgrade with `npm install -g @browserbridge/bbx@latest`,
 then run `bbx restart`. The npm version does not constrain the native version.
 Exact native selectors such as `BBX_VERSION=2.2.2` remain pinned.
 
-Both npm and standalone release binaries enable signed automatic updates by
-default. The extension chooses the release line: extension `2.2.1` updates
-bbx `2.1.4` to the newest available `2.2.x`, even if that binary is newer
-than the extension's patch version. It does not select `2.3.x` or downgrade.
-Inspect the policy with
-`bbx config get auto-update`, and disable it with
-`bbx config set auto-update off`. Re-enable it with
-`bbx config set auto-update compatible`.
+Refresh an npm installation with `npm install -g @browserbridge/bbx@latest`,
+then run `bbx restart`. The launcher selects a stable native release and
+verifies its release checksum. `BBX_VERSION` selects a release line or exact
+native version during installation.
 
-An extension reconnect, including after an extension update, checks for a
-matching binary without waiting for an agent command. Local CLI and MCP startup
-also check. Checks run at most daily, but a changed extension version triggers
-an immediate check. Successful activation restarts the daemon, reconnects the
-native host, and requests MCP restarts. The owning agent must relaunch its MCP
-process. Browser actions are never replayed.
-
-Remote destinations do not update the local installation. Builds without
-embedded update trust cannot auto-update; `bbx update status` reports whether
-updates are configured. Older installations need a one-time reinstall to gain
-this behavior. See [native CLI](./native-cli.md).
+For standalone installations, install the desired versioned GitHub release
+binary and restart the bridge. Standard builds do not configure feed-based
+automatic updates. See [native CLI](./native-cli.md).
 
 When upgrading from a Browser Bridge version that predates coordinated MCP
 restart, restart the agent once. MCP processes launched afterward register for

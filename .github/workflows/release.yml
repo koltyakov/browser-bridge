@@ -5,11 +5,6 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      initialize_feed:
-        description: 'One-time feed initialization. Run on the first release tag, not a branch.'
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -25,10 +20,6 @@ jobs:
     permissions:
       contents: write
     concurrency: native-release-publishing
-    env:
-      RELEASE_SIGNING_PUBLIC_KEYS: ${{ vars.RELEASE_SIGNING_PUBLIC_KEYS }}
-      RELEASE_SIGNING_KEY_ID: ${{ vars.RELEASE_SIGNING_KEY_ID }}
-      UPDATE_FEED_ARGS: ${{ github.event_name == 'workflow_dispatch' && inputs.initialize_feed && '--initialize' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -69,14 +60,6 @@ jobs:
       - name: Resolve release version from Git tag
         run: make sync-version generate-protocol
 
-      - name: Check native update feed configuration before publishing
-        run: make check-update-feed
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}
-          # Detect obsolete bootstrap configuration rather than silently using it.
-          RELEASE_FEED_INITIALIZE: ${{ vars.RELEASE_FEED_INITIALIZE }}
-
       - name: Check release metadata and generated protocol
         run: make check-release-version check-protocol check-readability
 
@@ -108,12 +91,6 @@ jobs:
       - name: Build all native release assets
         run: make package-native-all
 
-      - name: Check signed feed candidate before publishing assets
-        run: make check-update-feed-release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}
-
       - name: Pack dry-run
         run: make pack-dry-run
 
@@ -121,12 +98,6 @@ jobs:
         run: make publish-release
         env:
           GH_TOKEN: ${{ github.token }}
-
-      - name: Publish signed native update feed
-        run: make publish-update-feed
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}
 
       - name: Create npm tarball
         run: make pack

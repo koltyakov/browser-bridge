@@ -61,18 +61,18 @@ Global npm installation downloads the selected stable binary and initializes nat
 
 Use isolated `BROWSER_BRIDGE_HOME` and `BBX_TCP_PORT` values when testing a daemon. Continue testing packaged installation, upgrades, repair, and rollback on every supported OS; cross-compilation does not verify platform behavior.
 
-## Native updates
+## Versioned native distribution
 
-For npm installations, `bbx update status` reports `distribution: "npm"` for the bootstrap executable. The npm bootstrap selects a runtime independently of its package version. Both npm and standalone executables support signed activation and forwarding. Exact npm selectors store an adjacent version pin, which also protects direct MCP launches.
+The npm launcher downloads native executables from stable, versioned GitHub
+releases, verifies `checksums.txt` and asset size, and runs an executable
+self-test. Its native version selection is independent of the npm package
+version. `BBX_VERSION` selects an exact version or release line.
 
-For separately installed native executables, `bbx update status` reports whether signed updates are configured. Management commands are `update check`, `update apply`, `update install`, `update repair`, and `update rollback`. The existing `bbx rollback` command still rolls back browser patches.
+Standard build scripts do not embed a metadata feed URL or update trust keys.
+There is no separate metadata release or scheduled renewal in the publishing
+pipeline. Upgrade by reinstalling through npm or installing the desired native
+release binary, then run `bbx restart`.
 
-Native signed updates are separate from npm's checksum-verified GitHub release downloads. `scripts/build-native.mjs` embeds the fixed feed URL and the public keys supplied through the build-only `RELEASE_SIGNING_PUBLIC_KEYS` variable. These pin `internal/bridge.nativeUpdateFeedURL` and `internal/bridge.nativeUpdateKeysJSON` through Go linker flags. Runtime environment variables and configuration cannot replace those trust keys. Source builds without trust skip automatic updates. See [release signing setup](../../docs/publishing.md#signed-native-updates).
-
-The HTTPS feed is an envelope with `signed`, the base64-encoded manifest bytes, and `signatures`, an array of `{keyId, signature}` objects. Each signature covers the exact decoded manifest bytes. The manifest includes `schemaVersion: 1`, `channel: "stable"`, an increasing `sequence`, `issuedAt`, `expiresAt`, and `releases`. Releases contain `version`, `protocolMajor`, and `artifacts` keyed by `go-<os>-<arch>`, each with HTTPS `url`, `sha256`, and `size`.
-
-The updater verifies metadata, downloads into an immutable version directory, probes the executable, and atomically selects it. It preserves the original executable and authenticated rollback payloads, including on Windows. Retained versions can make update disk usage exceed the single-executable budget.
-
-The default `compatible` policy checks before CLI browser commands or MCP startup and on native identity after extension reconnect. Identity carries the extension version and supported protocols over Chrome's native-messaging pipe. The extension's major/minor line constrains selection, so extension `2.2.1` moves bbx `2.1.4` to the newest signed `2.2.x`, not `2.3.x`. It does not require the extension's patch to exceed the binary's patch. A changed extension version bypasses the daily check throttle once.
-
-Successful extension-triggered activation spawns a detached worker from the verified payload to run the existing coordinated restart. Chrome reconnects the native host, the daemon loads the selected binary, and registered MCP processes exit for their owning clients to relaunch. This is process replacement, not an in-place rewrite. No browser action is replayed. Explicit `off`, exact npm pins, and remote destinations prevent automatic installation changes.
+The runtime retains signed-update verification and repair compatibility for
+older installations. Removing the publishing infrastructure does not turn
+those checks into unsigned update downloads.
