@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.3.0] - 2026-11-20
+
+### Added
+
+- Pruned HTML snapshots and cleaner Markdown for semantic content extraction.
+- Best-effort store update checks across extension profiles, with daily throttling
+  and reloads coordinated around active work.
+- Non-blocking update recommendations for older native minor versions.
+
+### Changed
+
+- Native updates follow the newest installed extension's release line, checking
+  on reconnect and periodically. Verified GitHub releases replace the signed feed
+  and its publishing workflows; trust now rests on GitHub and HTTPS. Older
+  unconfigured binaries need a one-time upgrade.
+- Shorter standalone installer commands detect the extension's release line,
+  fall back to latest stable, and retain explicit version overrides.
+- `bbx update` applies immediately despite automatic-update opt-outs or throttling,
+  while respecting version pins. `bbx restart` refreshes running processes.
+
+### Fixed
+
+- Bounded large-page scans report incomplete results; dynamic-page reads refresh
+  stale frame caches and track requests during observed input.
+- Stalled screenshots release debugger sessions and stop suggesting retries after
+  capture attempts are exhausted.
+- Delayed reload callbacks reject expired grants, and unreadable cooldown storage
+  cannot trigger repeated update checks.
+
 ## [2.2.0] - 2026-11-17
 
 ### Added
