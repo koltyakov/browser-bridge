@@ -155,6 +155,8 @@ The npm package is a bootstrap and launcher with zero runtime npm dependencies. 
 
 Binaries with the GitHub updater automatically discover versioned releases when the extension reconnects and during periodic daemon checks. The newest installed extension across browsers selects the release line: extension `2.3.0` selects the newest stable `2.3.x` native binary. Downloads verify that release's checksum, exact asset size, and executable self-test, without a separate update feed. This works for npm and standalone installs without overwriting running executables. Exact native-version pins opt out, as does `bbx config set auto-update off`. Older unconfigured binaries need a [one-time native upgrade](https://github.com/koltyakov/browser-bridge/blob/main/docs/native-cli.md#one-time-upgrade-for-unconfigured-installations); an extension update cannot add the missing native code.
 
+For a manual native update, run `bbx update`, then `bbx restart` when the result reports `restartRequired: true`. Use `bbx update check` to check without installing.
+
 ## How it works
 
 - The extension is scoped to one explicitly enabled Chrome window at a time - no ambient browser access

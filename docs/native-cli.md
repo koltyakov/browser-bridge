@@ -131,7 +131,7 @@ publisher signature. API, network, checksum, or probe failures keep the installe
 selection unchanged.
 
 Activation preserves the bootstrap executable and verified rollback payloads.
-It restarts the daemon and native host and requests MCP restarts from their owning
+Automatic updates restart the daemon and native host and request MCP restarts from their owning
 agents. No browser action is replayed. `bbx update status` reports the GitHub
 source, selected line, and payload integrity. Explicit commands are `bbx update
 check`, `apply`, `install`, `repair`, and `rollback`; plain `bbx rollback` still
@@ -142,6 +142,26 @@ Disable automatic updates with `bbx config set auto-update off` or
 Exact `BBX_VERSION=X.Y.Z` installation selectors remain pinned, including direct
 MCP launches. Release-line selectors and the default latest selection permit
 automatic updates. Remote destinations never update the local installation.
+
+### Manual native updates
+
+Run a manual update whenever needed:
+
+```sh
+bbx update
+bbx restart
+```
+
+`bbx update` is shorthand for `bbx update apply`. It immediately checks GitHub
+for the latest stable patch in the selected extension release line, verifies it,
+and activates it. It bypasses the automatic daily throttle and works when
+automatic updates are off, but still respects exact native version pins and
+never downgrades. Run `bbx restart` afterward when the result reports
+`restartRequired: true` so running bridge processes load the selected binary.
+
+Use `bbx update check` to check without installing, and `bbx update status` to
+inspect the selected binary. These commands need no enabled browser page and
+operate only on the local installation.
 
 ### One-time upgrade for unconfigured installations
 

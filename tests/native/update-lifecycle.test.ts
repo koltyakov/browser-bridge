@@ -79,7 +79,7 @@ function initialize(child: ChildProcessWithoutNullStreams): Promise<string> {
 }
 
 test(
-  'extension upgrade discovers its newest GitHub release line and replaces native/MCP processes without a feed',
+  'extension and bare manual updates discover the newest GitHub release line without a feed',
   // Go uses the Windows system certificate store rather than SSL_CERT_FILE.
   { skip: process.platform === 'win32' || !available.every(Boolean), timeout: 120_000 },
   async (t) => {
@@ -142,7 +142,7 @@ test(
     const binaries: Record<string, string> = {};
     const releases: FixtureRelease[] = [];
     const assetName = `bbx-${process.platform}-${process.arch}${process.platform === 'win32' ? '.exe' : ''}`;
-    for (const version of ['2.2.1', '2.3.2']) {
+    for (const version of ['2.2.1', '2.3.2', '2.3.3']) {
       const binary = path.join(
         directory,
         `bbx-${version}${process.platform === 'win32' ? '.exe' : ''}`
@@ -191,7 +191,7 @@ test(
     releases.push({ ...releases[1], tag_name: 'v2.4.9' });
     responses.set(
       '/repos/koltyakov/browser-bridge/releases?per_page=100&page=1',
-      Buffer.from(JSON.stringify(releases))
+      Buffer.from(JSON.stringify(releases.filter((release) => release.tag_name !== 'v2.3.3')))
     );
     const env: NodeJS.ProcessEnv = {
       ...process.env,
@@ -271,5 +271,40 @@ test(
     assert.equal(status.version, '2.3.2');
     assert.equal(status.verified, true);
     assert.equal(status.source, 'github');
+
+    // Publish a new patch on the same day, without another extension event.
+    responses.set(
+      '/repos/koltyakov/browser-bridge/releases?per_page=100&page=1',
+      Buffer.from(JSON.stringify(releases))
+    );
+    const manualEnv = { ...env, BBX_AUTO_UPDATE: 'off' };
+    const checked = JSON.parse(
+      (await exec(binaries['2.2.1'], ['update', 'check'], { env: manualEnv })).stdout
+    ) as { updated: boolean; reason: string; version: string };
+    assert.equal(checked.updated, false);
+    assert.equal(checked.reason, 'update_available');
+    assert.equal(checked.version, '2.3.3');
+    const beforeManual = JSON.parse(
+      (await exec(binaries['2.2.1'], ['update', 'status'], { env: manualEnv })).stdout
+    ) as { version: string };
+    assert.equal(beforeManual.version, '2.3.2');
+
+    // Bare `bbx update` means apply, bypasses automatic throttling and works
+    // with auto-update off. It must not require the explicit "apply" argument.
+    const applied = JSON.parse(
+      (await exec(binaries['2.2.1'], ['update'], { env: manualEnv })).stdout
+    ) as { updated: boolean; version: string; restartRequired: boolean };
+    assert.equal(applied.updated, true);
+    assert.equal(applied.version, '2.3.3');
+    assert.equal(applied.restartRequired, true);
+    assert.equal(
+      (await exec(binaries['2.2.1'], ['--version'], { env: manualEnv })).stdout.trim(),
+      '2.3.3'
+    );
+    const unchanged = JSON.parse(
+      (await exec(binaries['2.2.1'], ['update'], { env: manualEnv })).stdout
+    ) as { updated: boolean; reason: string };
+    assert.equal(unchanged.updated, false);
+    assert.equal(unchanged.reason, 'no_compatible_update');
   }
 );

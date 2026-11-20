@@ -27,6 +27,9 @@ bbx install --all
 bbx doctor
 bbx status
 bbx restart
+bbx update
+bbx update check
+bbx update status
 bbx logs
 bbx tabs
 bbx tab-activate <tabId>
@@ -114,6 +117,11 @@ The newest installed extension selects the `major.minor` line; extension
 reconnects and periodic daemon checks install the latest stable patch in that
 line. `bbx update status` reports configuration and integrity.
 `bbx config set auto-update off` disables automatic updates.
+
+For an immediate manual update, run `bbx update`, then `bbx restart` if the
+result reports `restartRequired: true`. The bare command defaults to `apply`,
+ignores the automatic check throttle, and works with automatic updates off.
+Use `bbx update check` to check without installing.
 
 Existing binaries with an unconfigured updater need a one-time manual native
 upgrade to a release containing this support. Updating the extension alone does

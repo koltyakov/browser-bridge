@@ -111,7 +111,7 @@ var cliCommands = []cliCommandDefinition{
 	{name: "mcp", localOnly: true, category: "Setup", usage: "mcp serve | mcp config | mcp http-status"},
 	{name: "doctor", localOnly: true, category: "Setup", usage: "doctor"},
 	{name: "restart", localOnly: true, category: "Setup", usage: "restart"},
-	{name: "update", localOnly: true, category: "Updates", usage: "update [check|apply|install|repair|rollback|status]"},
+	{name: "update", localOnly: true, category: "Updates", usage: "update [check|apply|install|repair|rollback|status] (default: apply)"},
 	{name: "config", localOnly: true, category: "Configuration", usage: "config get auto-update | config set auto-update off|compatible"},
 	{name: "remote", localOnly: true, category: "Destinations", usage: "remote add|remove|list|test|destinations"},
 	{name: "proxy", localOnly: true, category: "Destinations", usage: "proxy enable|disable|status"},
