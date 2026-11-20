@@ -520,7 +520,7 @@ function regionDeps(
       },
     },
     contentScriptTimeoutMs: 1000,
-    captureTimeoutMs: 20,
+    captureAttemptTimeoutsMs: [20, 20, 20],
     async ensureContentScript() {},
     async sendTabMessage() {},
     tabDebugger: {
@@ -537,11 +537,12 @@ function regionDeps(
   } as unknown as Parameters<typeof handleScreenshot>[3];
 }
 
-test('a stalled screenshot times out and releases the tab debugger session', async () => {
+test('a stalled screenshot retries on fresh sessions before timing out', async () => {
   const discarded: number[] = [];
+  let captures = 0;
   const deps = regionDeps(async (method) => {
-    if (method === 'Page.getLayoutMetrics')
-      return { cssVisualViewport: { pageX: 0, pageY: 0, clientWidth: 800, clientHeight: 600 } };
+    if (method === 'Page.getLayoutMetrics') return { cssVisualViewport: { pageX: 0, pageY: 0 } };
+    captures += 1;
     return new Promise(() => {});
   }, discarded);
   await assert.rejects(
@@ -556,10 +557,32 @@ test('a stalled screenshot times out and releases the tab debugger session', asy
       assert.equal((error as { code?: string }).code, ERROR_CODES.TIMEOUT);
       assert.match(
         String((error as Error).message),
-        /within 20 ms; the debugger session was released/
+        /after 3 attempts .*debugger session was released/
       );
       return true;
     }
   );
+  assert.equal(captures, 3);
+  assert.deepEqual(discarded, [7, 7, 7]);
+});
+
+test('a screenshot that stalls once succeeds on the retry', async () => {
+  const discarded: number[] = [];
+  let captures = 0;
+  const data = Buffer.from('image').toString('base64');
+  const deps = regionDeps(async (method) => {
+    if (method === 'Page.getLayoutMetrics') return { cssVisualViewport: { pageX: 0, pageY: 0 } };
+    captures += 1;
+    return captures === 1 ? new Promise(() => {}) : { data };
+  }, discarded);
+  const result = await handleScreenshot(
+    target,
+    'screenshot.capture_region',
+    { x: 0, y: 0, width: 10, height: 10 },
+    deps,
+    'retried'
+  );
+  assert.equal(result.delivery, 'inline');
+  assert.equal('image' in result ? result.image : null, `data:image/png;base64,${data}`);
   assert.deepEqual(discarded, [7]);
 });

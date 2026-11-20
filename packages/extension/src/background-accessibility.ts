@@ -347,3 +347,84 @@ export function formatAccessibilityOutline(nodes: Array<AXWireNode>, rootIds: st
   for (const rootId of rootIds) visit(rootId, 0);
   return lines.join('\n');
 }
+
+export type AXCommand = (method: string, params: Record<string, unknown>) => Promise<unknown>;
+
+/** Whether a node survives buildAccessibilityTree's filter. */
+function isKeptAXNode(
+  node: SimplifiedAXNode,
+  parent: SimplifiedAXNode | undefined,
+  options: { compact: boolean; interactiveOnly: boolean }
+): boolean {
+  if (options.interactiveOnly) return node.semanticInteractive && !node.ignored;
+  if (!options.compact) return true;
+  return isMeaningfulCompactNode(node) && !repeatsParentText(node, parent);
+}
+
+/** Fetch the top of the accessibility tree in document order, one child list at
+a time, and stop once maxNodes retained nodes plus one lookahead are known.
+`Accessibility.getFullAXTree` serializes every node of the page even when only a
+few are returned, which takes seconds on pages with tens of thousands of nodes. */
+export async function fetchBoundedAXNodes(
+  send: AXCommand,
+  options: {
+    compact: boolean;
+    interactiveOnly: boolean;
+    maxNodes: number;
+    maxDepth: number;
+    timeBudgetMs?: number;
+  }
+): Promise<{
+  nodes: Array<Record<string, unknown>>;
+  complete: boolean;
+  depthLimited: boolean;
+}> {
+  const rootResult = (await send('Accessibility.getRootAXNode', {})) as {
+    node?: Record<string, unknown>;
+  };
+  if (!rootResult?.node) return { nodes: [], complete: true, depthLimited: false };
+  const nodes: Array<Record<string, unknown>> = [rootResult.node];
+  const root = simplifyAXNode(rootResult.node);
+  const byId = new Map([[root.nodeId, root]]);
+  const parentById = new Map<string, string>();
+  const stack: Array<{ nodeId: string; depth: number }> = [{ nodeId: root.nodeId, depth: 0 }];
+  const deadline = Date.now() + (options.timeBudgetMs ?? 2_000);
+  let kept = 0;
+  let depthLimited = false;
+  while (stack.length) {
+    if (kept > options.maxNodes || Date.now() > deadline) {
+      return { nodes, complete: false, depthLimited };
+    }
+    const { nodeId, depth } = stack.pop() as { nodeId: string; depth: number };
+    const node = byId.get(nodeId);
+    if (!node) continue;
+    const parentId = parentById.get(nodeId);
+    if (isKeptAXNode(node, parentId ? byId.get(parentId) : undefined, options)) kept += 1;
+    if (!node.childIds.length) continue;
+    if (depth >= options.maxDepth) {
+      depthLimited = true;
+      continue;
+    }
+    const children = (
+      (await send('Accessibility.getChildAXNodes', { id: nodeId })) as {
+        nodes?: Array<Record<string, unknown>>;
+      }
+    )?.nodes;
+    const fetched: SimplifiedAXNode[] = [];
+    for (const raw of Array.isArray(children) ? children : []) {
+      const child = simplifyAXNode(raw);
+      if (!child.nodeId || byId.has(child.nodeId)) continue;
+      nodes.push(raw);
+      byId.set(child.nodeId, child);
+      parentById.set(child.nodeId, nodeId);
+      fetched.push(child);
+    }
+    // Visit children in page order: the stack pops the last push first.
+    const order = new Map(node.childIds.map((id, index) => [id, index]));
+    fetched.sort((a, b) => (order.get(a.nodeId) ?? 0) - (order.get(b.nodeId) ?? 0));
+    for (let index = fetched.length - 1; index >= 0; index -= 1) {
+      stack.push({ nodeId: fetched[index].nodeId, depth: depth + 1 });
+    }
+  }
+  return { nodes, complete: true, depthLimited };
+}

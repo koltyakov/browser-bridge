@@ -155,7 +155,7 @@ export function assignStagedFiles(
       const nth = typeof target.nth === 'number' ? target.nth : null;
       const found = query.locateElements(
         { ...target, includeHidden: true },
-        { maxResults: nth === null ? 2 : nth + 1, scanLimit: 5000 }
+        { maxResults: nth === null ? 2 : nth + 1 }
       );
       if (
         nth === null

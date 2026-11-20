@@ -2354,6 +2354,9 @@ scroll can prove that the position did not change. */
   const WAIT_POLL_MS = 100;
   const STABILITY_SAMPLE_MS = 34;
   const OBSERVE_QUIET_MS = 150;
+  // With page requests visible, the quiet gap only has to cover work that
+  // follows a DOM change or a finished request, so it can be shorter.
+  const OBSERVE_ACTIVE_QUIET_MS = 75;
   const MAX_OBSERVED_MESSAGES = 3;
   const DIALOG_SELECTOR =
     'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]';
@@ -2496,7 +2499,7 @@ to `timeoutMs`. Saves agents a separate wait call plus a retry round trip. */
   /** Record what an action changes: same-document URL changes, unloads, new
 dialogs, live-region/alert messages, focus moves, DOM churn, and the
 target's own state. Lets agents skip a follow-up read after most actions. */
-  function startObservation(): {
+  function startObservation(activityChannel: string | null = null): {
     dispose: () => void;
     finish: (options: {
       settleMs: number;
@@ -2511,6 +2514,38 @@ target's own state. Lets agents skip a follow-up read after most actions. */
     let added = 0;
     let removed = 0;
     let lastMutationAt = startedAt;
+    // Requests the page starts during this action, reported by MAIN-world hooks.
+    let activityTracked = false;
+    let requestsInFlight = 0;
+    let lastActivityAt = startedAt;
+    let notifyActivity = () => {};
+    const activityListeners: Array<[string, () => void]> = [];
+    if (activityChannel) {
+      const prefix = `bbx:activity:${activityChannel}`;
+      const onStart = () => {
+        requestsInFlight += 1;
+        lastActivityAt = Date.now();
+      };
+      const onEnd = () => {
+        requestsInFlight = Math.max(0, requestsInFlight - 1);
+        lastActivityAt = Date.now();
+        notifyActivity();
+      };
+      const onPong = () => {
+        activityTracked = true;
+      };
+      for (const entry of [
+        [`${prefix}:start`, onStart],
+        [`${prefix}:end`, onEnd],
+        [`${prefix}:pong`, onPong],
+      ] as Array<[string, () => void]>) {
+        globalThis.addEventListener?.(entry[0], entry[1]);
+        activityListeners.push(entry);
+      }
+      // Event dispatch is synchronous across worlds: a reply proves the hooks
+      // are installed in this document.
+      globalThis.dispatchEvent?.(new Event(`${prefix}:ping`));
+    }
     let unloading = false;
     let notifyUnload = () => {};
     const unloadSignal = new Promise<void>((resolve) => {
@@ -2580,6 +2615,9 @@ target's own state. Lets agents skip a follow-up read after most actions. */
       observer?.disconnect();
       globalThis.removeEventListener?.('pagehide', onUnload);
       globalThis.removeEventListener?.('beforeunload', onBeforeUnload);
+      for (const [eventName, listener] of activityListeners) {
+        globalThis.removeEventListener?.(eventName, listener);
+      }
     };
 
     return {
@@ -2588,16 +2626,28 @@ target's own state. Lets agents skip a follow-up read after most actions. */
         const deadline = startedAt + settleMs;
         // Chrome can freeze this document's timers and close its message port
         // on navigation. Finish before that happens instead of waiting to settle.
-        await Promise.race([sleep(Math.min(50, settleMs)), unloadSignal]);
-        while (
-          !navigationSignal &&
-          Date.now() < deadline &&
-          Date.now() - lastMutationAt < OBSERVE_QUIET_MS
-        ) {
+        // Sleep exactly until the quiet period could end rather than polling:
+        // each wait in a hidden tab is a round trip to the service worker.
+        const minimumAt = startedAt + Math.min(50, settleMs);
+        const quietMs = activityTracked ? OBSERVE_ACTIVE_QUIET_MS : OBSERVE_QUIET_MS;
+        for (let first = true; !navigationSignal; first = false) {
+          const now = Date.now();
+          const quietAt = Math.max(lastMutationAt, lastActivityAt) + quietMs;
+          const busy = activityTracked && requestsInFlight > 0;
+          if (!first && (now >= deadline || (!busy && now >= quietAt && now >= minimumAt))) break;
+          // While a request the action started is in flight, wake when it ends.
+          const wakeAt = Math.min(deadline, busy ? deadline : Math.max(quietAt, minimumAt));
+          const activityEnded = busy
+            ? new Promise<void>((resolve) => {
+                notifyActivity = resolve;
+              })
+            : null;
           await Promise.race([
-            sleep(Math.min(50, Math.max(0, deadline - Date.now()))),
+            sleep(Math.max(0, wakeAt - now)),
             unloadSignal,
+            ...(activityEnded ? [activityEnded] : []),
           ]);
+          notifyActivity = () => {};
         }
         dispose();
 
@@ -2714,7 +2764,9 @@ action as exact refs, so the action itself stays synchronous and atomic. */
 
         if (observeOptions) {
           try {
-            observation = startObservation();
+            observation = startObservation(
+              typeof params.__bbxActivityChannel === 'string' ? params.__bbxActivityChannel : null
+            );
             aftermath.observation = { status: 'interrupted', reason: 'action_interrupted' };
           } catch {
             aftermath.observation = { status: 'unavailable', reason: 'start_failed' };

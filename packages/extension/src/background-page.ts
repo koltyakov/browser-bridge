@@ -109,6 +109,7 @@ import {
 } from './background-helpers.js';
 import {
   buildAccessibilityTree,
+  fetchBoundedAXNodes,
   formatAccessibilityOutline,
   scopeAccessibilityNodes,
 } from './background-accessibility.js';
@@ -173,6 +174,8 @@ async function expandAccessibilitySubtree(
 
   return [...nodesById.values()];
 }
+
+const BOUNDED_AX_ELEMENT_THRESHOLD = 5_000;
 
 /** Bind page-target resolution plus debugger-backed request handlers to the
 worker's shared state and Chrome APIs. */
@@ -580,6 +583,23 @@ Mutating actions disable detached-session replay. */
     );
   }
 
+  /** Whether a whole-page AX read should walk the tree incrementally. A full
+fetch is one round trip and fastest on ordinary pages, but Chrome serializes
+every node, which costs seconds on pages with tens of thousands of elements. */
+  async function isLargeDocument(debugTarget: chrome.debugger.Debuggee): Promise<boolean> {
+    try {
+      const evaluated = (await dependencies.sendCommand(debugTarget, 'Runtime.evaluate', {
+        expression: 'document.getElementsByTagName("*").length',
+        returnByValue: true,
+        silent: true,
+      })) as { result?: { value?: unknown } };
+      const count = Number(evaluated?.result?.value);
+      return Number.isFinite(count) && count > BOUNDED_AX_ELEMENT_THRESHOLD;
+    } catch {
+      return false;
+    }
+  }
+
   /** Return a full or selector-scoped accessibility tree for the target tab via
 CDP. Returns a pruned, token-efficient tree with roles, names,
 descriptions, and interactive states. */
@@ -592,6 +612,7 @@ descriptions, and interactive states. */
         await dependencies.sendCommand(debugTarget, 'Accessibility.enable', {});
         try {
           let result;
+          let bounded: Awaited<ReturnType<typeof fetchBoundedAXNodes>> | null = null;
           if (params.selector) {
             const documentResult = (await dependencies.sendCommand(debugTarget, 'DOM.getDocument', {
               depth: 0,
@@ -665,6 +686,13 @@ descriptions, and interactive states. */
             result = {
               nodes: scopeAccessibilityNodes(expandedNodes, backendNodeId, params.maxDepth),
             };
+          } else if (await isLargeDocument(debugTarget)) {
+            bounded = await fetchBoundedAXNodes(
+              (method, commandParams) =>
+                dependencies.sendCommand(debugTarget, method, commandParams),
+              params
+            );
+            result = { nodes: bounded.nodes };
           } else {
             result = await dependencies.sendCommand(debugTarget, 'Accessibility.getFullAXTree', {
               depth: params.maxDepth,
@@ -672,14 +700,19 @@ descriptions, and interactive states. */
           }
           const cdpResult = result as { nodes?: Array<Record<string, unknown>> };
           const rawNodes = cdpResult.nodes || [];
-          const tree = buildAccessibilityTree(rawNodes, params);
+          const built = buildAccessibilityTree(rawNodes, params);
+          // A bounded read stops after maxNodes plus one retained node, so the
+          // unread rest of the page is reported as maxNodes truncation.
+          const tree = bounded && !bounded.complete ? { ...built, truncated: true } : built;
           const depthHint =
             params.maxDepth < 20
               ? 'retry with a larger maxDepth to inspect potentially omitted descendants'
               : 'narrow the selector to inspect potentially omitted descendants';
-          const depthLimited = tree.missingChildCount > 0;
+          const depthLimited = bounded ? bounded.depthLimited : tree.missingChildCount > 0;
           const continuationHint = tree.truncated
-            ? `The AX result reached maxNodes ${params.maxNodes}; retry with a larger maxNodes or ${depthHint}.`
+            ? bounded && !bounded.complete
+              ? `The AX result reached maxNodes ${params.maxNodes}; this large page was read incrementally, so total counts only the nodes read. Retry with a larger maxNodes, a selector, or source "dom".`
+              : `The AX result reached maxNodes ${params.maxNodes}; retry with a larger maxNodes or ${depthHint}.`
             : depthLimited
               ? `The AX source was depth-limited to ${params.maxDepth}; ${depthHint}.`
               : null;

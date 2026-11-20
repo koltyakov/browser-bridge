@@ -91,6 +91,7 @@ For the full upgrade sequence, see [Migrate from v1 to v2](./migration-v1-to-v2.
 - `INPUT_FOCUS_CHANGED` means native text focus moved before dispatch. Inspect focus handlers; do not blindly replay text.
 - Stale refs remain strict by default. Prefer re-querying; use `recoverStale: true` only for one same-document, unchanged-URL attempt with a strong unique descriptor. Recovery evaluates at most 100 same-tag candidates and returns `ELEMENT_AMBIGUOUS` with `reason: "scan_incomplete"` if additional candidates prevent proof of uniqueness.
 - A successful dispatch does not prove app state changed. Verify with a wait or structured read.
+- `RESULT_TRUNCATED` on a locator means the page was too large to prove a unique match within about two seconds (roughly 200,000 elements). Add a container-scoped `selector`, such as `form input`, or use a ref from a scoped read.
 
 ## Dialog handling reports a conflict or no dialog
 
@@ -107,6 +108,12 @@ For the full upgrade sequence, see [Migrate from v1 to v2](./migration-v1-to-v2.
 - Reads that share an existing burst session preserve its five-second idle window. All input modes use the debugger to observe native dialogs, even when events are dispatched through the DOM. Input, evaluation, raw CDP node reads, viewport changes, and dialog operations retain normal session reuse. Open dialogs retain observation until closed. Explicit CDP capture and request interception keep the debugger attached until stopped or cleared.
 - Chrome can keep the banner visible briefly after the last debugger detaches. Avoid debugger-backed operations when ordinary DOM, style, console, or default fetch/XHR reads answer the question.
 - To isolate the banner from normal browsing, use a separate Chrome instance with its own user-data directory. Another window or profile in the same Chrome instance is not sufficient.
+
+## Screenshots of background tabs are slow or time out
+
+- On Windows and Linux, Chrome sometimes does not answer `Page.captureScreenshot` for a hidden tab. macOS was not affected in testing.
+- Up to three attempts run, bounded at 0.5 s, 1 s, and 5 s plus time for large images. A stalled attempt releases the tab's debugger session and the next one starts on a fresh session; in Windows testing every capture finished within 1.7 s.
+- If every attempt stalls, the call fails with `TIMEOUT` and later debugger-backed calls on that tab still work. Prefer structured reads, or capture while the tab is in front.
 
 ## CDP network capture or HAR export is empty or still armed
 

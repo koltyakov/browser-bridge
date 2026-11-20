@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 
 import {
   installIsolatedNavigationSignals,
+  installMainActivitySignals,
   installMainNavigationSignals,
   uninstallIsolatedNavigationSignals,
+  uninstallMainActivitySignals,
   uninstallMainNavigationSignals,
 } from '../src/background-content-script.js';
 
@@ -106,5 +108,58 @@ test('MAIN-world installation rolls back a partial history hook failure', () => 
   } finally {
     Reflect.set(globalThis, 'window', savedWindow);
     Reflect.set(globalThis, 'history', savedHistory);
+  }
+});
+
+test('MAIN-world activity hooks count fetch and XHR requests and restore the originals', async () => {
+  const savedWindow = globalThis.window;
+  const savedXhr = globalThis.XMLHttpRequest;
+  const sent: unknown[] = [];
+  class FakeXhr extends EventTarget {
+    send(body?: unknown) {
+      sent.push(body);
+    }
+  }
+  const originalSend = FakeXhr.prototype.send;
+  let releaseFetch = () => {};
+  const originalFetch = (_input?: unknown) =>
+    new Promise<Response>((resolve) => {
+      releaseFetch = () => resolve(new Response('ok'));
+    });
+  const target = Object.assign(new EventTarget(), { fetch: originalFetch });
+  Reflect.set(globalThis, 'window', target);
+  Reflect.set(globalThis, 'XMLHttpRequest', FakeXhr);
+  const events: string[] = [];
+  try {
+    for (const kind of ['start', 'end', 'pong']) {
+      target.addEventListener(`bbx:activity:ch:${kind}`, () => events.push(kind));
+    }
+    installMainActivitySignals('ch');
+    installMainActivitySignals('ch');
+    target.dispatchEvent(new Event('bbx:activity:ch:ping'));
+    assert.deepEqual(events, ['pong'], 'reinstalling keeps one hook');
+
+    const response = target.fetch('/api');
+    assert.deepEqual(events, ['pong', 'start']);
+    releaseFetch();
+    assert.equal(await (await response).text(), 'ok');
+    await Promise.resolve();
+    assert.deepEqual(events, ['pong', 'start', 'end']);
+
+    const xhr = new FakeXhr();
+    xhr.send('body');
+    assert.deepEqual(sent, ['body']);
+    xhr.dispatchEvent(new Event('loadend'));
+    xhr.dispatchEvent(new Event('loadend'));
+    assert.deepEqual(events, ['pong', 'start', 'end', 'start', 'end']);
+
+    uninstallMainActivitySignals('ch');
+    assert.equal(target.fetch, originalFetch);
+    assert.equal(FakeXhr.prototype.send, originalSend);
+    target.dispatchEvent(new Event('bbx:activity:ch:ping'));
+    assert.equal(events.filter((event) => event === 'pong').length, 1);
+  } finally {
+    Reflect.set(globalThis, 'window', savedWindow);
+    Reflect.set(globalThis, 'XMLHttpRequest', savedXhr);
   }
 });

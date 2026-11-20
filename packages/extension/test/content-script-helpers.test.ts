@@ -66,13 +66,16 @@ const loadedHelpers = Reflect.get(globalThis, '__BBX_CONTENT_HELPERS__') as Help
 assert.ok(loadedHelpers, 'content-script helpers should be registered on globalThis');
 const helpers: Helpers = loadedHelpers;
 
-test('first shadow match returns without scanning unrelated elements on large pages', async () => {
+test('first shadow match returns without scanning unrelated elements on large pages', async (t) => {
   await withDocument(
-    `<html><body><div id="host"></div>${'<i></i>'.repeat(20005)}</body></html>`,
+    `<html><body><div id="host"></div>${'<i></i>'.repeat(2005)}</body></html>`,
     ({ document }) => {
       const host = document.getElementById('host') as HTMLElement;
       const shadow = host.attachShadow({ mode: 'open' });
       shadow.innerHTML = '<button id="save">Save</button>';
+      // Each visited element costs a millisecond, exceeding the walk deadline.
+      let now = 0;
+      t.mock.method(performance, 'now', () => (now += 1));
       assert.equal(helpers.querySelectorDeep('#save'), shadow.querySelector('#save'));
       assert.throws(() => helpers.querySelectorDeep('#missing'), { code: 'RESULT_TRUNCATED' });
 

@@ -74,8 +74,13 @@ export function createContentScriptBridge(
   ensureContentScript: (tabId: number) => Promise<void>;
   getCleanupFrames: (tabId: number) => Promise<Array<{ frameId: number }>>;
   clearCleanupFrames: (tabId: number) => void;
+  /** Forget a tab's frame list after navigation or a child frame load. */
+  invalidateFrames: (tabId: number) => void;
   installNavigationSignals: (tabId: number, channel: string) => Promise<void>;
   uninstallNavigationSignals: (tabId: number, channel: string) => Promise<void>;
+  /** Track page requests in one frame while an observed action settles. */
+  installActivitySignals: (tabId: number, frameId: number, channel: string) => Promise<boolean>;
+  uninstallActivitySignals: (tabId: number, frameId: number, channel: string) => Promise<void>;
 } {
   const patchFrames = new Map<number, Set<number>>();
   const contentScriptChecks = new Map<number, Promise<void>>();
@@ -461,8 +466,38 @@ ignored since ensureContentScript will handle them on demand. */
       frameCache.delete(tabId);
       frameDiscoveries.delete(tabId);
     },
+    invalidateFrames: (tabId) => {
+      // A navigated document gets new frames, and a reloaded child frame needs
+      // its content script again; a cached list would route probes to neither.
+      frameCache.delete(tabId);
+      frameDiscoveries.delete(tabId);
+    },
     installNavigationSignals,
     uninstallNavigationSignals,
+    installActivitySignals: async (tabId, frameId, channel) => {
+      try {
+        await chromeObj.scripting.executeScript({
+          target: { tabId, frameIds: [frameId] },
+          world: 'MAIN',
+          func: installMainActivitySignals,
+          args: [channel],
+        });
+        return true;
+      } catch {
+        // Restricted pages keep the fixed observation window.
+        return false;
+      }
+    },
+    uninstallActivitySignals: async (tabId, frameId, channel) => {
+      await chromeObj.scripting
+        .executeScript({
+          target: { tabId, frameIds: [frameId] },
+          world: 'MAIN',
+          func: uninstallMainActivitySignals,
+          args: [channel],
+        })
+        .catch(() => {});
+    },
   };
 }
 
@@ -566,4 +601,70 @@ export function installMainNavigationSignals(channel: string): void {
 
 export function uninstallMainNavigationSignals(channel: string): void {
   window.dispatchEvent(new Event(`bbx:navigation:${channel}:uninstall`));
+}
+
+/** Count page fetch/XHR requests while one observed action settles. Like the
+navigation hooks, a randomized uninstall event owns the original methods and no
+page-visible marker is written. The isolated world sees `start`/`end` events
+and confirms installation with a synchronous `ping`/`pong`. */
+export function installMainActivitySignals(channel: string): void {
+  const eventPrefix = `bbx:activity:${channel}`;
+  const uninstallEvent = `${eventPrefix}:uninstall`;
+  window.dispatchEvent(new Event(uninstallEvent));
+
+  const emit = (kind: 'start' | 'end' | 'pong') =>
+    window.dispatchEvent(new Event(`${eventPrefix}:${kind}`));
+  const track = () => {
+    let settled = false;
+    emit('start');
+    return () => {
+      if (settled) return;
+      settled = true;
+      emit('end');
+    };
+  };
+  const originalFetch = window.fetch;
+  const originalSend = XMLHttpRequest.prototype.send;
+  const wrappedFetch: typeof window.fetch = function (input, init) {
+    const done = track();
+    try {
+      const response = Reflect.apply(originalFetch, window, [input, init]) as Promise<Response>;
+      response.then(done, done);
+      return response;
+    } catch (error) {
+      done();
+      throw error;
+    }
+  };
+  const wrappedSend: XMLHttpRequest['send'] = function (this: XMLHttpRequest, body) {
+    const done = track();
+    this.addEventListener('loadend', done, { once: true });
+    try {
+      return Reflect.apply(originalSend, this, [body]) as void;
+    } catch (error) {
+      done();
+      throw error;
+    }
+  };
+  const onPing = () => emit('pong');
+  const restore = () => {
+    if (window.fetch === wrappedFetch) window.fetch = originalFetch;
+    if (XMLHttpRequest.prototype.send === wrappedSend) XMLHttpRequest.prototype.send = originalSend;
+    window.removeEventListener(`${eventPrefix}:ping`, onPing);
+    window.removeEventListener(uninstallEvent, restore);
+  };
+
+  window.addEventListener(uninstallEvent, restore, { once: true });
+  try {
+    window.fetch = wrappedFetch;
+    XMLHttpRequest.prototype.send = wrappedSend;
+    window.addEventListener(`${eventPrefix}:ping`, onPing);
+  } catch (error) {
+    restore();
+    throw error;
+  }
+}
+
+export function uninstallMainActivitySignals(channel: string): void {
+  window.dispatchEvent(new Event(`bbx:activity:${channel}:uninstall`));
 }

@@ -2214,7 +2214,7 @@ test('role locator deadlines report partial matches and input refuses unproven u
   });
   // Cross the deadline while accepting the first match, before visiting its duplicate.
   Reflect.set(tabs[0], 'checkVisibility', () => {
-    now += 101;
+    now += 2001;
     return true;
   });
   const document = createDocumentHarness(inputs.createBody(tabs), {});
@@ -2257,7 +2257,7 @@ test('role locators still report incomplete traversal on oversized decorative DO
   const harness = createChromeHarness();
   const body = createFakeElement({
     tagName: 'body',
-    children: Array.from({ length: 20_001 }, () => createFakeElement({ tagName: 'div' })),
+    children: Array.from({ length: 200_001 }, () => createFakeElement({ tagName: 'div' })),
   });
   await loadContentScript(t, {
     withHelpers: true,
@@ -2274,7 +2274,7 @@ test('role locators still report incomplete traversal on oversized decorative DO
   assert.equal(result.count, 0);
   assert.equal(result.truncated, true);
   assert.equal(result.truncationReason, 'scanLimit');
-  assert(result.scanned <= 20_000);
+  assert(result.scanned <= 200_000);
 });
 
 test('content script reuses the same elementRef for repeated dom.query calls', async (t) => {

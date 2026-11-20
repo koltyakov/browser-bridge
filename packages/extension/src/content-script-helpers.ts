@@ -356,6 +356,33 @@ fall back to setTimeout when the extension context is unavailable. */
     'TITLE',
   ]);
   const DEEP_SCAN_LIMIT = 20_000;
+  // Element traversals (selector matching, shadow-root discovery, locators)
+  // are cheap per element, so they get a larger bound than text collection.
+  // The time bound still protects hostile DOMs on the page's main thread.
+  const DEEP_WALK_LIMIT = 200_000;
+  const DEEP_WALK_TIME_MS = 1_000;
+  // attachShadow() only accepts these built-in elements or custom elements, so
+  // other tags never need the comparatively expensive closed-root lookup.
+  const SHADOW_HOST_TAGS = new Set([
+    'ARTICLE',
+    'ASIDE',
+    'BLOCKQUOTE',
+    'BODY',
+    'DIV',
+    'FOOTER',
+    'H1',
+    'H2',
+    'H3',
+    'H4',
+    'H5',
+    'H6',
+    'HEADER',
+    'MAIN',
+    'NAV',
+    'P',
+    'SECTION',
+    'SPAN',
+  ]);
   const LABELABLE_TAGS = new Set([
     'INPUT',
     'SELECT',
@@ -395,22 +422,55 @@ fall back to setTimeout when the extension context is unavailable. */
     return typeof document.contains === 'function' ? document.contains(node) : true;
   }
 
+  // Read-only scans memoize closed shadow-root lookups and the document's
+  // label associations. Page scripts cannot change either while a synchronous
+  // scan runs, and caching is limited to that scope so event dispatch is never
+  // followed by a stale lookup.
+  let scanCacheDepth = 0;
+  let closedShadowRootCache: Map<Element, ShadowRoot | null> | null = null;
+  let documentLabelIndex: Map<Element, Element[]> | null = null;
+
+  /** Run a synchronous, read-only DOM scan with per-scan lookup caches. */
+  function withDomScanCache<T>(scan: () => T): T {
+    if (scanCacheDepth === 0) {
+      closedShadowRootCache = new Map();
+      documentLabelIndex = null;
+    }
+    scanCacheDepth += 1;
+    try {
+      return scan();
+    } finally {
+      scanCacheDepth -= 1;
+      if (scanCacheDepth === 0) {
+        closedShadowRootCache = null;
+        documentLabelIndex = null;
+      }
+    }
+  }
+
   /** Return an element's shadow root, including closed roots when the extension
 `chrome.dom` API is available to the content script. */
   function getShadowRoot(element: Element): ShadowRoot | null {
     const open = (element as { shadowRoot?: ShadowRoot | null }).shadowRoot;
     if (open) return open;
+    const tag = typeof element.tagName === 'string' ? element.tagName.toUpperCase() : '';
+    if (tag && !tag.includes('-') && !SHADOW_HOST_TAGS.has(tag)) return null;
+    const cached = closedShadowRootCache?.get(element);
+    if (cached !== undefined) return cached;
     const domApi = (
       globalThis as {
         chrome?: { dom?: { openOrClosedShadowRoot?: (element: HTMLElement) => ShadowRoot | null } };
       }
     ).chrome?.dom;
     if (typeof domApi?.openOrClosedShadowRoot !== 'function') return null;
+    let root: ShadowRoot | null = null;
     try {
-      return domApi.openOrClosedShadowRoot(element as HTMLElement) || null;
+      root = domApi.openOrClosedShadowRoot(element as HTMLElement) || null;
     } catch {
-      return null;
+      root = null;
     }
+    closedShadowRootCache?.set(element, root);
+    return root;
   }
 
   /** Iterate elements in document order, entering shadow trees right after
@@ -450,8 +510,9 @@ their host. Bounded so pathological pages cannot stall the content script. */
     const rootShadow =
       'nodeType' in root && root.nodeType === 1 ? getShadowRoot(root as Element) : null;
     if (rootShadow) yield rootShadow;
-    for (const element of walkElementsDeep(root, DEEP_SCAN_LIMIT + 1)) {
-      if (++scanned > DEEP_SCAN_LIMIT || performance.now() - started > 100) throw scanLimitError();
+    for (const element of walkElementsDeep(root, DEEP_WALK_LIMIT + 1)) {
+      if (++scanned > DEEP_WALK_LIMIT || performance.now() - started > DEEP_WALK_TIME_MS)
+        throw scanLimitError();
       const shadowRoot = getShadowRoot(element);
       if (shadowRoot) yield shadowRoot;
     }
@@ -481,7 +542,7 @@ consumer has enough results. Complete scans still enforce the work limit. */
       };
       for (const scope of scopes()) {
         const matches = scope.querySelectorAll(selector);
-        if (matches.length + count > DEEP_SCAN_LIMIT) throw scanLimitError();
+        if (matches.length + count > DEEP_WALK_LIMIT) throw scanLimitError();
         count += matches.length;
         yield* matches;
       }
@@ -489,8 +550,9 @@ consumer has enough results. Complete scans still enforce the work limit. */
     }
     const started = performance.now();
     let scanned = 0;
-    for (const element of walkElementsDeep(root, DEEP_SCAN_LIMIT + 1)) {
-      if (++scanned > DEEP_SCAN_LIMIT || performance.now() - started > 100) throw scanLimitError();
+    for (const element of walkElementsDeep(root, DEEP_WALK_LIMIT + 1)) {
+      if (++scanned > DEEP_WALK_LIMIT || performance.now() - started > DEEP_WALK_TIME_MS)
+        throw scanLimitError();
       if (element.matches(selector)) yield element;
     }
   }
@@ -498,7 +560,7 @@ consumer has enough results. Complete scans still enforce the work limit. */
   function scanLimitError(): Error {
     return Object.assign(
       new Error('DOM scan limit reached. Use a narrower selector or element scope.'),
-      { code: 'RESULT_TRUNCATED', details: { scanLimit: DEEP_SCAN_LIMIT } }
+      { code: 'RESULT_TRUNCATED', details: { scanLimit: DEEP_WALK_LIMIT } }
     );
   }
 
@@ -619,6 +681,34 @@ descending into shadow roots. */
     return value.replace(/["\\]/g, '\\$&');
   }
 
+  /** Labels associated with a control, in document order. */
+  function getAssociatedLabels(element: Element): Element[] {
+    const rootNode = typeof element.getRootNode === 'function' ? element.getRootNode() : document;
+    // Chrome resolves `element.labels` by walking the element's whole tree
+    // scope, so reading it for every control in a scan is quadratic. Scans
+    // index the document's labels once instead.
+    if (
+      scanCacheDepth === 0 ||
+      rootNode !== document ||
+      typeof document.querySelectorAll !== 'function'
+    ) {
+      const native = (element as { labels?: ArrayLike<Element> | null }).labels;
+      return native && typeof native.length === 'number' ? Array.from(native) : [];
+    }
+    if (!documentLabelIndex) {
+      const index = new Map<Element, Element[]>();
+      for (const label of document.querySelectorAll('label')) {
+        const control = (label as { control?: Element | null }).control;
+        if (!control) continue;
+        const labels = index.get(control);
+        if (labels) labels.push(label);
+        else index.set(control, [label]);
+      }
+      documentLabelIndex = index;
+    }
+    return documentLabelIndex.get(element) ?? [];
+  }
+
   /** Text of the `<label>` elements associated with a form control. */
   function getAssociatedLabelText(
     element: Element,
@@ -626,15 +716,10 @@ descending into shadow roots. */
     onTruncated?: () => void
   ): string {
     const labels: Element[] = [];
-    const native = (element as { labels?: ArrayLike<Element> | null }).labels;
-    if (native && typeof native.length === 'number' && native.length > 0) {
+    const native = getAssociatedLabels(element);
+    if (native.length > 0) {
       if (onTruncated && native.length > 16) onTruncated();
-      labels.push(
-        ...Array.from(
-          { length: onTruncated ? Math.min(native.length, 16) : native.length },
-          (_, index) => native[index]
-        )
-      );
+      labels.push(...(onTruncated ? native.slice(0, 16) : native));
     } else {
       const id = element.getAttribute('id');
       const rootNode = typeof element.getRootNode === 'function' ? element.getRootNode() : document;
@@ -734,12 +819,15 @@ content for name-from-content roles, title, and placeholder. */
 
   globalState.__BBX_CONTENT_HELPERS__ = Object.freeze({
     NON_TEXT_INPUT_TYPES,
+    DEEP_WALK_LIMIT,
+    DEEP_WALK_TIME_MS,
     applyBudget,
     clamp,
     delay,
     escapeTailwindSelector,
     extractElementText,
     findElementForWaitState,
+    getAssociatedLabels,
     getImplicitRole,
     getImplicitRoleSelector,
     getInputImplicitRole,
@@ -755,6 +843,7 @@ content for name-from-content roles, title, and placeholder. */
     querySelectorMatchesDeep,
     querySelectorDeep,
     walkElementsDeep,
+    withDomScanCache,
     normalizeList,
     pruneElementRegistryEntries,
     toRect,

@@ -2238,6 +2238,15 @@ test('background dispatch returns a simplified accessibility tree', async () => 
     },
     {
       target: { tabId: 81 },
+      method: 'Runtime.evaluate',
+      params: {
+        expression: 'document.getElementsByTagName("*").length',
+        returnByValue: true,
+        silent: true,
+      },
+    },
+    {
+      target: { tabId: 81 },
       method: 'Accessibility.getFullAXTree',
       params: { depth: 3 },
     },
@@ -2433,6 +2442,7 @@ test('background dispatch surfaces accessibility tree failures', async () => {
 
   assert.deepEqual(methods, [
     'Accessibility.enable',
+    'Runtime.evaluate',
     'Accessibility.getFullAXTree',
     'Accessibility.disable',
   ]);

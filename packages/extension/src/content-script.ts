@@ -177,6 +177,9 @@
       const result = handleCommand(message.method, {
         ...message.params,
         __bbxAssertActive: assertActive,
+        ...(typeof message.activityChannel === 'string'
+          ? { __bbxActivityChannel: message.activityChannel }
+          : {}),
         ...(message.method === 'dom.wait_for'
           ? { __bbxSignal: controller.signal, __bbxWatchFrameTree: message.watchFrameTree === true }
           : {}),

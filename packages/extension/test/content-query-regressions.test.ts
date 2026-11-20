@@ -26,6 +26,10 @@ type QueryApi = {
   findByRole: (params: Record<string, unknown>) => FindResult;
   findByText: (params: Record<string, unknown>) => FindResult;
   probeTarget: (params: Record<string, unknown>) => { found: boolean };
+  locateElements: (
+    locator: Record<string, unknown>,
+    options?: { maxResults?: number }
+  ) => { matches: Element[]; truncationReason: string | null; scanned: number };
   waitForDom: (params: Record<string, unknown>) => Promise<{
     found: boolean;
     elementRef: string | null;
@@ -41,13 +45,16 @@ type HelpersApi = {
   getElementTextContent: (element: Element, budget?: number) => string;
 };
 
-test('deep DOM scans fail explicitly at their work limit instead of claiming unique matches', async () => {
-  await withQuery('<section>' + '<span>item</span>'.repeat(20010) + '</section>', ({ helpers }) => {
+test('deep DOM scans fail explicitly at their work limit instead of claiming unique matches', async (t) => {
+  await withQuery('<section>' + '<span>item</span>'.repeat(2010) + '</section>', ({ helpers }) => {
+    // Each element costs a millisecond here, so the walk exceeds its time bound.
+    let now = 0;
+    t.mock.method(performance, 'now', () => (now += 1));
     assert.throws(() => helpers.querySelectorAllDeep('span'), { code: 'RESULT_TRUNCATED' });
   });
 });
 
-test('deep DOM scans allow exactly 100 ms but reject the next candidate after the deadline', async (t) => {
+test('deep DOM scans allow exactly 1000 ms but reject the next candidate after the deadline', async (t) => {
   await withQuery(
     '<section><button id="first">First</button><button id="second">Second</button><button id="third">Third</button></section>',
     ({ document, helpers }) => {
@@ -58,12 +65,12 @@ test('deep DOM scans allow exactly 100 ms but reject the next candidate after th
       // Only three candidates: this exercises elapsed time, not the node limit.
       const matches = helpers.querySelectorMatchesDeep('button', root);
       assert.equal(matches.next().value?.id, 'first');
-      now = 1100;
-      assert.equal(matches.next().value?.id, 'second', 'The 100 ms boundary is inclusive');
-      now = 1101;
+      now = 2000;
+      assert.equal(matches.next().value?.id, 'second', 'The 1000 ms boundary is inclusive');
+      now = 2001;
       assert.throws(() => matches.next(), {
         code: 'RESULT_TRUNCATED',
-        details: { scanLimit: 20000 },
+        details: { scanLimit: 200000 },
       });
     }
   );
@@ -1023,6 +1030,58 @@ test('dom.query reports when a selector matched more than the returned subtree',
       );
       assert.equal(links.matchCount, 3);
       assert.equal('matchCount' in query.domQuery({ selector: '#only' }), false);
+    }
+  );
+});
+
+test('text and label locators prove uniqueness beyond the former 5,000-element budget', async () => {
+  const rows = Array.from(
+    { length: 6000 },
+    (_, index) =>
+      `<p>Row ${index} <a href="#${index}">link ${index}</a> <button>Edit ${index}</button></p>`
+  ).join('');
+  await withQuery(
+    `<form><label>Email <input id="email"></label><button type="button">Save</button></form>${rows}`,
+    ({ query }) => {
+      const last = query.findByText({ text: 'Edit 5999', exact: true, maxResults: 2 });
+      assert.equal(last.found, true);
+      assert.equal(last.count, 1);
+      assert.equal(last.truncated, false);
+      const label = query.locateElements({ label: 'Email' }, { maxResults: 2 });
+      assert.equal(label.truncationReason, null);
+      assert.deepEqual(
+        label.matches.map((element) => element.id),
+        ['email']
+      );
+      const save = query.locateElements({ text: 'Save', exact: true }, { maxResults: 2 });
+      assert.equal(save.truncationReason, null);
+      assert.equal(save.matches.length, 1);
+    }
+  );
+});
+
+test('pruned text scans keep innermost, split, cross-node, and shadow light-child matches', async () => {
+  await withQuery(
+    `<div id="outer">
+      <p id="split">Save <b>x</b> profile</p>
+      <button id="order"><b>Place</b> order</button>
+      <section id="cross"><span>Deep</span> <em id="inner">needle here</em></section>
+      <div id="host"><span id="light">Light child</span></div>
+    </div>`,
+    ({ document, query }) => {
+      const host = document.getElementById('host') as HTMLElement;
+      host.attachShadow({ mode: 'open' }).innerHTML = '<span>Shadow words</span>';
+      const ids = (text: string) =>
+        query
+          .locateElements({ text }, { maxResults: 5 })
+          .matches.map((element) => element.id || element.tagName.toLowerCase());
+      assert.deepEqual(ids('Save profile'), ['split']);
+      assert.deepEqual(ids('Place order'), ['order']);
+      assert.deepEqual(ids('needle here'), ['inner']);
+      assert.deepEqual(ids('Deep needle'), ['cross']);
+      assert.deepEqual(ids('Light child'), ['light']);
+      assert.ok(ids('Shadow words').includes('span'));
+      assert.deepEqual(ids('absent phrase'), []);
     }
   );
 });

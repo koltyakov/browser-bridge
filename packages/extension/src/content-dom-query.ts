@@ -14,6 +14,7 @@
         clamp: (value: unknown, minimum: number, maximum: number) => number;
         delay: (ms: number) => Promise<void>;
         extractElementText: (element: Element) => string;
+        getAssociatedLabels: (element: Element) => Element[];
         findElementForWaitState: (options: {
           elements: Iterable<Element>;
           waitState: 'visible' | 'hidden';
@@ -37,12 +38,19 @@
         escapeTailwindSelector: (selector: string) => string;
         getAccessibleName: (element: Element, budget?: number, onTruncated?: () => void) => string;
         getElementRoles: (element: Element) => string[];
-        getElementTextContent: (element: Element, budget?: number) => string;
+        getElementTextContent: (
+          element: Element,
+          budget?: number,
+          onTruncated?: () => void
+        ) => string;
         getShadowRoot: (element: Element) => ShadowRoot | null;
         isElementVisible: (element: Element) => boolean;
         querySelectorMatchesDeep: (selector: string, root?: ParentNode) => Generator<Element>;
         querySelectorDeep: (selector: string, root?: ParentNode) => Element | null;
         walkElementsDeep: (root?: ParentNode, limit?: number) => Generator<Element>;
+        withDomScanCache: <T>(scan: () => T) => T;
+        DEEP_WALK_LIMIT: number;
+        DEEP_WALK_TIME_MS: number;
       };
     }
   ).__BBX_CONTENT_HELPERS__;
@@ -64,6 +72,8 @@
   }
 
   const {
+    DEEP_WALK_LIMIT,
+    DEEP_WALK_TIME_MS,
     NON_RENDERED_TAGS,
     clamp,
     collapseText,
@@ -71,15 +81,18 @@
     escapeTailwindSelector,
     extractElementText,
     findElementForWaitState,
+    getAssociatedLabels,
     getAccessibleName,
     getElementRoles,
     getElementTextContent,
+    getShadowRoot,
     isElementVisible,
     querySelectorMatchesDeep,
     querySelectorDeep,
     toRect,
     truncateText,
     walkElementsDeep,
+    withDomScanCache,
   } = contentHelpers;
   const {
     consumePruned,
@@ -461,6 +474,10 @@ element reference. */
     const start = Date.now();
 
     function check(): { found: boolean; element: Element | null } {
+      return withDomScanCache(checkOnce);
+    }
+
+    function checkOnce(): { found: boolean; element: Element | null } {
       if (typeof params.__bbxAssertActive === 'function') params.__bbxAssertActive();
       if (waitState === 'detached') {
         const exists = text
@@ -470,8 +487,9 @@ element reference. */
       }
       let hasMatches = false;
       function* matchingCandidates(): Generator<Element> {
+        const index = text !== null ? createTextIndex(text) : null;
         for (const element of querySelectorMatchesDeep(selector)) {
-          if (text !== null && !elementMatchesText(element, text)) continue;
+          if (text !== null && !elementMatchesText(element, text, index)) continue;
           hasMatches = true;
           yield element;
         }
@@ -580,6 +598,13 @@ element reference. */
     });
   }
 
+  // Semantic evaluations per locator scan match the traversal bound: text and
+  // name pruning keep each evaluation small, and the walk deadline caps time.
+  const LOCATE_EVALUATION_LIMIT = DEEP_WALK_LIMIT;
+  // A locator answers one explicit agent action and must prove uniqueness over
+  // the whole page, so it may run longer than a plain selector walk.
+  const LOCATE_TIME_BUDGET_MS = Math.max(DEEP_WALK_TIME_MS, 2_000);
+
   type ElementLocator = {
     role?: string;
     name?: string;
@@ -624,22 +649,152 @@ contribute their shadow content. */
     return getElementTextContent(element, 100_000);
   }
 
+  type TextIndex = {
+    text: (element: Element) => string;
+    excluded: (element: Element) => boolean;
+    /** Whether the element's complete subtree text provably lacks the needle. */
+    lacks: (element: Element) => boolean;
+  };
+
+  /** Per-scan subtree text cache. Each element's text is collected once, and a
+complete subtree text without the needle proves that no descendant included
+in it can match by subtree text either. Without this, a document-order scan
+re-reads every ancestor's whole subtree, which is quadratic on large pages. */
+  function createTextIndex(needle: string): TextIndex {
+    const lowered = collapseText(needle, 10_000).toLowerCase();
+    const texts = new Map<Element, string>();
+    const excluded = new WeakSet<Element>();
+    // The ancestor whose collected text contains this element's text: shadow
+    // content is read through its host, while a host's light children are not.
+    const textParent = (element: Element): Element | null => {
+      const parent = element.parentNode;
+      if (!parent) return null;
+      if (parent.nodeType === 11) return (parent as ShadowRoot).host ?? null;
+      if (parent.nodeType !== 1 || !excluded.has(parent as Element)) return null;
+      return getShadowRoot(parent as Element) ? null : (parent as Element);
+    };
+    return {
+      text(element) {
+        let text = texts.get(element);
+        if (text === undefined) {
+          let complete = true;
+          text = getElementTextContent(element, 100_000, () => {
+            complete = false;
+          });
+          texts.set(element, text);
+          if (complete && !text.toLowerCase().includes(lowered)) excluded.add(element);
+        }
+        return text;
+      },
+      excluded(element) {
+        if (excluded.has(element)) return true;
+        const parent = textParent(element);
+        if (parent && excluded.has(parent)) {
+          excluded.add(element);
+          return true;
+        }
+        return false;
+      },
+      lacks(element) {
+        if (this.excluded(element)) return true;
+        this.text(element);
+        return excluded.has(element);
+      },
+    };
+  }
+
+  // Accessible-name sources outside an element's own subtree text.
+  const NAME_SOURCE_ATTRIBUTES = ['aria-labelledby', 'aria-label', 'alt', 'title', 'placeholder'];
+  const LABELABLE_NAME_TAGS = new Set([
+    'INPUT',
+    'SELECT',
+    'TEXTAREA',
+    'BUTTON',
+    'METER',
+    'OUTPUT',
+    'PROGRESS',
+  ]);
+
+  /** True when no accessible-name source of this element can contain the
+needle: no naming attributes, no associated label containing it, no input
+value or default button name, and subtree text that lacks it. */
+  function nameCannotContain(element: Element, index: TextIndex): boolean {
+    if (NAME_SOURCE_ATTRIBUTES.some((attribute) => element.hasAttribute(attribute))) return false;
+    const tag = element.tagName.toUpperCase();
+    if (LABELABLE_NAME_TAGS.has(tag)) {
+      if (tag === 'INPUT') return false;
+      // Mirror getAccessibleName: associated labels, else a wrapping label (the
+      // id-based fallback is left to the full name computation).
+      let labels = getAssociatedLabels(element);
+      if (!labels.length) {
+        if (element.getAttribute('id')) return false;
+        const wrapping = element.closest?.('label');
+        labels = wrapping ? [wrapping] : [];
+      }
+      for (const label of labels) if (!index.lacks(label)) return false;
+    }
+    return index.lacks(element);
+  }
+
+  const OWN_TEXT_ATTRIBUTES = ['aria-label', 'name', 'placeholder', 'title'];
+
+  /** extractElementText matching for an element whose subtree text lacks the
+needle. Its text nodes are then only a match when the element joins
+several of them across child elements; attributes and values still count. */
+  function excludedOwnTextMatches(element: Element, needle: string, exact: boolean): boolean {
+    const matches = (value: unknown) =>
+      typeof value === 'string' &&
+      collapseText(value, 100_000)
+        .split(' | ')
+        .some((part) => textMatches(part, needle, exact));
+    for (const attribute of OWN_TEXT_ATTRIBUTES) {
+      if (matches(element.getAttribute(attribute))) return true;
+    }
+    if ('value' in element && matches((element as { value?: unknown }).value)) return true;
+    // One text node is part of the subtree text, which lacks the needle.
+    let textNodes = 0;
+    for (const node of element.childNodes) {
+      if (node.nodeType === 3 && (node.textContent ?? '').trim() && ++textNodes > 1) {
+        const own = extractElementText(element);
+        return Boolean(own) && own.split(' | ').some((part) => textMatches(part, needle, exact));
+      }
+    }
+    return false;
+  }
+
   /** Match visible text the way a user reads it: own text and text-like
 attributes first, otherwise the innermost element whose combined
 descendant text matches (so `<button><b>Place</b> order</button>` matches
 "Place order" on the button, not on `<body>`). */
-  function matchesTextLocator(element: Element, needle: string, exact: boolean): boolean {
+  function matchesTextLocator(
+    element: Element,
+    needle: string,
+    exact: boolean,
+    index: TextIndex | null = null
+  ): boolean {
     if (NON_RENDERED_TAGS.has(element.tagName)) return false;
+    if (index?.excluded(element)) return excludedOwnTextMatches(element, needle, exact);
     const own = extractElementText(element);
     if (own && own.split(' | ').some((part) => textMatches(part, needle, exact))) return true;
-    if (!textMatches(getMatchableText(element), needle, exact)) return false;
+    const text = index ? index.text(element) : getMatchableText(element);
+    if (!textMatches(text, needle, exact)) return false;
     for (const child of element.children ?? []) {
-      if (textMatches(getMatchableText(child), needle, exact)) return false;
+      const childText = index
+        ? index.excluded(child)
+          ? ''
+          : index.text(child)
+        : getMatchableText(child);
+      if (textMatches(childText, needle, exact)) return false;
     }
     return true;
   }
 
-  function matchesLocator(element: Element, locator: ElementLocator): boolean {
+  function matchesLocator(
+    element: Element,
+    locator: ElementLocator,
+    textIndex: TextIndex | null = null,
+    labelIndex: TextIndex | null = null
+  ): boolean {
     const exact = locator.exact === true;
     if (NON_RENDERED_TAGS.has(element.tagName)) return false;
     if (locator.role && !getElementRoles(element).includes(locator.role.toLowerCase())) {
@@ -661,6 +816,7 @@ descendant text matches (so `<button><b>Place</b> order</button>` matches
       locator.label &&
       (element.tagName === 'LABEL' ||
         getElementRoles(element).length === 0 ||
+        (labelIndex !== null && nameCannotContain(element, labelIndex)) ||
         !textMatches(getAccessibleName(element), locator.label, exact))
     ) {
       return false;
@@ -668,7 +824,7 @@ descendant text matches (so `<button><b>Place</b> order</button>` matches
     if (locator.name && !textMatches(getAccessibleName(element), locator.name, exact)) {
       return false;
     }
-    if (locator.text && !matchesTextLocator(element, locator.text, exact)) {
+    if (locator.text && !matchesTextLocator(element, locator.text, exact, textIndex)) {
       return false;
     }
     return true;
@@ -682,15 +838,15 @@ excluded unless `includeHidden` is set. */
     options: { maxResults?: number; scanLimit?: number; lookahead?: boolean } = {}
   ): LocateResult {
     const maxResults = options.maxResults ?? 10;
-    const scanLimit = options.scanLimit ?? 5_000;
+    const scanLimit = options.scanLimit ?? LOCATE_EVALUATION_LIMIT;
+    const traversalLimit = Math.max(scanLimit, DEEP_WALK_LIMIT);
     const scope = locator.selector && locator.selector !== '*' ? locator.selector : null;
+    const textIndex = locator.text ? createTextIndex(locator.text) : null;
+    const labelIndex = locator.label ? createTextIndex(locator.label) : null;
 
     const candidates: Iterable<Element> = scope
       ? querySelectorMatchesDeep(escapeTailwindSelector(scope))
-      : walkElementsDeep(
-          document.body ?? document.documentElement ?? document,
-          Math.max(scanLimit, 20_000) + 1
-        );
+      : walkElementsDeep(document.body ?? document.documentElement ?? document, traversalLimit + 1);
 
     const matches: Element[] = [];
     let hiddenMatches = 0;
@@ -704,9 +860,9 @@ excluded unless `includeHidden` is set. */
       // editor control. Spend the semantic scan budget on the requested role,
       // while retaining an independent traversal/time bound for hostile DOMs.
       if (
-        scanned >= Math.max(scanLimit, 20_000) ||
+        scanned >= traversalLimit ||
         evaluated >= scanLimit ||
-        performance.now() - started > 100
+        performance.now() - started > LOCATE_TIME_BUDGET_MS
       ) {
         truncationReason = 'scanLimit';
         break;
@@ -714,7 +870,7 @@ excluded unless `includeHidden` is set. */
       scanned += 1;
       if (locator.role && !getElementRoles(element).includes(locator.role.toLowerCase())) continue;
       evaluated += 1;
-      if (!matchesLocator(element, locator)) continue;
+      if (!matchesLocator(element, locator, textIndex, labelIndex)) continue;
       if (locator.includeHidden !== true && !isElementVisible(element)) {
         hiddenMatches += 1;
         continue;
@@ -831,7 +987,7 @@ locator target. Hidden matches count: the action decides actionability. */
         },
         {
           maxResults: clamp(params.maxResults ?? 10, 1, 50),
-          scanLimit: clamp(params.scanLimit ?? 5000, 1, 20000),
+          scanLimit: clamp(params.scanLimit ?? LOCATE_EVALUATION_LIMIT, 1, DEEP_WALK_LIMIT),
         }
       )
     );
@@ -854,7 +1010,7 @@ locator target. Hidden matches count: the action decides actionability. */
         },
         {
           maxResults: clamp(params.maxResults ?? 10, 1, 50),
-          scanLimit: clamp(params.scanLimit ?? 5000, 1, 20000),
+          scanLimit: clamp(params.scanLimit ?? LOCATE_EVALUATION_LIMIT, 1, DEEP_WALK_LIMIT),
         }
       )
     );
@@ -862,18 +1018,24 @@ locator target. Hidden matches count: the action decides actionability. */
 
   /** A scoped wait matches descendant text too. Finder locators deliberately
   prefer innermost matches, but a status/container wait must retain its scope. */
-  function elementMatchesText(element: Element, text: string): boolean {
+  function elementMatchesText(
+    element: Element,
+    text: string,
+    index: TextIndex | null = null
+  ): boolean {
     return (
-      matchesTextLocator(element, text, false) ||
+      matchesTextLocator(element, text, false, index) ||
       (!NON_RENDERED_TAGS.has(element.tagName) &&
-        textMatches(getMatchableText(element), text, false))
+        !index?.excluded(element) &&
+        textMatches(index ? index.text(element) : getMatchableText(element), text, false))
     );
   }
 
   /** Find the first element matching a selector whose text contains a string. */
   function findElementWithText(selector: string, text: string): Element | null {
+    const index = createTextIndex(text);
     for (const el of querySelectorMatchesDeep(selector)) {
-      if (elementMatchesText(el, text)) {
+      if (elementMatchesText(el, text, index)) {
         return el;
       }
     }
@@ -1288,15 +1450,20 @@ one step. Hidden elements are skipped. */
     return { ...base, format: 'outline', outline };
   }
 
+  /** Expose a synchronous read-only scan with per-scan lookup caches. */
+  function scanned<A extends unknown[], R>(scan: (...args: A) => R): (...args: A) => R {
+    return (...args) => withDomScanCache(() => scan(...args));
+  }
+
   globalState.__BBX_CONTENT_DOM_QUERY__ = Object.freeze({
     describeElement,
-    domQuery,
-    findByRole,
-    findByText,
-    getAccessibilityOutline,
+    domQuery: scanned(domQuery),
+    findByRole: scanned(findByRole),
+    findByText: scanned(findByText),
+    getAccessibilityOutline: scanned(getAccessibilityOutline),
     isLocator,
-    probeTarget,
-    locateElements,
+    probeTarget: scanned(probeTarget),
+    locateElements: scanned(locateElements),
     getAttributes,
     getBoxModel,
     getComputedStyles,

@@ -417,8 +417,11 @@ const {
   ensureContentScript,
   getCleanupFrames,
   clearCleanupFrames,
+  invalidateFrames,
   installNavigationSignals,
   uninstallNavigationSignals,
+  installActivitySignals,
+  uninstallActivitySignals,
 } = createContentScriptBridge(chrome, {
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
   isRestrictedAutomationUrl,
@@ -1015,6 +1018,7 @@ const tabBoundRequestDependencies: Parameters<typeof executeTabBoundRequest>[1] 
   recordStaleRecovery: (outcome, group) =>
     recoveryTelemetry.record('stale_ref_recovery', outcome, group),
   frames: { listFrames, getFrameForRef, sendFrameMessage },
+  activitySignals: { install: installActivitySignals, uninstall: uninstallActivitySignals },
 };
 
 let accessStateReady = false;
@@ -1087,6 +1091,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     void agentGroups.sync().catch(reportAsyncError);
   }
   if (changeInfo.status === 'loading' || typeof changeInfo.url === 'string') {
+    invalidateFrames(tabId);
     mutationGate.invalidate(tabId);
     domBaselines.invalidateNavigation(tabId);
     invalidateVisualBaselines(state.nativePort, tabId);
@@ -1183,7 +1188,10 @@ chrome.runtime.onConnect.addListener((port) => {
 chrome.runtime.onMessage.addListener(
   createRuntimeMessageListener({
     openSidePanelForTab,
-    onFrameTreeChanged: notifyFrameWaits,
+    onFrameTreeChanged: (tabId) => {
+      invalidateFrames(tabId);
+      notifyFrameWaits(tabId);
+    },
     onWebMcpApproval: webmcp.handleMessage,
     onNavigationSignal: (tabId, kind, channel) => {
       domBaselines.invalidateNavigation(tabId);

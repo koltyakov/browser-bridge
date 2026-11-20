@@ -587,3 +587,40 @@ test('late tabs receive independent signal channels only when their waits reques
     ]
   );
 });
+
+test('navigation invalidates a cached frame list so new child frames are probed', async () => {
+  let document = 'old';
+  let reads = 0;
+  const chromeFake = createChromeFake({
+    scripting: {
+      executeScript: async (details: { files?: string[] }) => {
+        if (details.files) return [];
+        reads += 1;
+        return [
+          { frameId: 0, result: `${document}0` },
+          { frameId: document === 'old' ? 3 : 9, result: `${document}f` },
+        ];
+      },
+    },
+  });
+  const bridge = createContentScriptBridge(chromeFake as unknown as typeof chrome, {
+    contentScriptTimeoutMs: 1_000,
+    isRestrictedAutomationUrl: () => false,
+  });
+  assert.deepEqual(
+    (await bridge.listFrames(8)).map((frame) => frame.frameId),
+    [0, 3]
+  );
+  document = 'new';
+  assert.deepEqual(
+    (await bridge.listFrames(8)).map((frame) => frame.frameId),
+    [0, 3],
+    'the cache serves the old document until invalidated'
+  );
+  bridge.invalidateFrames(8);
+  assert.deepEqual(
+    (await bridge.listFrames(8)).map((frame) => frame.frameId),
+    [0, 9]
+  );
+  assert.equal(reads, 2);
+});

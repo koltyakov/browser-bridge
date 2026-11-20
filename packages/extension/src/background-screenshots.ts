@@ -23,8 +23,15 @@ export type TabDebuggerLike = {
 };
 
 /** Chrome can leave Page.captureScreenshot pending indefinitely for a hidden
-tab. Bound it so one stuck capture cannot hold the tab's debugger lane. */
-export const SCREENSHOT_CDP_TIMEOUT_MS = 10_000;
+tab (seen on Windows and Linux, not macOS). Normal captures finish in tens of
+milliseconds, and a stalled one usually returns within about 100 ms after the
+debugger reattaches. Each attempt is bounded so one stuck capture cannot hold
+the tab's debugger lane; a capture is read-only, so retrying on a fresh session
+is safe. On Windows, 200 of 200 background captures succeeded within 1.7 s
+with these bounds. Larger clips get proportionally more encoding time. */
+export const SCREENSHOT_CDP_ATTEMPT_TIMEOUTS_MS = [500, 1_000, 5_000];
+const SCREENSHOT_ENCODE_PIXELS_PER_MS = 10_000;
+const SCREENSHOT_CDP_MAX_TIMEOUT_MS = 15_000;
 
 class ScreenshotCaptureTimeout extends Error {}
 
@@ -47,8 +54,8 @@ export type ScreenshotDeps = {
   ) => Promise<unknown>;
   frames?: import('./background-tab-bound.js').TabBoundRequestDependencies['frames'];
   tabDebugger: TabDebuggerLike;
-  /** Override for tests; defaults to SCREENSHOT_CDP_TIMEOUT_MS. */
-  captureTimeoutMs?: number;
+  /** Override for tests; defaults to SCREENSHOT_CDP_ATTEMPT_TIMEOUTS_MS. */
+  captureAttemptTimeoutsMs?: number[];
   storeArtifact: (
     requestId: string,
     data: string,
@@ -213,9 +220,14 @@ export async function handleScreenshot(
       .then((results) => results[0]?.result ?? null)
       .catch(() => null) ?? null,
   ]);
-  const captureTimeoutMs = deps.captureTimeoutMs ?? SCREENSHOT_CDP_TIMEOUT_MS;
-  const data = await deps.tabDebugger
-    .run(
+  const encodeAllowanceMs = Math.ceil(
+    (clip.width * clip.height * dpr * dpr) / SCREENSHOT_ENCODE_PIXELS_PER_MS
+  );
+  const captureTimeouts = (deps.captureAttemptTimeoutsMs ?? SCREENSHOT_CDP_ATTEMPT_TIMEOUTS_MS).map(
+    (timeoutMs) => Math.min(SCREENSHOT_CDP_MAX_TIMEOUT_MS, timeoutMs + encodeAllowanceMs)
+  );
+  const capture = (captureTimeoutMs: number) =>
+    deps.tabDebugger.run(
       target.tabId,
       async (debugTarget) => {
         let pageX = 0;
@@ -261,18 +273,25 @@ export async function handleScreenshot(
         return cdpResult.data;
       },
       { retryDetached: true, releaseAfterRun: true }
-    )
-    .catch(async (error: unknown) => {
+    );
+  let data: string | null = null;
+  for (const captureTimeoutMs of captureTimeouts) {
+    data = await capture(captureTimeoutMs).catch(async (error: unknown) => {
       if (!(error instanceof ScreenshotCaptureTimeout)) throw error;
       // Detaching makes Chrome reject the abandoned command and frees the tab's
-      // debugger lane, so later debugger-backed requests do not queue behind it.
+      // debugger lane, so the retry and later requests start a fresh session.
       await deps.tabDebugger.discard?.(target.tabId).catch(() => {});
-      throw new BridgeError(
-        ERROR_CODES.TIMEOUT,
-        `Chrome did not return the screenshot within ${captureTimeoutMs} ms; the debugger session was released.`,
-        { method, tabActive: tabState?.active ?? null, stage: 'Page.captureScreenshot' }
-      );
+      return null;
     });
+    if (data !== null) break;
+  }
+  if (data === null) {
+    throw new BridgeError(
+      ERROR_CODES.TIMEOUT,
+      `Chrome did not return the screenshot after ${captureTimeouts.length} attempts (${captureTimeouts.join(' ms, ')} ms); the debugger session was released.`,
+      { method, tabActive: tabState?.active ?? null, stage: 'Page.captureScreenshot' }
+    );
+  }
   const byteLength = getBase64ByteLength(data);
   const capturedDimensions = getImageDimensions(data, format);
 

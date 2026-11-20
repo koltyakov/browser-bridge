@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  fetchBoundedAXNodes,
   buildAccessibilityTree,
   formatAccessibilityOutline,
   scopeAccessibilityNodes,
@@ -294,4 +295,54 @@ test('partial AX scoping retains the target subtree and ancestors but removes si
     ['root', 'dialog', 'button', 'group']
   );
   assert.deepEqual(scopeAccessibilityNodes([{ nodeId: 'root' }], 99, 3), []);
+});
+
+test('bounded AX reads walk child lists in page order and stop after maxNodes', async () => {
+  const raw = (nodeId: string, role: string, name: string, childIds: string[] = []) => ({
+    nodeId,
+    role: { type: 'role', value: role },
+    name: { type: 'computedString', value: name },
+    childIds,
+  });
+  const all = [
+    raw('1', 'RootWebArea', 'Page', ['2', '3']),
+    raw('2', 'navigation', 'Main', ['4', '5']),
+    raw('3', 'main', '', ['6', '7']),
+    raw('4', 'link', 'Home'),
+    raw('5', 'link', 'Docs'),
+    raw('6', 'button', 'Save'),
+    raw('7', 'button', 'Cancel'),
+  ];
+  const byId = new Map(all.map((node) => [node.nodeId, node]));
+  const calls: string[] = [];
+  const send = async (method: string, params: Record<string, unknown>) => {
+    calls.push(`${method}:${String(params.id ?? '')}`);
+    if (method === 'Accessibility.getRootAXNode') return { node: all[0] };
+    const parent = byId.get(String(params.id));
+    // Chrome may list children in any order; the walk follows childIds.
+    return { nodes: [...(parent?.childIds ?? [])].reverse().map((id) => byId.get(id)) };
+  };
+  const options = { compact: false, interactiveOnly: true, maxDepth: 20 };
+
+  const complete = await fetchBoundedAXNodes(send, { ...options, maxNodes: 50 });
+  assert.equal(complete.complete, true);
+  assert.deepEqual(
+    buildAccessibilityTree(complete.nodes, { ...options, maxNodes: 50 }).nodes,
+    buildAccessibilityTree(all, { ...options, maxNodes: 50 }).nodes
+  );
+
+  calls.length = 0;
+  const partial = await fetchBoundedAXNodes(send, { ...options, maxNodes: 1 });
+  assert.equal(partial.complete, false);
+  assert.deepEqual(
+    buildAccessibilityTree(partial.nodes, { ...options, maxNodes: 1 }).nodes.map(
+      (node) => node.name
+    ),
+    ['Home']
+  );
+  // The main landmark's children are never requested.
+  assert.equal(calls.includes('Accessibility.getChildAXNodes:3'), false);
+
+  const shallow = await fetchBoundedAXNodes(send, { ...options, maxNodes: 50, maxDepth: 1 });
+  assert.equal(shallow.depthLimited, true);
 });

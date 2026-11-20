@@ -39,6 +39,11 @@ export type TabBoundRequestDependencies = {
   ) => Promise<ResolvedTabTarget>;
   ensureContentScript: (tabId: number) => Promise<void>;
   assertNoDialog?: (tabId: number) => void;
+  /** Optional page request tracking for observed input (see content-input). */
+  activitySignals?: {
+    install: (tabId: number, frameId: number, channel: string) => Promise<boolean>;
+    uninstall: (tabId: number, frameId: number, channel: string) => Promise<void>;
+  };
   runWithDialogGuard?: (
     tabId: number,
     operation: () => Promise<BridgeResponse>
@@ -297,18 +302,38 @@ export async function handleTabBoundRequest(
       payload,
       dependencies.contentScriptTimeoutMs
     );
+    // Observed input settles sooner when it can see the page's own requests:
+    // it waits for requests the action started instead of a fixed quiet gap.
+    const activityChannel =
+      request.method.startsWith('input.') && payload.observe && dependencies.activitySignals
+        ? `${request.id}`.replace(/[^A-Za-z0-9_-]/g, '').slice(-48) || 'input'
+        : null;
+    const tracking =
+      activityChannel !== null &&
+      (await dependencies.activitySignals?.install(target.tabId, frameId, activityChannel)) ===
+        true;
     const message = {
       type: 'bridge.execute',
       requestId: request.id,
       deadlineMs: request.meta?.deadline_ms,
       method: request.method,
       params: payload,
+      ...(tracking ? { activityChannel } : {}),
     };
     if (request.method.startsWith('input.')) dispatchSent = true;
-    let response =
-      frameId !== 0 && dependencies.frames
-        ? await dependencies.frames.sendFrameMessage(target.tabId, frameId, message, timeoutMs)
-        : await dependencies.sendTabMessage(target.tabId, message, timeoutMs);
+    let response: unknown;
+    try {
+      response =
+        frameId !== 0 && dependencies.frames
+          ? await dependencies.frames.sendFrameMessage(target.tabId, frameId, message, timeoutMs)
+          : await dependencies.sendTabMessage(target.tabId, message, timeoutMs);
+    } finally {
+      if (tracking && activityChannel !== null) {
+        void dependencies.activitySignals
+          ?.uninstall(target.tabId, frameId, activityChannel)
+          .catch(() => {});
+      }
+    }
     if (
       request.method === 'dom.wait_for' &&
       response &&

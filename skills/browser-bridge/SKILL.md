@@ -146,41 +146,9 @@ In MCP mode, pass `destinationId` on any browser tool call instead; `browser_sta
 
 Browser Bridge access is window-scoped. The user turns it on once for the current browser window in the popup or side panel.
 
-### Live access settings
+### Settings and profiles
 
-The side panel can grant access to just one tab and control tab creation, user-tab closing, direct cross-domain navigation, and closing AI-created tabs when access ends. These settings take effect on new Bridge commands without reconnecting. Work already dispatched may finish. They are Bridge-command policies, not a browser-wide firewall for page scripts, link clicks, or redirects.
-
-New tabs opened from an authorized tab inherit its tab-only access within the same window. This also applies to links opened from those new tabs. Unrelated tabs remain outside the grant, and linked user tabs are not AI-owned or automatically closed when access ends. Group membership alone never grants access.
-
-`health.ping` returns `accessSettings.settings` and an opaque `accessSettings.settingsRevision`. Active sessions also receive updated settings on their next ordinary response. A denied policy operation returns `ACCESS_DENIED` with `details.reason=policy_setting_disabled`, `details.setting`, `details.settingsRevision`, the current settings, and `dispatched:false`. This is not a request to re-enable window access. Do not retry repeatedly or bypass the setting through another method.
-
-Ask the user to enable the needed setting. After their confirmation, read health again, or issue one bounded read-only wait on the same destination and extensionId:
-
-```bash
-bbx call --extension '<extensionId>' access.wait_for_change '{"revision":"revision-from-error","timeoutMs":25000}'
-```
-
-In MCP, use `browser_call` with method `access.wait_for_change`, those params, and the same `extensionId`. The result returns as soon as the settings revision changes, or after the timeout with `changed:false`. Check the relevant setting, then deliberately retry only the operation rejected before dispatch and only while tab/window access remains granted. The wait never grants access, replays a request, or wakes an idle conversation. Stop rather than looping waits indefinitely.
-
-### Multiple windows and profiles
-
-Do not disable other windows or profiles to make routing work. `health.ping` returns `connectedExtensions`; its `access` status describes only the profile that answered. A restricted active tab there does not mean the requested page in another profile is unavailable.
-
-In MCP, an unscoped `tabs.list` discovers tabs across enabled profiles. Choose the requested page by URL/title, then pass its `extensionId` and `tabId` on every call, including each batch item. Include `destinationId` for a remote machine. `tabId` and element refs are profile-local, so neither identifies a browser profile by itself. `targetBrowser` and `targetProfile` also work when their names uniquely identify a connection; prefer `extensionId` when labels are absent or duplicated.
-
-Use the daemon connection's `extensionId`, not `browserExtensionId`, which identifies the installed Chrome extension and may be shared across profiles.
-
-```json
-{ "method": "page.get_state", "extensionId": "<connection ID from discovery>", "tabId": 123 }
-```
-
-CLI calls accept the same connection selector:
-
-```bash
-bbx call --extension '<connection ID from health.ping>' --tab 123 page.get_state '{}'
-```
-
-When multiple connections match, calls fail with `TAB_MISMATCH` and `reason: ambiguous_browser_target` before reading or changing any page. Choose a connection from the error's `connectedExtensions`, list its tabs, and retry with the exact target. Connection IDs change on reconnect; rediscover a missing connection rather than falling back to another profile. Ask the user to enable access only for the selected profile if it is disabled.
+The side panel can limit access to one tab and disable tab creation, user-tab closing, or cross-domain navigation. A denied policy returns `ACCESS_DENIED` with `details.reason=policy_setting_disabled` and `dispatched:false`: ask the user to change the setting instead of re-requesting access or bypassing it. With several profiles connected, pass the `extensionId` and `tabId` from `tabs.list` on every call; `TAB_MISMATCH` with `reason: ambiguous_browser_target` means pick one connection. Never disable unrelated windows to fix routing. Details: [access and recovery](references/access-and-recovery.md).
 
 To request access, call `access.request` (via `bbx access-request`, `browser_access` MCP tool, or `bbx call access.request`). This surfaces an Enable cue in the extension popup/side panel for the focused window.
 
@@ -213,71 +181,7 @@ These rules apply to `tabs.activate`, `active:true` on creation, and equivalent 
 
 ## Error recovery
 
-Decide from the method, its parameters, execution evidence, and per-response
-recovery, not the error code alone. `retry: false` forbids automatic retry;
-`retry: true` is not permission to replay a mutation.
-
-- **Safe reads** such as `health.ping`, `page.get_state`, `dom.query`, and scoped
-  text/style reads may be retried once when recovery permits. Honor `retryAfterMs`
-  and narrow an oversized or slow read. After a raw transport disconnect without
-  recovery metadata, restore connectivity before retrying only a known-safe read.
-  MCP already performs bounded recovery for eligible reads; do not stack retry
-  loops around it or retry a canceled request.
-- **Check parameters, not names.** Console/network reads with `clear: true` or
-  capture start/stop change state. Arbitrary `page.evaluate` is not a safe read.
-  `sensitive.read` and `webmcp.execute_tool` are never automatically retried.
-- **Mutations** include input, navigation/reload/history, patches, uploads, and
-  dialog actions. After timeout, internal error, cancellation, or lost connection,
-  inspect partial progress and current application state before another deliberate
-  action. Missing progress, `completed: 0`, `changed: false`, or failed observation
-  does not prove that nothing executed. Never replay a sequence to recover a
-  missing read or observation; failed sequences do not roll back completed steps.
-- **Explicitly undispatched operations** may be deliberately retried after the
-  blocker is resolved and current access/target checks pass. Require evidence
-  covering the whole operation, such as `details.dispatched: false`, or
-  `aftermath.dispatch: "not_started"` for an individual input. Do not infer this
-  from an error code. Reconnection and debugger recovery restore transport or
-  ownership, not permission to resume or replay input.
-
-Local MCP errors without a confirmed bridge result return `retry: false` with
-`details.outcomeUncertain: true` and no retry backoff. They cannot establish
-dispatch state or completed-step counts. Inspect state rather than overriding
-that uncertainty with the generic guidance below.
-
-| Error                     | Retry?   | Recovery                                                                                  |
-| ------------------------- | -------- | ----------------------------------------------------------------------------------------- |
-| `ACCESS_DENIED`           | No automatic | Follow the access flow or policy-setting denial; do not bypass it. Deliberately retry only the undispatched operation after permission changes. |
-| `ELEMENT_STALE`           | No       | Re-query with `dom.query` or `dom.find_by_text` to get a fresh ref                        |
-| `ELEMENT_AMBIGUOUS`       | No       | Narrow the selector or use an explicit `elementRef`; do not guess                         |
-| `ELEMENT_NOT_ACTIONABLE`  | No       | Inspect hidden/disabled/inert state with `dom.describe`                                   |
-| `ELEMENT_OBSCURED`        | No       | Inspect bounded blocker details or use `layout.hit_test`                                  |
-| `INPUT_FOCUS_CHANGED`     | No       | Inspect focus handlers; do not replay native text automatically                           |
-| `DIALOG_NOT_OPEN`         | No       | Trigger or inspect the dialog again                                                       |
-| `DIALOG_ACTION_CONFLICT`  | No       | Inspect current dialog state; never auto-repeat accept/dismiss                            |
-| `TAB_MISMATCH`            | No       | For `ambiguous_browser_target`, select `extensionId` and list its tabs. For a closed working tab, select a new `tabId`. Never disable unrelated windows. |
-| `TIMEOUT`                 | Safe reads only | When recovery permits, retry a narrower read once. For mutations, inspect progress and postconditions instead of repeating the action. |
-| `CONTENT_SCRIPT_UNAVAILABLE` | No     | Switch to a normal http(s) page in the enabled window                                    |
-| `EXTENSION_DISCONNECTED`  | Safe reads only | Check Chrome and `bbx status`; honor recovery backoff and rediscover the same target connection. Do not replay possibly dispatched actions. |
-| `NATIVE_HOST_UNAVAILABLE` | No       | Run `bbx doctor` to diagnose the installation                                             |
-| `INTERNAL_ERROR`          | Safe reads only | Retry a known-safe read once only if recovery permits. Local MCP uncertainty is non-retryable; inspect state and console evidence. |
-| `DAEMON_OFFLINE`          | No       | Daemon not running - start with `bbx restart`                                             |
-| `CONNECTION_LOST`         | Safe reads only | Reconnect and verify the same browser/profile/tab before one eligible read retry. A lost reply does not prove an action failed to execute. |
-| `BRIDGE_TIMEOUT`          | Safe reads only | Simplify an eligible read. Inspect application state for mutations; do not repeat navigation or input to repair a timeout. |
-
-Bridge errors include `error.recovery` with `retry`, optional `retryAfterMs`,
-`alternativeMethod`, and `hint`; MCP structured results also expose `recovery`.
-Use the specific response and execution evidence over code-level defaults.
-
-`health.ping` is compact by default. Set `diagnostics: true` for build, debugger,
-capture, baseline, transport, and recovery details. Routine pings still include
-connectivity, compatibility, access readiness, and profile connection IDs.
-
-`health.ping` with `diagnostics: true`, `daemon.metrics`, and `bbx doctor` expose process-local
-five-minute recovery summaries for six fixed, content-free categories. Three
-failures in the same hidden group within 60 seconds marks an active loop. Stop
-repeating the action and follow Doctor's fixed category guidance. Extension
-summaries reset on service-worker restart and daemon summaries on daemon restart;
-they contain no page data, URLs, selectors, payloads, errors, or group names.
+Decide from the method, its parameters, and each response's `recovery`, not the error code alone. `retry: false` forbids automatic retry, and `retry: true` is not permission to replay a mutation. Retry a known-safe read at most once. After a timeout or lost connection during input, navigation, patches, uploads, or dialog actions, inspect state before any new action; `changed: false` or a missing reply does not prove nothing happened. Retry an operation only with evidence it was not dispatched (`details.dispatched: false` or `aftermath.dispatch: "not_started"`). Per-code guidance and health diagnostics: [access and recovery](references/access-and-recovery.md).
 
 ## Core Rules
 
@@ -301,7 +205,7 @@ they contain no page data, URLs, selectors, payloads, errors, or group names.
 18. **Network monitoring** - use `page.get_network` to inspect API calls; auto-installs interceptor.
 19. **Overview with the DOM outline** - for "what can I do on this page?", call `dom.get_accessibility_tree` with `source: "dom"` (add `interactiveOnly: true` for controls only). It returns compact lines like `- button "Save" [el_k7q2_1f] disabled` whose refs work directly as input targets, includes shadow DOM and iframes, and needs no debugger. Reserve the default CDP source for accessibility audits.
 20. **Tailwind-aware** - when `page.get_state` returns `hints.tailwind: true`, load `references/tailwind.md`; avoid selecting by utility classes, prefer `find_by_text`/`find_by_role`; `dom.query` auto-escapes `[]` brackets.
-21. **Read the effects before reading the page** - click, press_key, set_checked, select_option, and submitting type/fill return `effects` after a short settle: same-document `url` changes, `navigation: "unloading"`, newly opened `dialogs`, alert/status/live-region `messages`, the `focused` element, `dom` churn, and the target's new state (`value`, `checked`, `expanded`, `removed`). The summary digests them (`Effects: URL → /done; alert: "Saved"`). Only follow up with a read when the effects do not answer the question; `changed: false` does not prove the action did not execute. Pass `observe: true` to other actions, or `observe: false` to skip the settle. The settle waits for about 150 ms of DOM quiet (up to 500 ms), so an observed click costs roughly 200 ms versus under 10 ms with `observe: false`; skip it in scripted loops that verify outcomes another way.
+21. **Read the effects before reading the page** - click, press_key, set_checked, select_option, and submitting type/fill return `effects` after a short settle: same-document `url` changes, `navigation: "unloading"`, newly opened `dialogs`, alert/status/live-region `messages`, the `focused` element, `dom` churn, and the target's new state (`value`, `checked`, `expanded`, `removed`). The summary digests them (`Effects: URL → /done; alert: "Saved"`). Only follow up with a read when the effects do not answer the question; `changed: false` does not prove the action did not execute. Pass `observe: true` to other actions, or `observe: false` to skip the settle. The settle waits for fetch/XHR requests the action started, then about 75 ms of DOM quiet (150 ms on pages where requests cannot be tracked), up to 500 ms. An observed click usually costs 100-250 ms versus under 10 ms with `observe: false`; skip it in scripted loops that verify outcomes another way.
 22. **Let actions wait** - targeted actions wait up to `timeoutMs` (default 2500, max 15000, `0` disables) for the target to appear, become enabled/visible/unobscured, and stop animating. Do not add a separate `dom.wait_for` before an action. Honor the errors that remain after the wait, plus `resolution.waitedMs`. `cdp_press_key` and `scroll_into_view` use separate contracts; `input.fill.mode: auto` is a separate DOM setter/keystroke strategy.
 23. **Stale recovery stays opt-in** - prefer re-querying. Use `recoverStale: true` once only when the same document/URL and a strong unique semantic descriptor should still identify the target; inspect `recovered`, old/new refs, and matched fields. A scan with more than 100 same-tag candidates fails as `ELEMENT_AMBIGUOUS`/`scan_incomplete` because uniqueness is not provable.
 24. **Dialogs are explicit** - inspect first, then accept or dismiss only when intended. `expectedDialogId` is a pre-dispatch stale-decision check, not an atomic CDP binding; never auto-repeat `DIALOG_ACTION_CONFLICT`.
@@ -336,43 +240,6 @@ CLI-first starter:
 bbx batch '[{"method":"page.get_state"},{"method":"dom.query","params":{"selector":"main","maxNodes":10,"maxDepth":3,"textBudget":400,"attributeAllowlist":["id","class","data-testid"]}},{"method":"page.get_text","params":{"textBudget":2000}}]'
 ```
 
-## Common Workflows
-
-### Debug a CSS layout issue
-
-```bash
-bbx status                                         # confirm connection
-bbx dom-query '.broken-component'                  # inspect the DOM subtree
-bbx styles ref_abc123 display,flex-direction,gap    # check computed styles
-bbx patch-style ref_abc123 display=flex gap=8px     # prototype a fix
-bbx box ref_abc123                                  # verify dimensions
-bbx rollback patch_1                                # clean up
-# → edit source file with the confirmed fix
-```
-
-### Find and fix broken text content
-
-```bash
-bbx find 'Error: something went wrong'             # locate the error text
-bbx describe ref_xyz789                             # understand the element
-bbx html ref_xyz789 500                             # check surrounding markup
-bbx patch-text ref_xyz789 'Updated message'         # test replacement
-bbx text ref_xyz789                                 # verify the change
-bbx rollback patch_2                                # clean up
-```
-
-### Verify an API call
-
-```bash
-bbx call page.get_console '{"clear":true}'          # install + clear console capture
-bbx call page.get_network '{"clear":true}'          # install + clear network capture
-# reproduce the API action here
-bbx console error                                   # read newly captured runtime errors
-bbx network 20                                      # read newly captured requests
-bbx eval 'document.querySelector("#app").__vue__.$store.state.user'  # read framework state
-bbx page-text 2000                                  # extract page content
-```
-
 ## Method Quick Reference
 
 | Category    | Key Methods                                                                                                                                         |
@@ -390,58 +257,9 @@ bbx page-text 2000                                  # extract page content
 | Performance | `performance.get_metrics` (raw Chrome/CDP counter point sample; debugger-backed)                                                                    |
 | Escalate    | `dom.get_accessibility_tree`, `screenshot.capture_element`, `screenshot.capture_region` (tight crops only), `screenshot.capture_full_page`, `cdp.*` |
 
-## Dev-Server Workflow (HMR-aware)
+## Workflows
 
-When the user has a localhost dev server with watch/HMR:
-
-1. **Inspect current state** - `page.get_state` + quick `dom.query` on the relevant area.
-2. **Read framework state** - `page.evaluate` to check router, component props, store values.
-3. **Identify the problem** - use `styles.get_computed`, `dom.get_html`, or `page.get_console` for errors.
-4. **Prototype with patches** - `patch.apply_styles` / `patch.apply_dom` to verify the fix visually.
-5. **Edit source files** - modify the actual code in the agent's workspace.
-6. **Wait for HMR** - use `dom.wait_for` for expected new text, a selector matching the changed attribute, or a detach/attach remount. Do not wait for `attached` on an unchanged selector that already exists.
-7. **Verify the change** - re-inspect the same area; compare with patch expectations.
-8. **Check for regressions** - `page.get_console` for new errors; scroll and inspect adjacent areas.
-9. **Rollback patches** - `patch.rollback` all temporary patches.
-
-## Investigate-a-Bug Workflow
-
-```
-page.get_state → page.get_console(clear: true) + page.get_network(clear: true)
-  → reproduce the bug → page.get_console + page.get_network
-  → dom.find_by_text('<error text>') or dom.query('<selector>')
-  → styles.get_computed (check layout/visibility)
-  → page.evaluate('document.querySelector(...).dataset') (read data attrs)
-  → page.evaluate('window.__APP_STATE__') (read framework state)
-  → patch.apply_styles (test fix) → verify → edit source → wait for HMR → verify
-```
-
-## User-Flow Testing Workflow
-
-Once the next actions and expected outcome are known, run them in one call rather than pausing for model reasoning between each step:
-
-```bash
-bbx call input.perform '{
-  "returnLastResult": true,
-  "steps": [
-    {"method":"input.fill","params":{"target":{"label":"Email"},"value":"a@b.co"}},
-    {"method":"input.click","params":{"target":{"role":"button","name":"Save"}}},
-    {"method":"dom.wait_for","params":{"selector":"[role=status]","text":"Saved","state":"visible"}},
-    {"method":"dom.get_text","params":{"target":{"selector":"[role=status]"},"textBudget":200}}
-  ]
-}'
-```
-
-The final read is returned in `lastResult.result`. Only the final step's result is retained, at most 16384 UTF-8 JSON bytes. If `lastResult.truncated` is true, narrow the read without replaying the actions. For a final action instead of a read, request `observe: true` on that step to receive its effects. Sequence steps do not observe by default. Completed input dispatch alone does not prove application success.
-
-When the result requires a new decision, return to the agent before continuing. Individual calls remain appropriate for exploratory flows:
-
-```
-input.click({target: {role: 'button', name: 'Login'}})
-  → page.wait_for_load_state({url: '/dashboard', urlMatch: 'contains', waitForLoad: false})
-  → dom.query('.dashboard', {maxNodes: 15}) when effects do not answer the objective
-  → page.get_console only when checking runtime errors
-```
+Worked CLI sequences for CSS debugging, text fixes, API verification, HMR dev servers, bug investigation, and one-call user flows with `input.perform`: [workflows](references/workflows.md).
 
 ## Detailed References (load only when needed)
 
@@ -451,15 +269,16 @@ input.click({target: {role: 'button', name: 'Login'}})
 - **[Full protocol reference](references/protocol.md)** - all RPC methods, error codes, and per-method capability mapping
 - **[Interaction patterns](references/interaction.md)** - input methods, navigation, form controls, hover, drag, multi-tab workflows
 - **[Access and routing summary](references/capabilities.md)** - window-scoped access model and explicit-tab routing rules
+- **[Access and recovery](references/access-and-recovery.md)** - access settings, multiple profiles, per-error recovery, health diagnostics
+- **[Workflows](references/workflows.md)** - worked CSS, text, API, HMR, bug, and user-flow sequences
+- **[CLI reference](references/cli-reference.md)** - raw parameter gotchas, artifacts, and CLI summary shapes
 - **[Tailwind CSS guide](references/tailwind.md)** - selector escaping, semantic alternatives, patching strategy (load when `hints.tailwind: true`)
 
 `bbx a11y-tree` and `dom.get_accessibility_tree` are sensitive to `maxDepth` and `maxNodes`. Shallow runs can undercount interactive nodes on real pages, so widen those limits before treating a low interactive count as a bug.
 
 For control discovery, prefer `compact: true` or `interactiveOnly: true`, then use role/name with `dom.find_by_role` to obtain an input ref. AX `interactive` means semantic/focusable, not currently visible, unobscured, or otherwise actionable; AX results are depth-limited partial topology and include truncation metadata even when `maxNodes` was not reached.
 
-> **MCP mode:** If Browser Bridge is connected via MCP (tools named `browser_dom`, `browser_capture`, etc.), use the MCP tools directly - do not shell out to `bbx`. The MCP tools map 1:1 to CLI capabilities. In prompts, `BB MCP` and `Browser Bridge MCP` both work. Do not treat `bbx-mcp` as a skill alias.
->
-> For open-ended MCP inspection tasks, prefer `browser_investigate` first. It is read-only, designed for cheaper delegated investigation, and falls back to a deterministic sequence when the client cannot delegate. Escalate to `browser_capture` only when the structured investigation is not enough.
+> **MCP mode:** If Browser Bridge is connected via MCP, use its tools (`browser_call`, `browser_batch`, `browser_status`, `browser_health`, `browser_access`, `browser_skill`) instead of shelling out to `bbx`. `browser_call` reaches every method listed here.
 
 ## Subagent Output
 
@@ -467,67 +286,4 @@ Return: verdict, tab id + origin, minimal evidence set. No raw HTML or base64 im
 
 ## Output Format
 
-Every CLI shortcut command produces consistent `{ok, summary, evidence}` JSON, plus `transportTokens` when the raw result is above 250 tokens. Use `bbx call <method>` for raw protocol output when needed; it prints the bare result, or `{ok: false, error, recovery}` on failure.
-
-CLI batches keep fuller `response` values when bounded `evidence` omits information. Use `--evidence-only` to omit those values for smaller agent output; `responseOmitted: true` marks affected items. The default remains lossless. `protocol.describe` can share a CLI or MCP batch with page reads and runs locally; discovery-only batches need no daemon. Text summaries show returned/source character counts when they differ, such as `Page text: 600/3015 chars (truncated).` Evidence previews can be shorter than the bridge result.
-
-## CLI Raw Params Gotchas
-
-- Use `selector`, not `scope`, to narrow `dom.find_by_text` and `dom.find_by_role`.
-- Wrap targeted DOM input as `target: { elementRef }` or `target: { selector }`; `input.press_key` may omit the target to use the active element, `input.scroll_into_view` also accepts `target`, and `cdp.dispatch_key_event` targets the tab. **Do not pass `ref` or `elementRef` at the top level**:
-  ```bash
-  # CORRECT
-  bbx call input.click '{"target":{"elementRef":"el_xxx"}}'
-  bbx call input.type  '{"target":{"elementRef":"el_xxx"},"text":"hello"}'
-  # WRONG -- will fail with "Target not found"
-  bbx call input.click '{"ref":"el_xxx"}'
-  bbx call input.click '{"elementRef":"el_xxx"}'
-  ```
-- `input.drag` uses `source`, `destination`, and optional destination offsets `offsetX` / `offsetY`.
-- `executionMode` accepts `dom` or `cdp` and defaults to `dom`; CDP supports click, hover, drag, type, fill, press_key, and touch. `input.fill.mode` (`auto`, `setter`, `keystrokes`) is a separate DOM strategy.
-- `input.perform` takes `steps: [{ method, params, atMs | delayMs }]` using the same params each method takes alone. Steps run in order inside the extension; it stops at the first failed step (or a `dom.wait_for` that times out) unless `continueOnError: true`, and reports `startedAtMs` for every step. It also accepts `page.get_state`, `page.get_text`, `dom.query`, and `dom.get_text` read steps. `returnLastResult: true` retains only the final successful step's bounded result; a failed final step never substitutes an earlier result.
-- `page.get_network` defaults to low-cost fetch/XHR instrumentation. All-resource CDP capture must be armed before the activity with `source: "cdp", capture: "start"`, read later, and explicitly stopped.
-- `network.export_har` requires that explicit capture to still be armed. Params are `limit` (1-200), sanitized-URL substring `urlPattern`, and `delivery` (`auto`, `inline`, `artifact`). Inline bounds remove whole oldest entries; export never changes capture state. `bbx har` uses the same client to download, length/SHA-256 verify, delete, validate, and atomically write artifacts locally.
-- `page.handle_dialog` mutations are not atomically bound to `expectedDialogId`; treat `commandDispatched` as dispatch evidence and verify follow-up state.
-- Raw screenshot calls default to inline base64. Use `delivery: "auto"` for size-aware artifact fallback, or explicit `inline` when MCP image content is required; prefer `bbx screenshot <ref> [outPath]` when one element is enough because the CLI downloads and verifies artifacts locally.
-- Artifact delivery returns a descriptor (artifactId, sha256, byteLength), not bytes. From MCP, read chunks with the `browser_artifact` tool (`action: "read"`, paging `offset` until `nextOffset` is null, then verify the reassembled bytes against `sha256`) and free storage with `action: "delete"`. Each standalone CLI invocation has a new artifact owner, so use `bbx screenshot` / `bbx har` to capture, download, verify, and delete within one CLI process; use `delivery: "inline"` for raw CLI screenshot calls that need the bytes in their immediate result.
-
-## Response Shapes
-
-The summarizer auto-detects response types and produces concise summaries:
-
-Shortcut commands intentionally expose only the common case. Use `bbx call <method> '{...}'` when you need method-specific fields that are not surfaced by a shortcut, such as `tabs.create.active`.
-
-`dom.query` results include `registrySize` and may include `_registryPruned: true` after element-ref eviction. `page.get_console` and `page.get_network` include `dropped` when older buffered entries were discarded. Targeted click, focus, type, fill, press-key, checked-state, option-selection, hover, and drag results include bounded `resolution` and `execution` metadata; `cdp_press_key` and `scroll_into_view` use separate contracts.
-
-| Response Type    | Detection                        | Summary Format                                               |
-| ---------------- | -------------------------------- | ------------------------------------------------------------ |
-| Health ping      | `result.daemon`                  | `Daemon: ok. Extension: connected/disconnected. Access: ...` |
-| Tab list         | `result.tabs`                    | `Bridge listed N tab(s).`                                    |
-| Page state       | `result.url + title + origin`    | `Page: Title (origin) [hints].`                              |
-| Page/DOM text    | `result.text/value + truncated`  | `Page text: N chars.`                                        |
-| DOM nodes        | `result.nodes`                   | `DOM query returned N node(s).`                              |
-| A11y tree        | `result.nodes + role`            | `Accessibility tree: N nodes (M interactive).`               |
-| Evaluate         | `result.value + type`            | `Evaluated to type: value`                                   |
-| Element describe | `result.tag + elementRef + bbox` | `Element tag#id: text.`                                      |
-| Computed styles  | `result.properties + elementRef` | `Computed N style(s) for ref.`                               |
-| Box model        | `result.content + border`        | `Box model: W×H at (x, y).`                                  |
-| Network          | `result.source + entries`        | `Network: N requests.`                                       |
-| HAR export       | `result.format === "har"`        | `HAR export delivered mode: N/M entries.`                    |
-| Console          | `entries` (no type field)        | `Console: N entries.`                                        |
-| Logs             | `entries[0].at + method`         | `Log: N entries.`                                            |
-| Patch apply      | `result.patchId`                 | `Patch id applied.`                                          |
-| Patch rollback   | `result.rolled_back`             | `Patch rolled back.`                                         |
-| Patch list       | `result.patches`                 | `N active patch(es).`                                        |
-| HTML             | `result.html`                    | `HTML fragment: N chars.`                                    |
-| Performance      | `result.metrics`                 | `Raw CDP performance counters: N collected; Web Vitals not measured.` |
-| Storage          | `result.type + count + entries`  | `Storage (type): N entries.`                                 |
-| Click/Focus/Type | `result.clicked/focused/typed`   | `Clicked/Focused/Typed ref.`                                 |
-| Key press        | `result.pressed`                 | `Key pressed (key).`                                         |
-| Navigate         | `result.navigated`               | `Navigated to url.`                                          |
-| Scroll           | `result.scrolled`                | `Scrolled to (x, y).`                                        |
-| Resize           | `result.resized`                 | `Viewport resized to W×H.`                                   |
-| Hover            | `result.hovered`                 | `Hover active/failed on ref.`                                |
-| Drag             | `result.dragged`                 | `Drag completed/failed.`                                     |
-| Tab close        | `result.closed`                  | `Tab N closed.`                                              |
-| Tab create       | `result.tabId + url`             | `Tab N created (url).`                                       |
+CLI shortcut commands print `{ok, summary, evidence}` JSON; `bbx call <method>` prints the raw result, or `{ok: false, error, recovery}`. Parameter gotchas (wrap refs as `target: {elementRef}`, never top-level `ref`), artifact handling, and summary shapes: [CLI reference](references/cli-reference.md).

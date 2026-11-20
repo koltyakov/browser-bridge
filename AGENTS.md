@@ -141,6 +141,8 @@ make daemon                    # start daemon locally
 - `skills/browser-bridge/references/token-efficiency.md` - budget presets, anti-patterns (load when optimizing)
 - `skills/browser-bridge/references/patch-workflow.md` - style/DOM patch loops (load when patching)
 - `skills/browser-bridge/references/interaction.md` - input, navigation, form controls (load when interacting)
+- `skills/browser-bridge/references/access-and-recovery.md` - access settings, multiple profiles, per-error recovery (load on access or error handling)
+- `skills/browser-bridge/references/workflows.md` and `references/cli-reference.md` - worked sequences, raw CLI parameters, and summary shapes
 
 ## Working Rules
 
