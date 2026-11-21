@@ -20,4 +20,4 @@ Also on 2026-10-24 the CLI envelope was intentionally compacted. In `cli-formatt
 
 Change expectations only when intentionally changing the public contract. Preserve distinctions between omitted fields, `null`, empty arrays, and empty objects.
 
-On 2026-11-21 the MCP error text was widened for text-only clients: `typed_error` in `mcp-results.json` bounds its details text at 600 characters instead of 300. Diagnostic-only detail keys (`aftermath`, `startedAtMs`, `elapsedMs`, `total`, `byteLength`, `execution`) are dropped from that text first; structured content keeps them.
+On 2026-11-21 the MCP error text was widened for text-only clients: `typed_error` in `mcp-results.json` bounds its details text at 600 characters instead of 300. Diagnostic-only detail keys (`aftermath`, `startedAtMs`, `elapsedMs`, `total`, `byteLength`, `execution`) are dropped from that text first; structured content keeps them. The same day, `call_unknown.method` in `cli-argument-errors.json` changed to the shared unknown-method message, which names the closest method or `protocol.describe {query}`.

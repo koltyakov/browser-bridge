@@ -245,6 +245,7 @@ func doctorCLI(ctx context.Context, c config, args []string) error {
 			}
 		}
 	}
+	warnings = append(warnings, doctorCustomProfileWarnings(ctx)...)
 	report["warnings"] = value(warnings)
 	manifests := []object{}
 	validManifest := false

@@ -106,7 +106,7 @@ export interface BrowserMethodParams {
 "tabs.create": { "url"?: string; "active"?: boolean };
 "tabs.list": { "limit"?: number; "offset"?: number };
 "viewport.resize": { "width"?: number; "height"?: number; "deviceScaleFactor"?: number; "reset"?: boolean };
-"viewport.scroll": { "target"?: { "elementRef"?: string; "selector"?: string; "role"?: string; "name"?: string; "text"?: string; "label"?: string; "placeholder"?: string; "testId"?: string; "exact"?: boolean; "nth"?: number; [key: string]: unknown }; "top"?: number; "left"?: number; "behavior"?: "auto" | "smooth"; "relative"?: boolean };
+"viewport.scroll": { "target"?: { "elementRef"?: string; "selector"?: string; "role"?: string; "name"?: string; "text"?: string; "label"?: string; "placeholder"?: string; "testId"?: string; "exact"?: boolean; "nth"?: number; [key: string]: unknown }; "top"?: number; "left"?: number; "behavior"?: "auto" | "smooth" | "instant"; "relative"?: boolean };
 "webmcp.execute_tool": { "toolRef"?: string; "arguments"?: { [key: string]: unknown }; "timeoutMs"?: number; "approvalTimeoutMs"?: number; "maxBytes"?: number };
 "webmcp.get_tool": { "toolRef"?: string; "maxBytes"?: number };
 "webmcp.list_tools": { "limit"?: number; "offset"?: number; "query"?: string; "includeDebugging"?: boolean; "maxBytes"?: number };

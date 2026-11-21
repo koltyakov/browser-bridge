@@ -82,3 +82,21 @@ func TestDOMQuerySummaryDescribesListedMatches(t *testing.T) {
 		t.Fatalf("MCP evidence dropped checked state: %s", compact["evidence"])
 	}
 }
+
+func TestBrowserCallFoldsMethodParamsWrittenBesideMethod(t *testing.T) {
+	properties := object{"method": value(object{}), "params": value(object{}), "tabId": value(object{})}
+	folded := foldBrowserCallArguments(object{
+		"method":           value("input.perform"),
+		"tabId":            value(7),
+		"returnLastResult": value(true),
+		"steps":            value([]object{}),
+		"params":           value(object{"steps": value([]object{{"method": value("input.click")}})}),
+	}, properties)
+	if folded["returnLastResult"] != nil || folded["steps"] != nil || folded.text("method") != "input.perform" || folded.number("tabId") != 7 {
+		t.Fatalf("folded arguments: %s", value(folded))
+	}
+	params := folded.object("params")
+	if !params.boolean("returnLastResult") || !strings.Contains(string(params["steps"]), "input.click") {
+		t.Fatalf("folded params: %s", value(params))
+	}
+}

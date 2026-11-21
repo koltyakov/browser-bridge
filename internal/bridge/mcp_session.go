@@ -32,6 +32,9 @@ func (s *mcpSession) prepareCall(ctx context.Context, params object, era string)
 	if err != nil {
 		return ctx, "", nil, rpcError(nil, -32602, "Tool arguments must be an object.")
 	}
+	if name == "browser_call" {
+		arguments = foldBrowserCallArguments(arguments, schema.object("properties"))
+	}
 	if err := validateSchema(value(arguments), schema, "arguments"); err != nil {
 		return ctx, "", nil, rpcError(nil, -32602, err.Error())
 	}
@@ -76,4 +79,43 @@ func mcpToolPayload(id json.RawMessage, era string, result object) ([]byte, erro
 	}
 	result = mcpErrorResult("RESULT_TOO_LARGE", "MCP tool output exceeds 1 MiB. The call has already executed.", "Narrow read-only results or split the batch into smaller calls. Inspect postconditions before repeating actions.")
 	return encodeJSON(mcpRPCResult(id, "tools/call", era, result))
+}
+
+// foldBrowserCallArguments moves method params written beside method, such as
+// returnLastResult or url, into params. browser_call has no other arguments, so
+// the intent is unambiguous; explicit params win on conflict.
+func foldBrowserCallArguments(arguments, properties object) object {
+	var moved object
+	for key, raw := range arguments {
+		if properties[key] != nil {
+			continue
+		}
+		if moved == nil {
+			moved = object{}
+		}
+		moved[key] = raw
+	}
+	if moved == nil {
+		return arguments
+	}
+	params, err := decodeObject(arguments["params"])
+	if arguments["params"] == nil || string(arguments["params"]) == "null" {
+		params, err = object{}, nil
+	}
+	if err != nil {
+		return arguments
+	}
+	folded := object{}
+	for key, raw := range arguments {
+		if moved[key] == nil {
+			folded[key] = raw
+		}
+	}
+	for key, raw := range moved {
+		if _, exists := params[key]; !exists {
+			params[key] = raw
+		}
+	}
+	folded["params"] = value(params)
+	return folded
 }

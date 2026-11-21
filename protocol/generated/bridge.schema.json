@@ -3184,7 +3184,8 @@
           "type": "string",
           "enum": [
             "auto",
-            "smooth"
+            "smooth",
+            "instant"
           ]
         },
         "relative": {

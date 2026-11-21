@@ -3127,7 +3127,7 @@ test('content script lists same-role elements when a role locator name misses', 
       });
       const error = failure.error as {
         code?: string;
-        details?: { sameRole?: Array<{ name: string; elementRef: string }> };
+        details?: { sameRole?: Array<{ name: string; elementRef: string; context?: string }> };
       };
       assert.equal(error.code, 'ELEMENT_NOT_FOUND');
       assert.deepEqual(
@@ -3135,6 +3135,8 @@ test('content script lists same-role elements when a role locator name misses', 
         ['', 'walk dog done']
       );
       assert.ok(error.details?.sameRole?.every((entry) => entry.elementRef.startsWith('el_')));
+      assert.equal(error.details?.sameRole?.[0].context, 'buy milk');
+      assert.equal(error.details?.sameRole?.[1].context, undefined);
     }
   );
 });
@@ -4062,6 +4064,7 @@ test('content script input focus, key handling, and scrolling cover form and vie
     scrollX: 0,
     scrollY: 0,
   };
+  const windowBehaviors: Array<string | undefined> = [];
   const window = {
     get scrollX() {
       return windowState.scrollX;
@@ -4069,11 +4072,13 @@ test('content script input focus, key handling, and scrolling cover form and vie
     get scrollY() {
       return windowState.scrollY;
     },
-    scrollTo(options: { top?: number; left?: number }) {
+    scrollTo(options: { top?: number; left?: number; behavior?: string }) {
+      windowBehaviors.push(options.behavior);
       windowState.scrollY = options.top ?? windowState.scrollY;
       windowState.scrollX = options.left ?? windowState.scrollX;
     },
-    scrollBy(options: { top?: number; left?: number }) {
+    scrollBy(options: { top?: number; left?: number; behavior?: string }) {
+      windowBehaviors.push(options.behavior);
       windowState.scrollY += options.top ?? 0;
       windowState.scrollX += options.left ?? 0;
     },
@@ -4170,6 +4175,10 @@ test('content script input focus, key handling, and scrolling cover form and vie
     elementRef: scrollIntoViewResult.elementRef,
     scrolled: true,
   });
+  // CSS smooth scrolling stalls in background tabs; only an explicit smooth
+  // request may use it.
+  assert.ok(windowBehaviors.length > 0);
+  assert.ok(windowBehaviors.every((behavior) => behavior === 'instant' || behavior === 'smooth'));
   assert.deepEqual(targetScroll, {
     scrolled: true,
     target: targetScroll.target,

@@ -261,3 +261,17 @@ test('label locators fall back to the one control beside an unassociated label',
     }
   );
 });
+
+test('named checkbox locators fall back to an unassociated sibling label', async () => {
+  await withDocument(
+    '<html><body><ul class="todo-list"><li><div class="view"><input class="toggle" type="checkbox" id="t1"><label>buy milk</label><button class="destroy"></button></div><input class="edit" value="buy milk"></li><li><div class="view"><input class="toggle" type="checkbox" id="t2"><label>walk dog</label><button class="destroy"></button></div><input class="edit" value="walk dog"></li></ul></body></html>',
+    async () => {
+      const { query } = await loadModules();
+      const locate = (locator: Locator) =>
+        query.locateElements(locator, { maxResults: 10 }).matches.map((element) => element.id);
+      assert.deepEqual(locate({ role: 'checkbox', name: 'walk dog' }), ['t2']);
+      assert.deepEqual(locate({ label: 'buy milk' }), ['t1']);
+      assert.deepEqual(locate({ role: 'button', name: 'walk dog' }), []);
+    }
+  );
+});

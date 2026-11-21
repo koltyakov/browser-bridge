@@ -51,7 +51,7 @@
   },
   "call_unknown.method": {
     "ok": false,
-    "summary": "ERROR: Unknown method \"unknown.method\". Run bbx skill to see available methods.",
+    "summary": "ERROR: Unknown bridge method: unknown.method. Find methods with protocol.describe {query}.",
     "evidence": null
   }
 }

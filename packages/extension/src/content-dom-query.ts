@@ -1012,9 +1012,24 @@ excluded unless `includeHidden` is set. */
     // Many app forms render a <label> beside its field without `for` or
     // nesting. When nothing is labelled, accept a matching unassociated label
     // whose row holds exactly one form control.
-    if (!matches.length && !scope && matchers.label && truncationReason === null) {
-      const control = findUnassociatedLabelControl(matchers.label, exact ? null : locator.label);
-      if (control && (locator.includeHidden === true || isElementVisible(control))) {
+    // A named form-control role misses the same way when its visible label is
+    // only a sibling, as in list rows with an unlabelled checkbox.
+    const role = locator.role?.toLowerCase() ?? '';
+    const labelFallback = matchers.label
+      ? { matcher: matchers.label, needle: locator.label }
+      : matchers.name && LABELED_WIDGET_ROLES.has(role) && !matchers.text && !matchers.placeholder
+        ? { matcher: matchers.name, needle: locator.name }
+        : null;
+    if (!matches.length && !scope && labelFallback && truncationReason === null) {
+      const control = findUnassociatedLabelControl(
+        labelFallback.matcher,
+        exact ? null : labelFallback.needle
+      );
+      if (
+        control &&
+        (!role || getElementRoles(control).includes(role)) &&
+        (locator.includeHidden === true || isElementVisible(control))
+      ) {
         matches.push(control);
       }
     }

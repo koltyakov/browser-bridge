@@ -262,6 +262,17 @@ elementFromPoint retargets to the outermost shadow host. */
     return description;
   }
 
+  /** Visible text of the nearest ancestor that has any, bounded for errors. */
+  function describeRowText(element: Element): string {
+    let ancestor = element.parentElement;
+    for (let depth = 0; ancestor && depth < 3; depth += 1) {
+      const text = (ancestor.textContent ?? '').replace(/\s+/g, ' ').trim();
+      if (text) return text.slice(0, 60);
+      ancestor = ancestor.parentElement;
+    }
+    return '';
+  }
+
   /** For a role locator whose other filters matched nothing, list a few
 visible elements with that role and their accessible names, so a guessed
 name can be corrected without another discovery read. */
@@ -278,10 +289,15 @@ name can be corrected without another discovery read. */
       );
       if (!located.matches.length) return {};
       return {
-        sameRole: located.matches.map((element) => ({
-          name: getAccessibleName(element).slice(0, 80),
-          elementRef: rememberElement(element),
-        })),
+        sameRole: located.matches.map((element) => {
+          const name = getAccessibleName(element).slice(0, 80);
+          return {
+            name,
+            elementRef: rememberElement(element),
+            // Nameless controls are told apart by the text of their row.
+            ...(name ? {} : { context: describeRowText(element) }),
+          };
+        }),
       };
     } catch {
       return {};
@@ -550,9 +566,12 @@ Explicit refs retain exact identity unless stale recovery is opted in. */
 
   /** Keep the target visible before dispatching interaction events. */
   function scrollTargetIntoView(element: Element): void {
+    // Instant even under CSS scroll-behavior: smooth. Smooth scrolling does
+    // not advance in background tabs, so the target would never move.
     element.scrollIntoView({
       block: 'center',
       inline: 'center',
+      behavior: 'instant',
     });
   }
 
@@ -2328,6 +2347,9 @@ scroll can prove that the position did not change. */
     const top = Number(params.top) || 0;
     const left = Number(params.left) || 0;
     const behavior = params.behavior === 'smooth' ? 'smooth' : 'auto';
+    // `auto` follows CSS scroll-behavior, which can be smooth and then stalls
+    // in a background tab. Scroll instantly unless smooth was requested.
+    const scrollBehavior: ScrollBehavior = behavior === 'smooth' ? 'smooth' : 'instant';
     const relative = Boolean(params.relative);
 
     const target =
@@ -2357,13 +2379,13 @@ scroll can prove that the position did not change. */
         scrollTarget.scrollBy({
           top,
           left,
-          behavior,
+          behavior: scrollBehavior,
         });
       } else {
         scrollTarget.scrollTo({
           top,
           left,
-          behavior,
+          behavior: scrollBehavior,
         });
       }
 
@@ -2385,13 +2407,13 @@ scroll can prove that the position did not change. */
       window.scrollBy({
         top,
         left,
-        behavior,
+        behavior: scrollBehavior,
       });
     } else {
       window.scrollTo({
         top,
         left,
-        behavior,
+        behavior: scrollBehavior,
       });
     }
 

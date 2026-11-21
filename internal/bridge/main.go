@@ -159,11 +159,10 @@ func run(ctx context.Context, args []string) error {
 	if isFileCommand(args[0]) {
 		return runFileCLI(ctx, c, args)
 	}
+	args = hoistLeadingRoutingFlags(args)
 	if _, shortcut := shortcutMethods[args[0]]; !shortcut {
 		if _, method := catalog.Methods[args[0]]; !method && args[0] != "call" && args[0] != "batch" && args[0] != "eval" && args[0] != "intercept" {
-			fmt.Fprintln(os.Stderr, "Unknown command: "+args[0])
-			printCLIUsage()
-			return cliPrintedError{}
+			return errors.New(unknownCommandMessage(args[0]))
 		}
 	}
 	request, err := parseCLI(args)
@@ -175,10 +174,12 @@ func run(ctx context.Context, args []string) error {
 	}
 	raw := args[0] == "call" || strings.Contains(args[0], ".")
 	if raw {
-		method, params := request.text("method"), request.object("params")
-		if key := misplacedRoutingParam(method, params); key != "" {
-			return fmt.Errorf("%s inside params is ignored by %s. Use %s instead.", key, method, cliRoutingFlags[key])
+		var foldErr error
+		request, foldErr = foldCLIRoutingParams(request)
+		if foldErr != nil {
+			return foldErr
 		}
+		method, params := request.text("method"), request.object("params")
 		for _, warning := range paramWarnings(method, params) {
 			fmt.Fprintln(os.Stderr, "Warning: "+warning)
 		}
@@ -279,7 +280,7 @@ func parseCLI(args []string) (object, error) {
 		}
 		method, rest = rest[0], rest[1:]
 		if _, ok := catalog.Methods[method]; !ok {
-			return nil, fmt.Errorf("Unknown method %q. Run bbx skill to see available methods.", method)
+			return nil, errors.New(unknownMethodMessage(method))
 		}
 	} else if shortcut, p, err := buildShortcut(method, rest); shortcut != "" || err != nil {
 		if err != nil {

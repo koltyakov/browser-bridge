@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2.4.0] - 2026-11-21
 
 ### Changed
 
@@ -19,9 +19,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - MCP results omit size, transport, and timing fields for small, fast calls.
   Error text carries the actionable details text-only clients need.
 - Unknown methods suggest the closest bridge method.
+- MCP instructions and default tool schemas are about 40% shorter, and the
+  `browser-bridge` skill is rewritten for MCP and CLI agents at a third of its
+  former size.
+- `browser_call` moves method params written beside `method` into `params`. The
+  CLI accepts routing flags before the command and `tabId`/`extensionId` inside
+  `call` params, and unknown commands suggest the closest one instead of
+  printing the full usage.
+- `bbx doctor` warns when a running browser uses a custom `--user-data-dir`
+  without a Browser Bridge native host registered there.
 
 ### Fixed
 
+- Scrolling and target centering stay instant on pages with CSS smooth
+  scrolling, which never advanced in background tabs and left targets obscured.
+- Named checkbox and other form-control locators resolve through a sibling label,
+  and same-role near misses include their row text.
 - Label locators no longer match prose that mentions the label, fill and type
   prefer editable matches, and a label beside a single unassociated control
   resolves to it.
@@ -299,77 +312,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   named pipes so they can connect to the authenticated Go v2 daemon. Legacy
   local daemons remain usable without credential files.
 
-## [1.12.5] - 2026-10-15
-
-### Changed
-
-- All input modes attach the debugger to observe native JavaScript dialogs,
-  including when events are dispatched through the DOM.
-
-### Fixed
-
-- Native dialogs blocking input or evaluation now return non-retryable
-  `DIALOG_BLOCKED` instead of leaving the agent waiting. `input.perform` stops
-  even with `continueOnError: true`, including when a dialog opens during a
-  later wait or read. Blocked edits are not automatically replayed.
-- Observed dialogs remain inspectable past the debugger idle timeout until
-  they close or access is cleared. Agents can explicitly inspect and respond
-  through `page.handle_dialog`, then check whether the edit took effect.
-
-## [1.12.3] - 2026-10-14
-
-### Added
-
-- `tabs.list` accepts `limit` and `offset`. Summaries expose total, returned, and
-  omitted counts plus the next offset without silently clipping requested pages.
-- Untargeted scrolling detects dominant visible nested scroll containers when
-  the document cannot scroll. Page state reports container positions and refs;
-  ambiguous panels return candidates and require an explicit scroll target.
-
-### Fixed
-
-- Generated profile labels persist across browser restarts, with automatic
-  migration of existing session labels and no additional identity permissions.
-
-## [1.12.2] - 2026-10-09
-
-### Added
-
-- Explicit browser/profile targeting across CLI and MCP calls and batch items.
-  CLI accepts `--extension`, `--browser`, and `--profile`; MCP accepts
-  `extensionId`, `targetBrowser`, and `targetProfile`.
-- Unscoped MCP `tabs.list` discovers tabs across enabled profiles, preserving
-  connection IDs and reporting partial failures.
-
-### Fixed
-
-- Ambiguous browser routing now fails before reading or changing a page with
-  `TAB_MISMATCH` and `reason: "ambiguous_browser_target"`. Recovery guidance
-  directs agents to select or rediscover the intended connection instead of
-  disabling unrelated windows.
-- MCP selector resolution and transport retries preserve the selected browser
-  and profile.
-
-## [1.12.1] - 2026-10-08
-
-### Added
-
-- The side panel shows an other-enabled-windows counter and dropdown across
-  browsers and profiles connected to the same local daemon. Entries show
-  browser, session profile label, and window details.
-- Clicking an entry focuses its existing window without changing agent routing.
-  `Disable all` revokes access in the other listed windows, leaves the current
-  window unchanged, and reports failures.
-
-### Changed
-
-- Connected local extensions share bounded enabled-window metadata in memory,
-  excluding page contents and disabled-window details. Entries are removed on
-  disconnect. Older enabled extensions still count when details or controls
-  are unavailable.
-- This update requires a daemon restart and extension reload in each browser.
-
-## [1.12.0] - 2026-10-07
+## [1.12.x] - 2026-10-15
 
 ### Added
 
@@ -378,155 +321,110 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   scoping. Agents can locate and act on a control in one call.
 - **Actionable DOM outlines:** `dom.get_accessibility_tree` with `source: "dom"`
   returns a compact outline with usable element refs, including shadow DOM and
-  iframes, without attaching the debugger. The default CDP source remains
-  available for accessibility audits.
+  iframes, without attaching the debugger.
 - **Post-action effects:** Input results report URL changes, unloading,
   dialogs, live-region messages, focus, DOM changes, and updated target state.
   `observe` controls whether and how long to settle before collecting effects.
 - **Automatic input mode:** `executionMode: "auto"` selects trusted CDP input
-  when the target likely requires it or the debugger is already attached, and
-  reports the selection reason.
+  when the target likely requires it or the debugger is already attached.
+- **Browser and profile targeting:** CLI (`--extension`, `--browser`,
+  `--profile`), MCP (`extensionId`, `targetBrowser`, `targetProfile`), and batch
+  items can select an explicit browser profile. Unscoped MCP `tabs.list`
+  discovers tabs across enabled profiles.
 - **Working-tab indicators:** The side panel lists other tabs with agent
-  activity and lets users switch to them. Blue **AI** groups mark adjacent
-  active tabs without reordering tabs or taking over existing groups. Pinned
-  tabs are left alone; Bridge-owned groups are removed after 15 idle minutes
-  or when access is disabled. The extension now requires `tabGroups` permission.
+  activity, and blue **AI** tab groups mark them without reordering tabs or
+  taking over existing groups. The extension now requires `tabGroups`
+  permission.
+- **Other enabled windows:** The side panel lists enabled windows in other
+  browsers and profiles on the same daemon, can focus them, and `Disable all`
+  revokes their access. Only bounded window metadata is shared, never page
+  contents.
+- `tabs.list` accepts `limit` and `offset` and reports total, returned, and
+  omitted counts.
+- Untargeted scrolling uses the dominant visible nested scroll container when
+  the document cannot scroll; ambiguous panels return candidates.
 
 ### Changed
 
 - **Session-bound working tabs:** The first tab-bound call binds an agent
   session to its working tab. Later calls stay there when the user switches
-  tabs, including across service-worker restarts. An explicit `tabId`,
-  `tabs.create`, or `tabs.activate` changes the binding, which expires after
-  15 idle minutes. MCP sessions are isolated automatically; CLI agents can
-  use `BBX_SESSION` to keep separate working tabs.
+  tabs, until an explicit `tabId`, `tabs.create`, or `tabs.activate`, or 15 idle
+  minutes. MCP sessions are isolated automatically; CLI agents can use
+  `BBX_SESSION`.
 - **Actionability waits:** Targeted input waits for controls to appear, become
   visible and enabled, clear obstructions, and stop animating. `timeoutMs`
   defaults to 2500, accepts up to 15000, and disables waiting at `0`.
 - **Semantic search:** Text and role finders search shadow DOM and iframes,
   resolve accessible names from labels and ARIA attributes, and skip hidden
-  matches by default. `includeHidden` opts into hidden results.
-- **Compact input summaries:** Routine resolution and execution metadata stays
-  in evidence while summaries retain notable details and action effects.
-  Responses identify the routed tab and flag when it differs from the user's
-  active tab; `tabs.list` marks the session's working tab.
+  matches unless `includeHidden` is set.
+- All input modes observe native JavaScript dialogs. Input summaries are more
+  compact and flag when the routed tab differs from the user's active tab.
 
 ### Fixed
 
-- Closing a working tab now returns `TAB_MISMATCH` with
-  `reason: "working_tab_closed"` instead of silently routing subsequent calls
-  to another tab.
+- Native dialogs blocking input or evaluation return non-retryable
+  `DIALOG_BLOCKED` instead of leaving the agent waiting, and `input.perform`
+  stops even with `continueOnError: true`. Agents respond through
+  `page.handle_dialog`; blocked edits are never replayed automatically.
+- Ambiguous browser routing fails before reading or changing a page with
+  `TAB_MISMATCH` and `reason: "ambiguous_browser_target"`, guiding agents to
+  select the intended connection instead of disabling unrelated windows.
+- Closing a working tab returns `TAB_MISMATCH` with
+  `reason: "working_tab_closed"` instead of silently routing to another tab.
 - Element refs and semantic targets route to their owning iframe for DOM
   inspection and input. CDP input for iframe targets remains unsupported.
+- Generated profile labels persist across browser restarts.
 
-## [1.11.5] - 2026-10-06
+## [1.11.x] - 2026-10-06
 
 ### Added
 
-- **Timed input sequences:** `input.perform` runs an ordered list of input
-  steps inside the extension in one call, scheduled with `atMs` offsets from
-  the sequence start or `delayMs` delays after the previous step. Steps reuse
-  the existing input methods plus `dom.wait_for` for in-browser reactions, so
-  rhythm, games, and multi-step flows no longer depend on agent round-trips.
-- **Multi-touch:** `input.touch` presses 1-10 points at the same time for
-  chords, multi-finger taps, swipes, and pinches, through DOM touch/pointer
-  events or trusted CDP `Input.dispatchTouchEvent`.
-- **Press and hold:** `holdMs` on `input.click` and `input.press_key` keeps the
-  button or key down; `input.press_key` now also supports `executionMode: "cdp"`
-  for trusted key presses.
+- **Timed input sequences:** `input.perform` runs ordered input steps inside the
+  extension in one call, scheduled with `atMs` or `delayMs`, with `dom.wait_for`
+  steps for in-page reactions. Multi-step flows, rhythm, and games no longer
+  depend on agent round-trips.
+- **Multi-touch:** `input.touch` presses 1-10 points at once for chords,
+  multi-finger taps, swipes, and pinches, through DOM events or trusted CDP.
+- **Press and hold:** `holdMs` on `input.click` and `input.press_key`;
+  `input.press_key` also supports `executionMode: "cdp"`.
+- **Modern stateless MCP:** `bbx mcp serve` supports both legacy clients and the
+  `2026-07-28` protocol era, including `server/discover`. Modern clients get a
+  fixed compact tool surface with `browser_skill`; legacy clients keep
+  progressive `browser_toolset` loading. `browser_call` reaches every method in
+  both.
 
 ### Changed
 
-- **Realistic DOM input:** DOM clicks now dispatch pointer events, over/enter
-  and out/leave transitions tracked across calls, correct `buttons` state, and a
-  real `click` event carrying coordinates, modifiers, and `pointerType`. Focus
-  moves only when `mousedown` is not canceled, and a canceled `pointerdown`
-  suppresses mouse events. Key events carry `code` and `keyCode`, character keys
-  fire `keypress`, and a canceled `keydown` suppresses text insertion.
-- **DOM drag strategy:** draggable sources keep the HTML5 sequence (with `drop`
-  only when the destination accepts it); other sources now get a pointer drag
-  that pointer-driven lists, sliders, and canvases respond to. Results report
+- **Realistic DOM input:** DOM clicks dispatch pointer events, hover
+  transitions, correct `buttons` state, and a real `click` with coordinates and
+  modifiers; canceled events suppress follow-ups as a real browser would. Key
+  events carry `code` and `keyCode` and fire `keypress`.
+- **DOM drag strategy:** Non-draggable sources get a pointer drag that
+  pointer-driven lists, sliders, and canvases respond to. Results report
   `strategy`.
-- **Compact evaluate summaries:** large `page.evaluate` values are described by
-  shape instead of being repeated in the summary next to the full evidence.
-- **Dependency updates:** Updated the MCP server and client SDKs to `^2.3.1`
-  and refreshed development dependencies. Added explicit npm script approvals
-  for `esbuild@0.28.1` and `fsevents@2.3.3`.
+- Large `page.evaluate` values are summarized by shape instead of repeated.
+- Protocol compatibility and npm self-update match major versions, so npm and
+  extension minor releases can advance independently.
 
 ### Fixed
 
-- Tab summaries for `page.wait_for_load_state`, reloads, history navigation,
-  and tab activation no longer claim that a tab was created.
-
-## [1.11.4] - 2026-09-25
-
-### Fixed
-
-- Extension UI connections now wait for persisted window access to initialize
-  before syncing state, preventing incorrect access state after startup.
-
-## [1.11.3] - 2026-09-18
-
-### Changed
-
-- Protocol compatibility and npm self-update negotiation now match major
-  versions, allowing npm and extension minor releases to advance independently.
-- Updated runtime and development dependencies.
-
-### Fixed
-
-- Side-panel state and active-tab changes now stay scoped to the panel's window
-  across reconnects. Stale snapshots are ignored, and access toggles target the
-  displayed tab.
-
-## [1.11.2] - 2026-09-04
-
-### Fixed
-
-- Bounded transport queues and daemon work prevent unbounded growth under
-  backpressure. MCP cancellation now propagates through connection and retry
-  paths, and stalled client operations are cleaned up.
-- Fetch interception lifecycle changes are serialized to avoid races.
-- Patch rollback preserves the original DOM and inline style state.
-- Authentication tokens are published atomically to avoid partial reads.
-
-## [1.11.1] - 2026-08-14
+- `bbx proxy enable` and `disable` stop the running daemon first, so port and
+  authentication changes take effect on restart.
+- Windows npm self-update invokes `npm.cmd` reliably.
+- Side-panel state and access toggles stay scoped to the panel's window across
+  reconnects, and extension UI waits for persisted access at startup.
+- Bounded transport queues prevent unbounded growth under backpressure, and MCP
+  cancellation propagates through connection and retry paths.
+- Patch rollback preserves the original DOM and inline styles; fetch
+  interception changes and token writes no longer race.
+- Tab summaries for load waits, reloads, history navigation, and activation no
+  longer claim a tab was created.
 
 ### Security
 
 - Extension connections use a separate authentication token from agent
-  connections. Native-host installation restricts allowed origins to the
-  specified extension ID.
-- Added limits on pending requests and tightened socket error handling.
-
-## [1.11.0] - 2026-08-11
-
-### Added
-
-- **Modern stateless MCP:** The existing `bbx mcp serve` stdio command now
-  supports both legacy MCP clients and the modern `2026-07-28` protocol era,
-  including `server/discover` and per-request metadata negotiation.
-
-### Changed
-
-- **MCP TypeScript SDK v2:** Migrated from the monolithic SDK v1 package to the
-  split `@modelcontextprotocol/server` and `@modelcontextprotocol/client` v2
-  packages and Standard Schema-compatible Zod object declarations.
-- **Era-safe tool discovery:** Legacy stdio clients retain progressive
-  `browser_toolset` loading. Modern stateless clients receive a fixed compact
-  surface with `browser_skill` instead of `browser_toolset`; `browser_call`
-  continues to reach every bridge method in both eras.
-- **MCP era activity labels:** Extension access prompts identify legacy and
-  modern MCP, while side-panel activity shows a separate `v1` or `v2` pill;
-  modern activity includes the exact `2026-07-28` revision in its tooltip.
-
-### Fixed
-
-- **Reliable proxy reconfiguration:** `bbx proxy enable` and `bbx proxy disable`
-  now stop the running daemon before changing its configuration, ensuring port
-  and authentication changes are loaded when the daemon restarts.
-- **Windows npm self-update:** npm batch shims now run through the Windows shell,
-  allowing the opt-in automatic update flow to invoke `npm.cmd` reliably.
+  connections, and native-host installation allows only the specified extension
+  ID. Pending requests are limited.
 
 ## [1.10.0] - 2026-07-24
 
@@ -728,47 +626,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `data:` and `blob:` URLs, and excludes bodies, cookies, authorization values,
   and complete headers.
 
-## [1.7.6] - 2026-07-18
-
-### Changed
-
-- **Coordinated restart:** `bbx restart` now reloads the daemon and asks all
-  running Browser Bridge MCP servers to exit cleanly so their owning agents can
-  relaunch the current installed version.
-- **Node.js 20 minimum:** The supported Node.js runtime is now 20 or newer
-  (Node 18 reached end-of-life). CI tests Node 20, 22, and 24, plus macOS and
-  Windows runtime legs so the Named Pipe transport tests execute on Windows.
-- **CLI internals reorganized:** `bbx` command implementations moved from the
-  single `cli.js` into focused modules (`cli-args`, `cli-batch`, `cli-output`,
-  `cli-proxy-remote`, `cli-setup-commands`) with no behavior change.
-
-## [1.7.0] - 2026-07-02
+## [1.7.x] - 2026-07-18
 
 ### Added
 
-- **Remote browser destinations:** Added named remote destinations across the
-  CLI and MCP tools, including `bbx remote add`, `list`, `test`, and `remove`,
-  explicit `destinationId` routing, and separate local and remote readiness
-  reporting.
-- **Remote proxy mode:** Added `bbx proxy enable`, `disable`, and `status` for
-  exposing the daemon to a tunneled development machine, with authentication
-  token management, side-panel status, and a dedicated remote-proxy guide.
+- **Remote browser destinations:** Named remote destinations across the CLI and
+  MCP tools, including `bbx remote add`, `list`, `test`, and `remove`, explicit
+  `destinationId` routing, and separate local and remote readiness reporting.
+- **Remote proxy mode:** `bbx proxy enable`, `disable`, and `status` expose the
+  daemon to a tunneled development machine, with authentication token
+  management, side-panel status, and a dedicated remote-proxy guide.
 
 ### Changed
 
 - **MCP destination routing:** Read-only MCP operations can use configured
   remote destinations when the local bridge is unavailable, while mutating
-  operations remain pinned to an explicitly selected destination.
-- **Remote-aware diagnostics:** Health and status flows now distinguish daemon
-  reachability, extension readiness, and destination-specific failures instead
-  of treating every connection as local.
+  operations stay pinned to an explicitly selected destination.
+- **Remote-aware diagnostics:** Health and status distinguish daemon
+  reachability, extension readiness, and destination-specific failures.
+- **Coordinated restart:** `bbx restart` reloads the daemon and asks running
+  Browser Bridge MCP servers to exit cleanly so agents relaunch the installed
+  version.
+- **Node.js 20 minimum:** Node 18 reached end-of-life; Node 20 or newer is
+  required.
 
 ### Fixed
 
-- **Native connection stability:** Extension native-port startup now tracks
-  pending connections and waits for a stable connection before reporting the
-  bridge as ready.
-- **Runtime serialization:** Console argument capture now handles large and
+- **Native connection stability:** Extension native-port startup waits for a
+  stable connection before reporting the bridge as ready.
+- **Runtime serialization:** Console argument capture handles large and
   circular objects safely, and fetch interception avoids unnecessary request
   cloning while preserving request bodies.
 

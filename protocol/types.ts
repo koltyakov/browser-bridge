@@ -1200,7 +1200,7 @@ export interface ViewportActionParams {
   target?: InputTarget;
   top?: number;
   left?: number;
-  behavior?: 'auto' | 'smooth';
+  behavior?: 'auto' | 'smooth' | 'instant';
   relative?: boolean;
 }
 
