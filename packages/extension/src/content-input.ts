@@ -82,7 +82,7 @@
     isLocator: (value: unknown) => boolean;
     locateElements: (
       locator: Record<string, unknown>,
-      options?: { maxResults?: number; scanLimit?: number }
+      options?: { maxResults?: number; scanLimit?: number; lookahead?: boolean }
     ) => {
       matches: Element[];
       hiddenMatches: number;
@@ -262,11 +262,37 @@ elementFromPoint retargets to the outermost shadow host. */
     return description;
   }
 
+  /** For a role locator whose other filters matched nothing, list a few
+visible elements with that role and their accessible names, so a guessed
+name can be corrected without another discovery read. */
+  function describeRoleNearMisses(target: InputTargetSpec | undefined): {
+    sameRole?: Array<{ name: string; elementRef: string }>;
+  } {
+    const role = typeof target?.role === 'string' ? target.role : '';
+    const domQuery = getDomQueryModule();
+    if (!role || !domQuery) return {};
+    try {
+      const located = domQuery.locateElements(
+        { role, ...(target?.selector ? { selector: target.selector } : {}) },
+        { maxResults: 5, lookahead: false }
+      );
+      if (!located.matches.length) return {};
+      return {
+        sameRole: located.matches.map((element) => ({
+          name: getAccessibleName(element).slice(0, 80),
+          elementRef: rememberElement(element),
+        })),
+      };
+    } catch {
+      return {};
+    }
+  }
+
   /** Resolve one input target atomically, ranking at most 25 selector matches.
 Explicit refs retain exact identity unless stale recovery is opted in. */
   function resolveActionableTarget(
     target: InputTargetSpec | undefined,
-    options: { pointer: boolean; recoverStale: boolean }
+    options: { pointer: boolean; recoverStale: boolean; prefer?: (element: Element) => boolean }
   ): ResolvedInputTarget {
     const domQuery = getDomQueryModule();
     const usesLocator = !target?.elementRef && Boolean(domQuery?.isLocator(target));
@@ -326,6 +352,13 @@ Explicit refs retain exact identity unless stale recovery is opted in. */
             error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200),
         });
       }
+      // A broad locator can also match surrounding prose or containers. When
+      // some matches suit the action, such as editable fields for fill, rank
+      // only those instead of failing on the first unsuitable match.
+      if (options.prefer && typeof target?.nth !== 'number' && allMatches.length > 1) {
+        const preferred = allMatches.filter(options.prefer);
+        if (preferred.length) allMatches = preferred;
+      }
       const candidates = [...allMatches].slice(0, MAX_INPUT_CANDIDATES);
       if (!candidates.length) {
         throw createInputError('ELEMENT_NOT_FOUND', 'Input target was not found.', {
@@ -333,6 +366,7 @@ Explicit refs retain exact identity unless stale recovery is opted in. */
           candidateCount: 0,
           evaluatedCount: 0,
           ...(hiddenMatches ? { hiddenMatches } : {}),
+          ...(usesLocator ? describeRoleNearMisses(target) : {}),
         });
       }
       const inspected = candidates.map((candidate, index) => {
@@ -446,7 +480,15 @@ Explicit refs retain exact identity unless stale recovery is opted in. */
       });
     }
     if (options.pointer) {
-      const hit = classifyHit(element, state.hit);
+      let hit = classifyHit(element, state.hit);
+      // A partly visible target can have its center under a fixed footer or
+      // past the viewport edge. Center it once before reporting it obscured.
+      if (hit === 'none' && state.hitRequired && !resolution.scrolled) {
+        scrollTargetIntoView(element);
+        resolution.scrolled = true;
+        state = inspectActionability(element);
+        hit = classifyHit(element, state.hit);
+      }
       resolution.hitTest = hit;
       if (hit === 'none' && state.hitRequired) {
         throw createInputError(
@@ -1322,10 +1364,23 @@ for a double click. */
 
   /** Type text into an editable control or contenteditable region. */
   function typeIntoTarget(params: InputParams): Record<string, unknown> {
-    const base = resolveActionableTarget(params.target, {
-      pointer: false,
-      recoverStale: params.recoverStale === true,
-    });
+    // Without a target, type into the focused editable control, as keyboard
+    // input does after a click or focus step.
+    const active = deepActiveElement();
+    const untargeted =
+      !params.target?.elementRef &&
+      !params.target?.selector &&
+      !getDomQueryModule()?.isLocator(params.target);
+    const base = resolveActionableTarget(
+      untargeted && active && getEditableTarget(active) === active
+        ? { elementRef: rememberElement(active) }
+        : params.target,
+      {
+        pointer: false,
+        recoverStale: params.recoverStale === true,
+        prefer: (element) => getEditableTarget(element) !== null,
+      }
+    );
     const editable = getEditableTarget(base.element);
     if (!editable) {
       throw createInputError('INPUT_INVALID_TARGET', 'Target is not an editable control.', {
@@ -1403,6 +1458,7 @@ mode:
     const base = resolveActionableTarget(params.target, {
       pointer: false,
       recoverStale: params.recoverStale === true,
+      prefer: (element) => getEditableTarget(element) !== null,
     });
     const editable = getEditableTarget(base.element);
     if (!editable) {
@@ -1590,7 +1646,7 @@ optionally holding the key down for holdMs before keyup. */
 
     const options = [...element.options];
     const selectedBefore = getSelectedOptionValues(element);
-    const matchingOptions = options.filter((option, index) => {
+    let matchingOptions = options.filter((option, index) => {
       return (
         values.includes(option.value) ||
         labels.includes(option.label) ||
@@ -1598,11 +1654,27 @@ optionally holding the key down for holdMs before keyup. */
         indexes.includes(index)
       );
     });
+    // Callers often pass the visible option text as a value. When nothing
+    // matched exactly, compare every requested string with option labels.
+    if (!matchingOptions.length && (values.length || labels.length)) {
+      const wanted = new Set([...values, ...labels].map((entry) => entry.trim().toLowerCase()));
+      matchingOptions = options.filter(
+        (option) =>
+          wanted.has(option.label.trim().toLowerCase()) ||
+          wanted.has(option.text.trim().toLowerCase()) ||
+          wanted.has(option.value.trim().toLowerCase())
+      );
+    }
 
     if (!matchingOptions.length) {
       throw createInputError('INPUT_INVALID_TARGET', 'No matching option found.', {
         elementRef: rememberElement(element),
         requestedCount: values.length + labels.length + indexes.length,
+        available: options.slice(0, 12).map((option) => ({
+          value: option.value.slice(0, 80),
+          label: option.text.trim().slice(0, 80),
+        })),
+        ...(options.length > 12 ? { availableCount: options.length } : {}),
       });
     }
 

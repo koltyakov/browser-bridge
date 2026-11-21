@@ -6,6 +6,7 @@ import {
   getUtf8ByteLength,
   MAX_PERFORM_RESULT_BYTES,
   normalizeInputPerformParams,
+  normalizeWaitForLoadStateParams,
   serializeJsonPayload,
 } from '../../../protocol/src/index.js';
 import { requestLifetimes } from './background-request-lifetime.js';
@@ -23,6 +24,8 @@ export type PerformDependencies = {
   captureAccess?: () => () => void;
   resolveRequestTarget: (request: BridgeRequest) => Promise<{ tabId: number }>;
   dispatch: (request: BridgeRequest) => Promise<BridgeResponse>;
+  /** Current tab load status, used to settle navigation an action started. */
+  getTabStatus?: (tabId: number) => Promise<string | undefined>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 } & Pick<import('./background-outcomes.js').OutcomeDependencies, 'armNetwork' | 'readNetwork'>;
@@ -33,6 +36,41 @@ const PERFORM_REPLY_MARGIN_MS = 500;
 
 /** Step methods whose own timeoutMs is capped by the remaining sequence budget. */
 const WAITING_STEP_METHODS = new Set(['dom.wait_for', 'page.wait_for_load_state']);
+
+/** Steps that can start a navigation, such as a form submission. */
+const ACTION_STEP_METHODS = new Set([
+  'input.click',
+  'input.press_key',
+  'input.fill',
+  'input.type',
+  'input.select_option',
+  'input.set_checked',
+  'input.touch',
+  'navigation.navigate',
+]);
+
+/** Read-only steps that would otherwise observe the document an action is
+leaving. They are safe to repeat on the next document. */
+const READ_STEP_METHODS = new Set([
+  'page.get_state',
+  'page.get_text',
+  'dom.query',
+  'dom.get_text',
+  'dom.wait_for',
+]);
+
+/** Failures after an action that mean the next document is not ready yet.
+Reads retry on any of them. An action retries only when its target was not
+found, which means it was never dispatched and cannot repeat an effect. */
+const SETTLE_RETRY_CODES = new Set<string>([
+  ERROR_CODES.ELEMENT_NOT_FOUND,
+  ERROR_CODES.CONTENT_SCRIPT_UNAVAILABLE,
+  ERROR_CODES.ELEMENT_STALE,
+]);
+
+/** How long a step after an action keeps waiting for its target. */
+const SETTLE_WAIT_MS = 5_000;
+const SETTLE_POLL_MS = 150;
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -152,20 +190,70 @@ export async function executeInputPerform(
       }
       startedAtMs.push(Math.round(stepStartedAt - startedAt));
 
-      const response = await dependencies.dispatch({
-        id: `${request.id}#${index}`,
-        method: step.method,
-        tab_id: target.tabId,
-        params: capStepTimeout(step, deadline - stepStartedAt),
-        meta: {
-          ...request.meta,
-          deadline_ms: Math.min(
-            typeof request.meta?.deadline_ms === 'number' ? request.meta.deadline_ms : Infinity,
-            Date.now() + Math.max(0, deadline - stepStartedAt)
-          ),
-        },
-      });
-      const failure = getStepFailure(response, step, index);
+      const dispatchStep = (method: string, stepParams: Record<string, unknown>, suffix = '') => {
+        const startedMs = now();
+        return dependencies.dispatch({
+          id: `${request.id}#${index}${suffix}`,
+          method: method as BridgeRequest['method'],
+          tab_id: target.tabId,
+          params: stepParams,
+          meta: {
+            ...request.meta,
+            deadline_ms: Math.min(
+              typeof request.meta?.deadline_ms === 'number' ? request.meta.deadline_ms : Infinity,
+              Date.now() + Math.max(0, deadline - startedMs)
+            ),
+          },
+        });
+      };
+      const followsAction = index > 0 && ACTION_STEP_METHODS.has(params.steps[index - 1].method);
+      // A read right after an action that started a navigation, such as a
+      // submit click, must observe the next document rather than the old one.
+      const settleNavigation = async (): Promise<boolean> => {
+        if (!dependencies.getTabStatus) return false;
+        const status = await dependencies.getTabStatus(target.tabId).catch(() => undefined);
+        if (status !== 'loading') return false;
+        await dispatchStep(
+          'page.wait_for_load_state',
+          { ...normalizeWaitForLoadStateParams({ timeoutMs: Math.max(500, deadline - now()) }) },
+          ':load'
+        );
+        return true;
+      };
+      if (followsAction && READ_STEP_METHODS.has(step.method)) await settleNavigation();
+
+      let response = await dispatchStep(
+        step.method,
+        capStepTimeout(step, deadline - stepStartedAt)
+      );
+      let failure = getStepFailure(response, step, index);
+      if (failure && followsAction && SETTLE_RETRY_CODES.has(failure.code)) {
+        if (READ_STEP_METHODS.has(step.method)) {
+          // Reads do not auto-wait for their target: poll briefly, settling
+          // any navigation first.
+          const settleUntil = Math.min(deadline, now() + SETTLE_WAIT_MS);
+          let attempt = 0;
+          while (failure && SETTLE_RETRY_CODES.has(failure.code) && now() < settleUntil) {
+            if (!(await settleNavigation())) await sleep(SETTLE_POLL_MS);
+            attempt += 1;
+            response = await dispatchStep(
+              step.method,
+              capStepTimeout(step, deadline - now()),
+              `:retry${attempt}`
+            );
+            failure = getStepFailure(response, step, index);
+          }
+        } else if (failure.code === ERROR_CODES.ELEMENT_NOT_FOUND && (await settleNavigation())) {
+          // An action target already waited; retry once only on the document
+          // the previous action navigated to. It was never dispatched.
+          response = await dispatchStep(
+            step.method,
+            capStepTimeout(step, deadline - now()),
+            ':retry1'
+          );
+          failure = getStepFailure(response, step, index);
+        }
+      }
       if (!failure) {
         if (params.returnLastResult) {
           const byteLength = getUtf8ByteLength(serializeJsonPayload(response.result));

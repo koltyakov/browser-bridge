@@ -418,7 +418,7 @@ bbx call input.perform '{
 ```
 
 - Each step is `{ method, params, atMs | delayMs }`; `params` are exactly what the method takes on its own.
-- Allowed step methods: `input.click`, `input.focus`, `input.type`, `input.fill`, `input.press_key`, `input.set_checked`, `input.select_option`, `input.hover`, `input.drag`, `input.touch`, `input.scroll_into_view`, `viewport.scroll`, `dom.wait_for`, `page.wait_for_load_state`, `page.get_state`, `page.get_text`, `dom.query`, `dom.get_text`. Evaluation, sensitive reads, WebMCP execution, and dialog handling are not allowed in sequences.
+- Allowed step methods: `input.click`, `input.focus`, `input.type`, `input.fill`, `input.press_key`, `input.set_checked`, `input.select_option`, `input.hover`, `input.drag`, `input.touch`, `input.scroll_into_view`, `viewport.scroll`, `dom.wait_for`, `page.wait_for_load_state`, `page.get_state`, `page.get_text`, `dom.query`, `dom.get_text`, `navigation.navigate`. Steps may also use the flat shorthand `{action: "fill", target, value}`. Evaluation, sensitive reads, WebMCP execution, and dialog handling are not allowed in sequences.
 - `atMs` is the earliest start measured from the sequence start, so delays never accumulate; `delayMs` waits after the previous step finished. Steps always run in order, so a step whose `atMs` has already passed starts immediately.
 - A top-level `executionMode` applies to every step that supports it unless the step sets its own.
 - Add `dom.wait_for` steps to react to the page without a round-trip, e.g. click, wait for `.menu`, click the item. A wait that times out counts as a failed step.

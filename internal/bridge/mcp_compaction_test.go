@@ -57,14 +57,26 @@ func TestMCPEnvelopeOmitsSummarySizeAndIdleTiming(t *testing.T) {
 			t.Fatalf("MCP envelope kept CLI summary size %s: %s", key, value(structured))
 		}
 	}
-	if structured["deliveredTokens"] == nil || structured["transportTokens"] == nil {
-		t.Fatalf("MCP envelope lost delivered or transport cost: %s", value(structured))
+	// Small, fast results carry no per-call accounting: every field would stay
+	// in the agent's context for the rest of the session.
+	for _, key := range []string{"deliveredBytes", "deliveredTokens", "deliveredCostClass", "transportBytes", "transportTokens", "transportCostClass", "timing"} {
+		if structured[key] != nil {
+			t.Fatalf("small fast MCP result kept %s: %s", key, value(structured))
+		}
 	}
-	assertJSONEqual(t, structured["timing"], []byte(`{"executionMs":2,"totalMs":2}`))
 
-	response["meta"] = value(compactionFixture(t, `{"timing":{"preparationMs":1,"queueMs":4,"executionMs":2,"totalMs":7,"scheduled":true}}`))
+	response["meta"] = value(compactionFixture(t, `{"timing":{"preparationMs":1,"queueMs":4,"executionMs":1200,"totalMs":1205,"scheduled":true}}`))
 	structured = mcpResponse(response, "layout.get_box_model", object{}).object("structuredContent")
-	assertJSONEqual(t, structured["timing"], []byte(`{"preparationMs":1,"queueMs":4,"executionMs":2,"totalMs":7,"scheduled":true}`))
+	assertJSONEqual(t, structured["timing"], []byte(`{"preparationMs":1,"queueMs":4,"executionMs":1200,"totalMs":1205,"scheduled":true}`))
+
+	large := success("large", object{"text": value(strings.Repeat("x", 6000)), "length": value(6000), "truncated": value(false)})
+	structured = mcpResponse(large, "page.get_text", object{"textBudget": value(6000)}).object("structuredContent")
+	if structured["deliveredTokens"] == nil || structured.text("deliveredCostClass") == "" || structured["transportTokens"] == nil {
+		t.Fatalf("large MCP result lost its cost: %s", value(structured))
+	}
+	if structured["deliveredBytes"] != nil || structured["transportBytes"] != nil || structured["transportCostClass"] != nil {
+		t.Fatalf("large MCP result kept byte counts: %s", value(structured))
+	}
 }
 
 func TestMCPEvidenceOmitsEmptyAndRepeatedFields(t *testing.T) {

@@ -1045,7 +1045,8 @@ export type PerformStepMethod =
   | 'page.get_state'
   | 'page.get_text'
   | 'dom.query'
-  | 'dom.get_text';
+  | 'dom.get_text'
+  | 'navigation.navigate';
 
 export interface PerformStepParams {
   method?: string;

@@ -718,3 +718,105 @@ test('input.perform runs no steps when queueing consumed the request deadline', 
   assert.equal((response.error.details as { dispatched: boolean }).dispatched, false);
   assert.equal(dispatched.length, 0);
 });
+
+test('input.perform reads after an action wait for the next document', async () => {
+  let status = 'complete';
+  let missing = 2;
+  const { dependencies, dispatched } = createHarness((request) => {
+    if (request.method === 'input.click') status = 'loading';
+    if (request.method === 'page.wait_for_load_state') status = 'complete';
+    if (request.method === 'dom.get_text' && status === 'complete' && missing-- > 0) {
+      return createFailure(request.id, 'ELEMENT_NOT_FOUND', 'No element matched.');
+    }
+    return createSuccess(request.id, { text: 'Welcome' });
+  });
+  const response = await executeInputPerform(
+    performRequest({
+      returnLastResult: true,
+      steps: [
+        click('#submit'),
+        { method: 'dom.get_text', params: { target: { selector: '#flash' } } },
+      ],
+    }),
+    { ...dependencies, getTabStatus: async () => status }
+  );
+  assert.equal(response.ok, true);
+  const methods = dispatched.map((entry) => entry.request.method);
+  assert.deepEqual(methods.slice(0, 2), ['input.click', 'page.wait_for_load_state']);
+  assert.equal(methods.filter((method) => method === 'dom.get_text').length, 3);
+  const lastResult = (response.result as PerformResult).lastResult;
+  assert.deepEqual(lastResult && 'result' in lastResult ? lastResult.result : null, {
+    text: 'Welcome',
+  });
+});
+
+test('input.perform retries a missing action target only after a navigation', async () => {
+  for (const navigates of [false, true]) {
+    let status = 'complete';
+    const { dependencies, dispatched } = createHarness((request) => {
+      if (request.id === 'seq#0' && navigates) status = 'loading';
+      if (request.method === 'page.wait_for_load_state') status = 'complete';
+      return request.id === 'seq#1'
+        ? createFailure(request.id, 'ELEMENT_NOT_FOUND', 'Input target was not found.')
+        : createSuccess(request.id, { clicked: true });
+    });
+    const response = await executeInputPerform(
+      performRequest({ steps: [click('#a'), click('#b')] }),
+      { ...dependencies, getTabStatus: async () => status }
+    );
+    assert.equal(response.ok, navigates);
+    assert.deepEqual(
+      dispatched.map((entry) => entry.request.id),
+      navigates ? ['seq#0', 'seq#1', 'seq#1:load', 'seq#1:retry1'] : ['seq#0', 'seq#1']
+    );
+  }
+});
+
+test('input.perform waits survive the document an action navigated away from', async () => {
+  let unloaded = true;
+  const { dependencies, dispatched } = createHarness((request) => {
+    if (request.method === 'dom.wait_for' && unloaded) {
+      unloaded = false;
+      return createFailure(
+        request.id,
+        'CONTENT_SCRIPT_UNAVAILABLE',
+        'The page navigated before the content script answered.',
+        { reason: 'document_unloaded' }
+      );
+    }
+    return createSuccess(request.id, request.method === 'dom.wait_for' ? { found: true } : {});
+  });
+  const response = await executeInputPerform(
+    performRequest({
+      steps: [click('#login'), { method: 'dom.wait_for', params: { text: 'Welcome' } }],
+    }),
+    dependencies
+  );
+  assert.equal(response.ok, true);
+  assert.deepEqual(
+    dispatched.map((entry) => entry.request.id),
+    ['seq#0', 'seq#1', 'seq#1:retry1']
+  );
+});
+
+test('input.perform never retries an action whose document unloaded mid-dispatch', async () => {
+  let status = 'complete';
+  const { dependencies, dispatched } = createHarness((request) => {
+    if (request.id === 'seq#0') status = 'loading';
+    return request.id === 'seq#1'
+      ? createFailure(request.id, 'CONTENT_SCRIPT_UNAVAILABLE', 'The page navigated.', {
+          reason: 'document_unloaded',
+          outcomeUncertain: true,
+        })
+      : createSuccess(request.id, {});
+  });
+  const response = await executeInputPerform(
+    performRequest({ steps: [click('#a'), click('#b')] }),
+    { ...dependencies, getTabStatus: async () => status }
+  );
+  assert.equal(response.ok, false);
+  assert.deepEqual(
+    dispatched.map((entry) => entry.request.id),
+    ['seq#0', 'seq#1']
+  );
+});

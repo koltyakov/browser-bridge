@@ -3036,6 +3036,136 @@ test('content script input.type types into text inputs and contenteditable regio
   ]);
 });
 
+test('content script input.select_option matches visible option text and lists options on a miss', async (t) => {
+  const harness = createChromeHarness();
+  const inputs = installInputDomGlobals(t);
+  const select = inputs.createSelect([
+    inputs.createOption({ value: '', text: 'Please select an option', selected: true }),
+    inputs.createOption({ value: '1', text: 'Option 1' }),
+    inputs.createOption({ value: '2', text: 'Option 2' }),
+  ]);
+  const body = inputs.createBody([select]);
+  const document = createDocumentHarness(body, { '#dropdown': select });
+  document.activeElement = null;
+  await loadContentScript(t, { withHelpers: true, chrome: harness.chrome, document });
+  const listener = harness.getListener();
+
+  const selected = await executeBridgeMethod(listener, 'input.select_option', {
+    target: { selector: '#dropdown' },
+    values: ['option 2'],
+  });
+  assert.equal(selected.changed, true);
+  assert.equal(select.value, '2');
+
+  const missing = await executeBridgeMethod(listener, 'input.select_option', {
+    target: { selector: '#dropdown' },
+    values: ['Option 3'],
+  });
+  const error = missing.error as { code?: string; details?: { available?: unknown } };
+  assert.equal(error.code, 'INPUT_INVALID_TARGET');
+  assert.deepEqual(error.details?.available, [
+    { value: '', label: 'Please select an option' },
+    { value: '1', label: 'Option 1' },
+    { value: '2', label: 'Option 2' },
+  ]);
+});
+
+test('content script element reads accept selector shorthands and unique semantic targets', async (t) => {
+  await withDocument(
+    '<html><body><h4>Enter your username below.</h4><div id="flash" role="status">You logged in!</div><button>Save</button><button>Save</button></body></html>',
+    async () => {
+      const harness = createChromeHarness();
+      await loadContentScript(t, {
+        withHelpers: true,
+        preserveDomGlobals: true,
+        chrome: harness.chrome,
+      });
+      const listener = harness.getListener();
+      for (const params of [
+        { selector: '#flash' },
+        { target: '#flash' },
+        { target: { css: '#flash' } },
+        { target: { role: 'status' } },
+      ]) {
+        const result = await executeBridgeMethod(listener, 'dom.get_text', params);
+        assert.equal(result.value, 'You logged in!', JSON.stringify(params));
+      }
+      const ambiguous = await executeBridgeMethod(listener, 'dom.get_text', {
+        target: { role: 'button', name: 'Save' },
+      });
+      assert.equal((ambiguous.error as { code?: string }).code, 'ELEMENT_AMBIGUOUS');
+      const second = await executeBridgeMethod(listener, 'dom.get_text', {
+        target: { role: 'button', name: 'Save', nth: 1 },
+      });
+      assert.equal(second.value, 'Save');
+      const missing = await executeBridgeMethod(listener, 'dom.get_text', {
+        target: { label: 'Username' },
+      });
+      assert.equal(
+        (missing.error as { code?: string }).code,
+        'ELEMENT_NOT_FOUND',
+        'a label locator does not match prose that mentions the label'
+      );
+    }
+  );
+});
+
+test('content script lists same-role elements when a role locator name misses', async (t) => {
+  await withDocument(
+    '<html><body><ul><li><input type="checkbox" class="toggle"><label>buy milk</label></li><li><input type="checkbox" class="toggle" aria-label="walk dog done"><label>walk dog</label></li></ul></body></html>',
+    async () => {
+      const harness = createChromeHarness();
+      await loadContentScript(t, {
+        withHelpers: true,
+        preserveDomGlobals: true,
+        chrome: harness.chrome,
+      });
+      const failure = await executeBridgeMethod(harness.getListener(), 'input.set_checked', {
+        target: { role: 'checkbox', name: 'Toggle walk dog' },
+        checked: true,
+        timeoutMs: 0,
+      });
+      const error = failure.error as {
+        code?: string;
+        details?: { sameRole?: Array<{ name: string; elementRef: string }> };
+      };
+      assert.equal(error.code, 'ELEMENT_NOT_FOUND');
+      assert.deepEqual(
+        error.details?.sameRole?.map((entry) => entry.name),
+        ['', 'walk dog done']
+      );
+      assert.ok(error.details?.sameRole?.every((entry) => entry.elementRef.startsWith('el_')));
+    }
+  );
+});
+
+test('content script dom.query lists every selector match with checkbox state', async (t) => {
+  await withDocument(
+    '<html><body><form id="checkboxes"><input type="checkbox"> one<input type="checkbox" checked> two</form></body></html>',
+    async () => {
+      const harness = createChromeHarness();
+      await loadContentScript(t, {
+        withHelpers: true,
+        preserveDomGlobals: true,
+        chrome: harness.chrome,
+      });
+      const result = await executeBridgeMethod(harness.getListener(), 'dom.query', {
+        selector: 'input[type=checkbox]',
+      });
+      const nodes = result.nodes as Array<{ tag: string; checked?: boolean }>;
+      assert.deepEqual(
+        nodes.map((node) => [node.tag, node.checked]),
+        [
+          ['input', false],
+          ['input', true],
+        ]
+      );
+      assert.equal(result.matchCount, 2);
+      assert.equal(result.matchesListed, 2);
+    }
+  );
+});
+
 test('content script input.set_checked and input.select_option update state and emit events', async (t) => {
   const harness = createChromeHarness();
   const inputs = installInputDomGlobals(t);

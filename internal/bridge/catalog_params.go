@@ -159,3 +159,76 @@ func editDistance(a, b string) int {
 	}
 	return previous[len(b)]
 }
+
+// methodAliases maps method names agents borrow from other automation APIs to
+// the bridge method with the same effect.
+var methodAliases = map[string]string{
+	"goto": "navigation.navigate", "open": "navigation.navigate", "visit": "navigation.navigate",
+	"reload": "navigation.reload", "refresh": "navigation.reload", "back": "navigation.go_back",
+	"forward": "navigation.go_forward", "screenshot": "screenshot.capture_region",
+	"evaluate": "page.evaluate", "eval": "page.evaluate", "title": "page.get_state",
+	"url": "page.get_state", "content": "page.get_text", "html": "dom.get_html",
+	"find": "dom.find_by_text", "locate": "dom.find_by_text", "select": "input.select_option",
+	"check": "input.set_checked", "uncheck": "input.set_checked", "wait": "dom.wait_for", "text": "page.get_text",
+}
+
+// unknownMethodMessage names the closest catalog method, so a guessed name
+// such as page.navigate costs one correction instead of a discovery round.
+func unknownMethodMessage(method string) string {
+	message := "Unknown bridge method: " + method
+	if suggestion := suggestMethod(method); suggestion != "" {
+		message += ". Did you mean " + suggestion + "?"
+	} else {
+		message += ". Find methods with protocol.describe {query}."
+	}
+	return message
+}
+
+// suggestMethod prefers a catalog method with the same action name, then a
+// known alias, then a near spelling.
+func suggestMethod(method string) string {
+	folded := strings.ToLower(strings.TrimSpace(method))
+	if folded == "" {
+		return ""
+	}
+	names := make([]string, 0, len(catalog.Methods))
+	for name := range catalog.Methods {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	action := folded[strings.LastIndex(folded, ".")+1:]
+	group := ""
+	if dot := strings.Index(folded, "."); dot > 0 {
+		group = folded[:dot]
+	}
+	var sameAction []string
+	for _, name := range names {
+		if strings.ToLower(name) == folded {
+			return name
+		}
+		if name[strings.LastIndex(name, ".")+1:] == action {
+			sameAction = append(sameAction, name)
+		}
+	}
+	if len(sameAction) == 1 {
+		return sameAction[0]
+	}
+	for _, name := range sameAction {
+		if strings.HasPrefix(name, group+".") {
+			return name
+		}
+	}
+	if alias := methodAliases[action]; alias != "" {
+		return alias
+	}
+	if len(sameAction) > 0 {
+		return sameAction[0]
+	}
+	best, bestDistance := "", 4
+	for _, name := range names {
+		if distance := editDistance(folded, name); distance < bestDistance {
+			best, bestDistance = name, distance
+		}
+	}
+	return best
+}

@@ -200,7 +200,7 @@ func (s *mcpSession) handleTool(ctx context.Context, name string, args object, e
 		params = mcpPick(args, parts[1])
 	}
 	if _, ok := catalog.Methods[method]; !ok {
-		return mcpErrorResult("INVALID_REQUEST", "Unknown bridge method: "+method), nil
+		return mcpErrorResult("INVALID_REQUEST", unknownMethodMessage(method)), nil
 	}
 	dataMode := name == "browser_call" && args.text("resultMode") == "data"
 	if dataMode && !batchSafe(method, params) {
@@ -343,10 +343,10 @@ func (s *mcpSession) handleTool(ctx context.Context, name string, args object, e
 func mcpWithParamWarnings(result object, warnings []string) object {
 	structured := result.object("structuredContent")
 	var content []object
-	if len(warnings) == 0 || structured["deliveredBytes"] == nil || json.Unmarshal(result["content"], &content) != nil || len(content) == 0 {
+	if len(warnings) == 0 || structured == nil || json.Unmarshal(result["content"], &content) != nil || len(content) == 0 {
 		return result
 	}
-	for _, suffix := range []string{"Bytes", "Tokens", "CostClass"} {
+	for _, suffix := range []string{"Tokens", "CostClass"} {
 		delete(structured, "delivered"+suffix)
 	}
 	summary := content[0].text("text") + " Warning: " + strings.Join(warnings, " ")
@@ -605,7 +605,11 @@ func mcpDOMQueryBatchItem(response, params object, duration int64) object {
 	}
 	meta := response.object("meta")
 	matches, _ := cliNumberValue(r["matchCount"])
-	summary := domQuerySummary(count, matches)
+	listed, ok := cliNumberValue(r["matchesListed"])
+	if !ok {
+		listed = -1
+	}
+	summary := domQuerySummary(count, matches, listed)
 	if warning := meta.text("protocol_warning"); strings.TrimSpace(warning) != "" {
 		summary += " Protocol warning: " + warning
 	}

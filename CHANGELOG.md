@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- `input.perform` accepts flat steps such as `{action: "fill", target, value}` and
+  common short names, and can navigate. Waits without their own timeout use the
+  sequence budget. Reads and waits after an action settle a navigation it started
+  before reading; a missing action target retries only on the next document.
+- Element reads accept the target shapes input methods take: a selector string,
+  `target.css`, a top-level `selector`, or a unique semantic locator.
+- `dom.query` lists every match of a broad selector and reports checkbox and
+  radio state.
+- MCP results omit size, transport, and timing fields for small, fast calls.
+  Error text carries the actionable details text-only clients need.
+- Unknown methods suggest the closest bridge method.
+
+### Fixed
+
+- Label locators no longer match prose that mentions the label, fill and type
+  prefer editable matches, and a label beside a single unassociated control
+  resolves to it.
+- `input.select_option` matches visible option text and lists available options
+  on a miss. `input.type` without a target types into the focused field.
+- Partly visible pointer targets are centered before being reported obscured.
+- A role locator that misses lists same-role elements and their names.
+- `browser_status` for a remote destination reports readiness facts and is not
+  an error when only the routed tab is a restricted page.
+
 ## [2.3.0] - 2026-11-20
 
 ### Added

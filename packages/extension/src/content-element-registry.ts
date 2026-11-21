@@ -488,16 +488,79 @@ registry at once. */
     );
   }
 
+  const LOCATOR_KEYS = ['role', 'name', 'text', 'label', 'placeholder', 'testId'];
+
+  type LocatorModule = {
+    locateElements: (
+      locator: Record<string, unknown>,
+      options?: { maxResults?: number }
+    ) => { matches: Element[]; hiddenMatches: number };
+  };
+
+  /** Resolve a semantic read target to its single visible match. */
+  function resolveLocatorTarget(target: Record<string, unknown>): Element {
+    const domQuery = Reflect.get(globalThis, '__BBX_CONTENT_DOM_QUERY__') as
+      | LocatorModule
+      | undefined;
+    if (typeof domQuery?.locateElements !== 'function') {
+      throw createRegistryError(
+        'INVALID_REQUEST',
+        'Semantic targets are unavailable in this frame. Pass target.selector or target.elementRef.',
+        {}
+      );
+    }
+    const nth = typeof target.nth === 'number' ? target.nth : null;
+    const located = domQuery.locateElements(target, { maxResults: nth === null ? 2 : nth + 1 });
+    const locator = Object.fromEntries(
+      LOCATOR_KEYS.filter((key) => typeof target[key] === 'string').map((key) => [key, target[key]])
+    );
+    const element = nth === null ? located.matches[0] : located.matches[nth];
+    if (!element) {
+      throw createRegistryError('ELEMENT_NOT_FOUND', 'No visible element matched the target.', {
+        locator,
+        ...(located.hiddenMatches ? { hiddenMatches: located.hiddenMatches } : {}),
+      });
+    }
+    if (nth === null && located.matches.length > 1) {
+      throw createRegistryError(
+        'ELEMENT_AMBIGUOUS',
+        'The target matches several elements. Add target.nth, a narrower locator, or a selector.',
+        { locator }
+      );
+    }
+    return element;
+  }
+
   /** Resolve element-level read params from either a legacy top-level
 `elementRef` or the newer `target` alias. */
   function resolveElementRefFromParams(
-    params: { elementRef?: string; target?: { elementRef?: string; selector?: string } } = {}
+    params: {
+      elementRef?: string;
+      selector?: string;
+      target?: string | Record<string, unknown>;
+    } = {}
   ): string {
     if (typeof params.elementRef === 'string' && params.elementRef) {
       return params.elementRef;
     }
-    if (params.target && typeof params.target === 'object') {
-      return rememberElement(resolveTarget(params.target));
+    // Reads accept the same target shapes as input methods: a selector string,
+    // `css`, a top-level selector, or a semantic locator matching one element.
+    let target: Record<string, unknown> | null = null;
+    if (typeof params.target === 'string' && params.target.trim()) {
+      target = { selector: params.target };
+    } else if (params.target && typeof params.target === 'object') {
+      target = { ...params.target };
+      if (typeof target.selector !== 'string' && typeof target.css === 'string') {
+        target.selector = target.css;
+      }
+    } else if (typeof params.selector === 'string' && params.selector.trim()) {
+      target = { selector: params.selector };
+    }
+    if (target) {
+      if (!target.elementRef && LOCATOR_KEYS.some((key) => typeof target[key] === 'string')) {
+        return rememberElement(resolveLocatorTarget(target));
+      }
+      return rememberElement(resolveTarget(target as { elementRef?: string; selector?: string }));
     }
     throw createRegistryError(
       'INVALID_REQUEST',

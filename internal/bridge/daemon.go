@@ -699,7 +699,7 @@ func (d *daemon) route(p *peer, request object) {
 		return
 	}
 	if _, ok := catalog.Methods[method]; !ok {
-		p.respond(failure(id, "INVALID_REQUEST", "Unknown bridge method: "+method))
+		p.respond(failure(id, "INVALID_REQUEST", unknownMethodMessage(method)))
 		return
 	}
 	meta, err := optionalObject(request, "meta")

@@ -21,6 +21,7 @@ type QueryApi = {
   domQuery: (params: Record<string, unknown>) => {
     nodes: Array<{ tag: string }>;
     matchCount?: number;
+    matchesListed?: number;
     truncated: boolean;
   };
   findByRole: (params: Record<string, unknown>) => FindResult;
@@ -1024,16 +1025,23 @@ test(
   }
 );
 
-test('dom.query reports when a selector matched more than the returned subtree', async () => {
+test('dom.query lists every selector match before their descendants', async () => {
   await withQuery(
     '<nav><a href="/one"><img alt=""></a><a href="/two">Two</a><a href="/three">Three</a></nav><p id="only">Only</p>',
     ({ query }) => {
       const links = query.domQuery({ selector: 'a', maxNodes: 10 });
       assert.deepEqual(
         links.nodes.map((node) => node.tag),
-        ['a', 'img']
+        ['a', 'a', 'a', 'img']
       );
       assert.equal(links.matchCount, 3);
+      assert.equal(links.matchesListed, 3);
+      const capped = query.domQuery({ selector: 'a', maxNodes: 2 });
+      assert.deepEqual(
+        capped.nodes.map((node) => node.tag),
+        ['a', 'a']
+      );
+      assert.equal(capped.matchesListed, 2);
       assert.equal('matchCount' in query.domQuery({ selector: '#only' }), false);
     }
   );

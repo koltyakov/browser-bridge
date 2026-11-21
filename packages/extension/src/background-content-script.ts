@@ -49,6 +49,15 @@ export function isMissingContentScriptReceiverError(error: unknown): boolean {
   );
 }
 
+/** True when the document holding the content script went away while a
+message was in flight: navigation into the back/forward cache or unload. */
+export function isDocumentUnloadedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /back\/forward cache|message channel (?:is )?closed|message port closed before a response/i.test(
+    message
+  );
+}
+
 export function createContentScriptBridge(
   chromeObj: typeof globalThis.chrome,
   deps: ContentScriptBridgeDeps
@@ -278,6 +287,18 @@ emit navigation-kind events; the background re-reads the authoritative URL. */
       // A caller timing out does not mean a mutation has stopped. Hold its
       // debugger/scheduler turn until the original content command settles,
       // but not past the grace period: an unresponsive page never settles.
+      if (!timedOut && isDocumentUnloadedError(error)) {
+        // The page navigated away mid-call. Report it as a typed, recoverable
+        // condition; a mutation's outcome stays uncertain.
+        throw new BridgeError(
+          ERROR_CODES.CONTENT_SCRIPT_UNAVAILABLE,
+          'The page navigated before the content script answered.',
+          {
+            reason: 'document_unloaded',
+            ...(awaitSettlement ? { outcomeUncertain: true } : {}),
+          }
+        );
+      }
       if (timedOut && awaitSettlement) {
         let graceId: ReturnType<typeof setTimeout> | undefined;
         const grace = new Promise<void>((resolve) => {

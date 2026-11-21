@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createRequest, ERROR_CODES } from '../../../protocol/src/index.js';
-import { createContentScriptBridge } from '../src/background-content-script.js';
+import {
+  createContentScriptBridge,
+  isDocumentUnloadedError,
+} from '../src/background-content-script.js';
 import { requestLifetimes } from '../src/background-request-lifetime.js';
 import { createChromeFake } from '../../../tests/_helpers/chromeFake.ts';
 
@@ -623,4 +626,20 @@ test('navigation invalidates a cached frame list so new child frames are probed'
     [0, 9]
   );
   assert.equal(reads, 2);
+});
+
+test('document unload errors are recognized separately from missing receivers', () => {
+  for (const message of [
+    'The page keeping the extension port is moved into back/forward cache, so the message channel is closed.',
+    'A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received',
+    'The message port closed before a response was received.',
+  ]) {
+    assert.equal(isDocumentUnloadedError(new Error(message)), true, message);
+  }
+  assert.equal(
+    isDocumentUnloadedError(
+      new Error('Could not establish connection. Receiving end does not exist.')
+    ),
+    false
+  );
 });

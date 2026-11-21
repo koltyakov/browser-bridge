@@ -615,7 +615,7 @@ export function normalizeRequestParams(
     case 'input.type':
     case 'input.fill':
     case 'input.press_key':
-      return withInputOptions(method, normalizeInputAction(params), params);
+      return withInputOptions(method, normalizeInputAction(aliasInputText(method, params)), params);
     case 'cdp.dispatch_key_event':
       return normalizeCdpDispatchKeyEventParams(params);
     case 'cdp.get_box_model':
@@ -792,11 +792,7 @@ function normalizeDomBaselineId(value: unknown): string {
 }
 
 export function normalizeStyleQuery(params: StyleQueryParams = {}): NormalizedStyleQuery {
-  const target = normalizeTarget(
-    params.target && typeof params.target === 'object'
-      ? (params.target as { elementRef?: string; selector?: string })
-      : undefined
-  );
+  const target = normalizeTarget(targetParam(params));
   const elementRef = String(params.elementRef || target.elementRef || '');
   if (!elementRef && !target.selector) {
     throw new BridgeError(
@@ -821,9 +817,15 @@ then narrows locator candidates; `nth` picks one of several matches. */
 function normalizeTarget(
   target: Record<string, unknown> | null | undefined
 ): import('./types.js').InputTarget {
+  const selector =
+    typeof target?.selector === 'string'
+      ? target.selector
+      : typeof target?.css === 'string'
+        ? target.css
+        : undefined;
   const normalized: import('./types.js').InputTarget = {
     elementRef: typeof target?.elementRef === 'string' ? target.elementRef : undefined,
-    selector: typeof target?.selector === 'string' ? target.selector : undefined,
+    selector,
   };
   if (!target) return normalized;
   for (const key of TARGET_LOCATOR_KEYS) {
@@ -846,6 +848,23 @@ function normalizeTarget(
     normalized.nth = nth;
   }
   return normalized;
+}
+
+/** The target of a targeted call. Besides `target: {...}`, accept a selector
+string as the target and a top-level `selector` or `elementRef`, the shapes
+other bridge methods and automation APIs use. */
+function targetParam(params: object): Record<string, unknown> | undefined {
+  const record = params as Record<string, unknown>;
+  const target = record.target;
+  if (typeof target === 'string' && target.trim()) return { selector: target };
+  if (target && typeof target === 'object') return target as Record<string, unknown>;
+  if (typeof record.elementRef === 'string' && record.elementRef) {
+    return { elementRef: record.elementRef };
+  }
+  if (typeof record.selector === 'string' && record.selector.trim()) {
+    return { selector: record.selector };
+  }
+  return undefined;
 }
 
 /** Shared target auto-wait and post-action observation bounds (ms). */
@@ -918,11 +937,7 @@ export function normalizeInputAction(params: InputActionParams = {}): Normalized
       : 'auto';
 
   return {
-    target: normalizeTarget(
-      params.target && typeof params.target === 'object'
-        ? (params.target as { elementRef?: string; selector?: string })
-        : undefined
-    ),
+    target: normalizeTarget(targetParam(params)),
     button,
     clickCount: clampInt(params.clickCount, 1, 2, 1),
     text: typeof params.text === 'string' ? params.text : '',
@@ -1023,6 +1038,7 @@ const PERFORM_STEP_METHODS = new Set([
   'page.get_text',
   'dom.query',
   'dom.get_text',
+  'navigation.navigate',
 ]);
 
 /** Step methods that accept executionMode=cdp. */
@@ -1086,6 +1102,93 @@ function normalizeNetworkUrlPattern(pattern: string): string {
   }
 }
 
+// Short step names agents commonly write, borrowed from other automation APIs.
+const PERFORM_STEP_ALIASES: Record<string, string> = {
+  click: 'input.click',
+  focus: 'input.focus',
+  type: 'input.type',
+  fill: 'input.fill',
+  press: 'input.press_key',
+  press_key: 'input.press_key',
+  key: 'input.press_key',
+  check: 'input.set_checked',
+  uncheck: 'input.set_checked',
+  set_checked: 'input.set_checked',
+  select: 'input.select_option',
+  select_option: 'input.select_option',
+  hover: 'input.hover',
+  drag: 'input.drag',
+  touch: 'input.touch',
+  tap: 'input.touch',
+  scroll_into_view: 'input.scroll_into_view',
+  scroll: 'viewport.scroll',
+  wait: 'dom.wait_for',
+  wait_for: 'dom.wait_for',
+  wait_for_selector: 'dom.wait_for',
+  wait_for_text: 'dom.wait_for',
+  wait_for_load_state: 'page.wait_for_load_state',
+  wait_for_load: 'page.wait_for_load_state',
+  wait_for_navigation: 'page.wait_for_load_state',
+  get_state: 'page.get_state',
+  page_text: 'page.get_text',
+  query: 'dom.query',
+  navigate: 'navigation.navigate',
+  goto: 'navigation.navigate',
+};
+
+// Step keys that schedule the step rather than configure its method.
+const PERFORM_STEP_KEYS = new Set(['method', 'type', 'action', 'params', 'delayMs', 'atMs']);
+
+/** Resolve a step written as {method, params} or as the flat shorthand
+{type|action|method: 'fill', target, value}. Shorthand names map onto the same
+step methods, and inline keys become that method's params. */
+function resolvePerformStep(
+  step: Record<string, unknown>,
+  index: number
+): { method: PerformStepMethod; params: unknown } {
+  const named = [step.method, step.type, step.action].find(
+    (candidate): candidate is string => typeof candidate === 'string' && candidate.trim() !== ''
+  );
+  let method: string | undefined;
+  if (named && PERFORM_STEP_METHODS.has(named)) {
+    method = named;
+  } else if (named) {
+    const short = named
+      .trim()
+      .replace(/^(input|dom|page|viewport|navigation|tabs)\./, '')
+      .replace(/([a-z])([A-Z])/g, '$1_$2')
+      .replace(/[\s-]+/g, '_')
+      .toLowerCase();
+    if (short === 'get_text' || short === 'text') {
+      // Element text when the step names an element, otherwise page text.
+      method =
+        'target' in step || 'selector' in step || 'elementRef' in step
+          ? 'dom.get_text'
+          : 'page.get_text';
+    } else {
+      method = PERFORM_STEP_ALIASES[short];
+      if (!method && PERFORM_STEP_METHODS.has(`input.${short}`)) method = `input.${short}`;
+    }
+  }
+  if (!method) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      `steps[${index}].method must be one of ${[...PERFORM_STEP_METHODS].join(', ')}. ` +
+        'Write each step as {method:"input.fill", params:{target:{label:"Email"}, value:"a@b.test"}}.'
+    );
+  }
+  if (step.params !== undefined)
+    return { method: method as PerformStepMethod, params: step.params };
+  const inline: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(step)) {
+    if (!PERFORM_STEP_KEYS.has(key)) inline[key] = entry;
+  }
+  if (method === 'input.set_checked' && inline.checked === undefined && named) {
+    inline.checked = !/^uncheck$/i.test(named.trim());
+  }
+  return { method: method as PerformStepMethod, params: inline };
+}
+
 /** Normalize an ordered, timed input sequence. Each step reuses an existing
 bridge method and its own normalizer; the sequence adds only scheduling. */
 export function normalizeInputPerformParams(params: PerformParams = {}): NormalizedPerformParams {
@@ -1109,20 +1212,15 @@ export function normalizeInputPerformParams(params: PerformParams = {}): Normali
     if (!isPlainRecord(step)) {
       throw new BridgeError(ERROR_CODES.INVALID_REQUEST, `steps[${index}] must be an object.`);
     }
-    const method = step.method;
-    if (typeof method !== 'string' || !PERFORM_STEP_METHODS.has(method)) {
-      throw new BridgeError(
-        ERROR_CODES.INVALID_REQUEST,
-        `steps[${index}].method must be one of ${[...PERFORM_STEP_METHODS].join(', ')}.`
-      );
-    }
-    if (step.params !== undefined && !isPlainRecord(step.params)) {
+    const resolved = resolvePerformStep(step as Record<string, unknown>, index);
+    const method = resolved.method;
+    if (!isPlainRecord(resolved.params)) {
       throw new BridgeError(
         ERROR_CODES.INVALID_REQUEST,
         `steps[${index}].params must be an object.`
       );
     }
-    const rawParams = step.params ?? ({} as Record<string, unknown>);
+    const rawParams = resolved.params;
     const stepParams =
       executionMode && CDP_CAPABLE_STEP_METHODS.has(method) && rawParams.executionMode === undefined
         ? { ...rawParams, executionMode }
@@ -1137,6 +1235,11 @@ export function normalizeInputPerformParams(params: PerformParams = {}): Normali
     }
     const stepMethod = method as PerformStepMethod;
     const normalizedStepParams = normalizeRequestParams(stepMethod, stepParams);
+    // A wait inside a sequence without its own timeout waits for the rest of
+    // the sequence budget rather than the standalone 5s default.
+    if (stepMethod === 'dom.wait_for' && rawParams.timeoutMs === undefined) {
+      normalizedStepParams.timeoutMs = Math.min(timeoutMs, 30_000);
+    }
     // Timed sequences keep their schedule: steps observe effects only on request.
     if (rawParams.observe === undefined && 'observe' in normalizedStepParams) {
       normalizedStepParams.observe = null;
@@ -1306,30 +1409,38 @@ export function normalizeCdpDomSnapshotParams(
 
 export function normalizeCheckedAction(params: CheckedActionParams = {}): NormalizedCheckedAction {
   return {
-    target: normalizeTarget(
-      params.target && typeof params.target === 'object'
-        ? (params.target as { elementRef?: string; selector?: string })
-        : undefined
-    ),
+    target: normalizeTarget(targetParam(params)),
     checked: params.checked !== false,
     executionMode: normalizeInputExecutionMode(params.executionMode),
     recoverStale: params.recoverStale === true,
   };
 }
 
+/** input.fill takes `value` and input.type takes `text`; accept the other
+name when the method's own field is absent. */
+function aliasInputText(method: string, params: Record<string, unknown>): Record<string, unknown> {
+  if (method === 'input.fill' && params.value === undefined && typeof params.text === 'string') {
+    return { ...params, value: params.text, text: undefined };
+  }
+  if (method === 'input.type' && params.text === undefined && typeof params.value === 'string') {
+    return { ...params, text: params.value, value: undefined };
+  }
+  return params;
+}
+
+/** A string list from an array or a single string. */
+function stringList(value: unknown): string[] {
+  const entries = Array.isArray(value) ? value : value === undefined ? [] : [value];
+  return entries.filter(
+    (entry): entry is string => typeof entry === 'string' && entry.trim() !== ''
+  );
+}
+
 export function normalizeSelectAction(params: SelectActionParams = {}): NormalizedSelectAction {
   return {
-    target: normalizeTarget(
-      params.target && typeof params.target === 'object'
-        ? (params.target as { elementRef?: string; selector?: string })
-        : undefined
-    ),
-    values: Array.isArray(params.values)
-      ? params.values.filter((value) => typeof value === 'string' && value.trim())
-      : [],
-    labels: Array.isArray(params.labels)
-      ? params.labels.filter((label) => typeof label === 'string' && label.trim())
-      : [],
+    target: normalizeTarget(targetParam(params)),
+    values: stringList(params.values ?? (params as Record<string, unknown>).value),
+    labels: stringList(params.labels ?? (params as Record<string, unknown>).label),
     indexes: Array.isArray(params.indexes)
       ? params.indexes
           .map((index) => Number(index))
@@ -1344,11 +1455,7 @@ export function normalizeViewportAction(
   params: ViewportActionParams = {}
 ): NormalizedViewportAction {
   return {
-    target: normalizeTarget(
-      params.target && typeof params.target === 'object'
-        ? (params.target as { elementRef?: string; selector?: string })
-        : undefined
-    ),
+    target: normalizeTarget(targetParam(params)),
     top: Number.isFinite(Number(params.top)) ? Number(params.top) : 0,
     left: Number.isFinite(Number(params.left)) ? Number(params.left) : 0,
     behavior: params.behavior === 'smooth' ? 'smooth' : 'auto',
@@ -1563,11 +1670,7 @@ function validateFindParams(params: FindByTextParams | FindByRoleParams): void {
 }
 
 export function normalizeGetHtmlParams(params: GetHtmlParams = {}): NormalizedGetHtmlParams {
-  const target = normalizeTarget(
-    params.target && typeof params.target === 'object'
-      ? (params.target as { elementRef?: string; selector?: string })
-      : undefined
-  );
+  const target = normalizeTarget(targetParam(params));
   optionalParamType(params.prune, 'prune', 'boolean');
   const prune = params.prune === true;
   return {
@@ -1586,11 +1689,7 @@ export function normalizeGetHtmlParams(params: GetHtmlParams = {}): NormalizedGe
 
 export function normalizeHoverParams(params: HoverParams = {}): NormalizedHoverParams {
   return {
-    target: normalizeTarget(
-      params.target && typeof params.target === 'object'
-        ? (params.target as { elementRef?: string; selector?: string })
-        : undefined
-    ),
+    target: normalizeTarget(targetParam(params)),
     duration: clampInt(params.duration, 0, 5_000, 0),
     modifiers: Array.isArray(params.modifiers)
       ? params.modifiers.filter((modifier) => typeof modifier === 'string' && modifier.trim())

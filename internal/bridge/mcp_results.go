@@ -49,7 +49,10 @@ func mcpResult(summary string, structured object, isError bool, images ...object
 	}
 	tokens := (size + 3) / 4
 	structured = mcpClone(structured)
-	structured["deliveredBytes"], structured["deliveredTokens"], structured["deliveredCostClass"] = value(size), value(tokens), value(mcpCost(tokens))
+	// Report delivered size only when it is large enough to plan around.
+	if tokens > mcpMetaTokenFloor {
+		structured["deliveredTokens"], structured["deliveredCostClass"] = value(tokens), value(mcpCost(tokens))
+	}
 	result["structuredContent"] = value(structured)
 	return result
 }
@@ -234,12 +237,34 @@ func mcpResponse(response object, method string, params object) object {
 			return mcpResult("Read exact journal bytes; page until nextOffset is null.", object{"ok": value(true), "evidence": response["result"]}, false)
 		}
 	}
-	structured := mcpStructuredResponse(response, method, params)
+	structured := mcpPruneMeta(mcpStructuredResponse(response, method, params))
 	summary := structured.text("summary")
 	if err := structured.object("error"); err != nil {
 		summary += mcpErrorDetailsText(err["details"])
 	}
 	return mcpResult(summary, structured, !structured.boolean("ok"))
+}
+
+// mcpMetaTokenFloor is the result size below which per-call size and timing
+// fields are omitted. Every field stays in the conversation for the rest of the
+// session, so only results large enough to change the next read's budget say
+// what they cost.
+const mcpMetaTokenFloor = 1000
+
+// mcpPruneMeta removes transport accounting from ordinary results and keeps
+// timing only for slow calls. Live access settings stay: they are policy.
+func mcpPruneMeta(structured object) object {
+	delete(structured, "transportBytes")
+	delete(structured, "transportCostClass")
+	if tokens, ok := cliNumberValue(structured["transportTokens"]); !ok || tokens <= mcpMetaTokenFloor {
+		delete(structured, "transportTokens")
+	}
+	if timing := structured.object("timing"); timing != nil {
+		if total, ok := cliNumberValue(timing["totalMs"]); !ok || total < 1000 {
+			delete(structured, "timing")
+		}
+	}
+	return structured
 }
 
 // Clients often render only the text of an error result, so the text names
@@ -251,15 +276,54 @@ func mcpErrorDetailsText(details json.RawMessage) string {
 			return fmt.Sprintf(" Policy setting: %s. Settings revision: %s. Wait with access.wait_for_change using this revision and the same extensionId; inspect the relevant setting before a deliberate retry.", policy.text("setting"), snapshot.SettingsRevision)
 		}
 	}
+	details = mcpErrorTextDetails(details)
 	switch string(details) {
 	case "", "null", "{}", "[]":
 		return ""
 	}
 	text := string(cliJSON(details, true))
-	if mcpStringLength(text) > 300 {
-		text = mcpSlice(text, 300) + "…"
+	if mcpStringLength(text) > 600 {
+		text = mcpSlice(text, 600) + "…"
 	}
 	return " Details: " + text
+}
+
+// mcpErrorNoiseKeys are detail fields the summary already conveys (the
+// replay warning, sequence timing) or that only matter to diagnostics.
+var mcpErrorNoiseKeys = map[string]bool{"aftermath": true, "startedAtMs": true, "elapsedMs": true, "total": true, "byteLength": true, "execution": true}
+
+// mcpErrorTextDetails drops noise keys at any depth so the bounded text keeps
+// the fields that say what to change: the failed step, candidates, options.
+func mcpErrorTextDetails(details json.RawMessage) json.RawMessage {
+	trimmed := bytes.TrimSpace(details)
+	if len(trimmed) == 0 {
+		return details
+	}
+	switch trimmed[0] {
+	case '{':
+		fields, err := decodeObject(trimmed)
+		if err != nil {
+			return details
+		}
+		for key, child := range fields {
+			if mcpErrorNoiseKeys[key] {
+				delete(fields, key)
+				continue
+			}
+			fields[key] = mcpErrorTextDetails(child)
+		}
+		return value(fields)
+	case '[':
+		var items []json.RawMessage
+		if json.Unmarshal(trimmed, &items) != nil {
+			return details
+		}
+		for index, child := range items {
+			items[index] = mcpErrorTextDetails(child)
+		}
+		return value(items)
+	}
+	return details
 }
 
 // Keep image bytes out of structured text. Each image has an immediately preceding
@@ -527,6 +591,9 @@ func mcpDOMQueryNodes(r, params object) (evidence json.RawMessage, count, limit 
 		}
 		if children, ok := cliArray(node["children"]); ok && len(children) > 0 {
 			compact["childCount"] = value(len(children))
+		}
+		if checked := string(node["checked"]); checked == "true" || checked == "false" {
+			compact["checked"] = node["checked"]
 		}
 		if requested := mcpRequestedAttributes(attrs, allowlist); len(requested) > 0 {
 			compact["attrs"] = value(requested)

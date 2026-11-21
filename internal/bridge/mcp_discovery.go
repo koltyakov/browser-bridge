@@ -24,7 +24,7 @@ func mcpDescribe(params object) object {
 		if method, exists := catalog.Methods[params.text("method")]; exists {
 			return mcpResult("Bridge protocol description loaded.", describeMethod(params.text("method"), method), false)
 		}
-		return mcpErrorResult("INVALID_REQUEST", "Unknown bridge method: "+params.text("method"))
+		return mcpErrorResult("INVALID_REQUEST", unknownMethodMessage(params.text("method")))
 	}
 	groups := map[string][]object{}
 	for _, method := range catalog.Methods {
@@ -234,7 +234,11 @@ func (s *mcpSession) status(ctx context.Context, args object, era string) (objec
 		result := results[0]
 		out := mcpClone(result)
 		out["ok"], out["destination"] = result["routeReady"], value(destinations[0])
-		return mcpResult(fmt.Sprintf("Browser Bridge destination %q readiness checked.", requested), out, !result.boolean("routeReady")), nil
+		// The routed tab being a restricted page, such as about:blank, does not
+		// stop the agent from opening or selecting a web tab. Only an
+		// unreachable daemon, a missing extension, or disabled access does.
+		usable := result.boolean("reachable") && result.boolean("extensionConnected") && result.boolean("accessEnabled")
+		return mcpResult(destinationStatusSummary(requested, result), out, !usable), nil
 	}
 	report["issues"] = value(issues)
 	summary := "Browser Bridge is ready."
@@ -290,4 +294,24 @@ func (s *mcpSession) destinationTabs(ctx context.Context, args object, era strin
 		summary += fmt.Sprintf(" Showing %d at offset %d, %d omitted. Follow pagination.nextOffset until null to retrieve remaining tabs.", page.number("returnedCount"), page.number("offset"), page.number("omittedCount"))
 	}
 	return mcpResult(summary, out, failures == len(destinations) && len(tabs) == 0), nil
+}
+
+// destinationStatusSummary states each readiness fact, so a client that shows
+// only the text still learns what to do next.
+func destinationStatusSummary(id string, result object) string {
+	switch {
+	case !result.boolean("reachable"):
+		return fmt.Sprintf("Destination %q is not reachable. Check the tunnel or proxy, then retry.", id)
+	case !result.boolean("extensionConnected"):
+		return fmt.Sprintf("Destination %q daemon is reachable, but no browser extension is connected.", id)
+	case !result.boolean("accessEnabled"):
+		return fmt.Sprintf("Destination %q extension is connected, but window access is disabled. Call access.request, then ask the user to click Enable.", id)
+	case !result.boolean("routeReady"):
+		reason := result.text("routeReason")
+		if reason == "" {
+			reason = "not ready"
+		}
+		return fmt.Sprintf("Destination %q is connected with access enabled. The routed tab is %s; create a tab or pass a web tabId.", id, strings.ReplaceAll(reason, "_", " "))
+	}
+	return fmt.Sprintf("Destination %q is connected, access is enabled, and the routed tab is ready.", id)
 }

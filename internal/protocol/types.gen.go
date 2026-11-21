@@ -4576,11 +4576,13 @@ const (
 	PerformStepMethodDomQuery PerformStepMethod = "dom.query"
 
 	PerformStepMethodDomGetText PerformStepMethod = "dom.get_text"
+
+	PerformStepMethodNavigationNavigate PerformStepMethod = "navigation.navigate"
 )
 
 func (v PerformStepMethod) Valid() bool {
 	switch v {
-	case PerformStepMethodInputClick, PerformStepMethodInputFocus, PerformStepMethodInputType, PerformStepMethodInputFill, PerformStepMethodInputPressKey, PerformStepMethodInputSetChecked, PerformStepMethodInputSelectOption, PerformStepMethodInputHover, PerformStepMethodInputDrag, PerformStepMethodInputTouch, PerformStepMethodInputScrollIntoView, PerformStepMethodViewportScroll, PerformStepMethodDomWaitFor, PerformStepMethodPageWaitForLoadState, PerformStepMethodPageGetState, PerformStepMethodPageGetText, PerformStepMethodDomQuery, PerformStepMethodDomGetText:
+	case PerformStepMethodInputClick, PerformStepMethodInputFocus, PerformStepMethodInputType, PerformStepMethodInputFill, PerformStepMethodInputPressKey, PerformStepMethodInputSetChecked, PerformStepMethodInputSelectOption, PerformStepMethodInputHover, PerformStepMethodInputDrag, PerformStepMethodInputTouch, PerformStepMethodInputScrollIntoView, PerformStepMethodViewportScroll, PerformStepMethodDomWaitFor, PerformStepMethodPageWaitForLoadState, PerformStepMethodPageGetState, PerformStepMethodPageGetText, PerformStepMethodDomQuery, PerformStepMethodDomGetText, PerformStepMethodNavigationNavigate:
 		return true
 	}
 	return false

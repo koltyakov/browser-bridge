@@ -7,6 +7,10 @@ import (
 )
 
 func TestMCPDeliveredSizeMatchesCanonicalEnvelope(t *testing.T) {
+	small := mcpResult("Small", object{"ok": value(true)}, false).object("structuredContent")
+	if small["deliveredTokens"] != nil || small["deliveredCostClass"] != nil {
+		t.Fatalf("small result reported its size: %s", value(small))
+	}
 	for _, isError := range []bool{false, true} {
 		for _, raw := range []string{
 			`{"ok":true,"evidence":{"text":"<>&雪😀\n\u0000","numbers":[7.0,7e0,-0,1e-7,1e21]}}`,
@@ -17,7 +21,8 @@ func TestMCPDeliveredSizeMatchesCanonicalEnvelope(t *testing.T) {
 			if err := json.Unmarshal([]byte(raw), &structured); err != nil {
 				t.Fatal(err)
 			}
-			images := []object{{"type": value("image"), "data": value("abc+/="), "mimeType": value("image/png")}}
+			// The image keeps the result above the accounting floor.
+			images := []object{{"type": value("image"), "data": value(strings.Repeat("abc+/=", 800)), "mimeType": value("image/png")}}
 			result := mcpResult("Summary <>&雪😀\n", structured, isError, images...)
 			envelope := mcpClone(result)
 			for _, key := range []string{"deliveredBytes", "deliveredTokens", "deliveredCostClass"} {
@@ -28,7 +33,7 @@ func TestMCPDeliveredSizeMatchesCanonicalEnvelope(t *testing.T) {
 			envelope["structuredContent"] = value(structured)
 			size := len(cliJSON(value(envelope), false))
 			got := result.object("structuredContent")
-			if got.number("deliveredBytes") != int64(size) || got.number("deliveredTokens") != int64((size+3)/4) {
+			if got["deliveredBytes"] != nil || got.number("deliveredTokens") != int64((size+3)/4) {
 				t.Fatalf("incorrect metrics for error=%t %s: %s, want %d bytes", isError, raw, value(got), size)
 			}
 		}

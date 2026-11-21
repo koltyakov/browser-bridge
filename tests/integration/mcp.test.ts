@@ -349,9 +349,9 @@ test(
       assert.equal(structuredContent.objective, 'Confirm the status panel is visible');
       assert.equal(structuredContent.scope, 'quick');
       assert.equal(structuredContent.heuristicFallback, true);
-      assert.equal(typeof structuredContent.deliveredBytes, 'number');
-      assert.equal(typeof structuredContent.deliveredTokens, 'number');
-      assert.equal(typeof structuredContent.deliveredCostClass, 'string');
+      // Small results omit per-call size accounting.
+      assert.equal(structuredContent.deliveredBytes, undefined);
+      assert.equal(structuredContent.deliveredTokens, undefined);
       assert.deepEqual(
         steps.map((step) => step.method),
         ['page.get_state', 'dom.query']

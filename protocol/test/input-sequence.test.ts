@@ -340,3 +340,66 @@ test('summaries describe sequences, touch gestures, waits, and large evaluate va
   const small = summarizeBridgeResponse(ok({ value: { a: 1 }, type: 'object' }));
   assert.equal(small.summary, 'Evaluated to object: {"a":1}');
 });
+
+test('normalizeInputPerformParams accepts flat step shorthand', () => {
+  const normalized = normalizeInputPerformParams({
+    timeoutMs: 20_000,
+    steps: [
+      { type: 'fill', target: { label: 'Email' }, value: 'a@b.test' },
+      { action: 'click', selector: '#save' },
+      { method: 'input.fill', target: '#name', text: 'Ada' },
+      { type: 'uncheck', target: { label: 'Subscribe' } },
+      { type: 'select', target: { css: '#country' }, value: 'Canada' },
+      { type: 'wait_for', text: 'Saved' },
+      { type: 'get_text', target: { selector: '#flash' } },
+      { type: 'get_text' },
+      { type: 'pressKey', key: 'Enter' },
+    ],
+  } as unknown as Parameters<typeof normalizeInputPerformParams>[0]);
+  const steps = normalized.steps;
+  assert.deepEqual(
+    steps.map((step) => step.method),
+    [
+      'input.fill',
+      'input.click',
+      'input.fill',
+      'input.set_checked',
+      'input.select_option',
+      'dom.wait_for',
+      'dom.get_text',
+      'page.get_text',
+      'input.press_key',
+    ]
+  );
+  assert.equal(steps[0].params.value, 'a@b.test');
+  assert.deepEqual(steps[0].params.target, {
+    label: 'Email',
+    elementRef: undefined,
+    selector: undefined,
+  });
+  assert.equal((steps[1].params.target as { selector?: string }).selector, '#save');
+  assert.equal((steps[2].params.target as { selector?: string }).selector, '#name');
+  assert.equal(steps[2].params.value, 'Ada');
+  assert.equal(steps[3].params.checked, false);
+  assert.equal((steps[4].params.target as { selector?: string }).selector, '#country');
+  assert.deepEqual(steps[4].params.values, ['Canada']);
+  // An untimed wait inside a sequence uses the sequence budget.
+  assert.equal(steps[5].params.timeoutMs, 20_000);
+  const navigation = normalizeInputPerformParams({
+    steps: [
+      { method: 'page.navigate', url: 'https://example.test/next' },
+      { action: 'goto', url: 'https://example.test/other' },
+    ],
+  } as unknown as Parameters<typeof normalizeInputPerformParams>[0]);
+  assert.deepEqual(
+    navigation.steps.map((step) => [step.method, step.params.url]),
+    [
+      ['navigation.navigate', 'https://example.test/next'],
+      ['navigation.navigate', 'https://example.test/other'],
+    ]
+  );
+  assert.throws(
+    () => normalizeInputPerformParams({ steps: [{ type: 'teleport' }] } as never),
+    /Write each step as \{method:"input\.fill"/
+  );
+});

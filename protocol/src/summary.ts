@@ -752,10 +752,8 @@ function summarizeBridgeResponseBody(response: BridgeResponse, method?: string):
       };
     }
     const matchCount = typeof result.matchCount === 'number' ? result.matchCount : 0;
-    const matchNote =
-      matchCount > 1
-        ? ` The selector matched ${matchCount} elements; only the first match's subtree is shown. Narrow the selector or use dom.find_by_role or dom.find_by_text to list matches.`
-        : '';
+    const listed = typeof result.matchesListed === 'number' ? result.matchesListed : null;
+    const matchNote = domQueryMatchNote(matchCount, listed);
     return {
       ok: true,
       summary: appendProtocolWarning(
@@ -1176,4 +1174,16 @@ function formatRelativeTime(ts: number): string {
   if (delta < 3_600_000) return `${Math.round(delta / 60_000)}m ago`;
   if (delta < 86_400_000) return `${Math.round(delta / 3_600_000)}h ago`;
   return `${Math.round(delta / 86_400_000)}d ago`;
+}
+
+/** Explain how a multi-match selector was listed. Results without
+`matchesListed` come from extensions that returned only the first match. */
+export function domQueryMatchNote(matchCount: number, listed: number | null): string {
+  if (matchCount <= 1) return '';
+  if (listed === null) {
+    return ` The selector matched ${matchCount} elements; only the first match's subtree is shown. Narrow the selector or use dom.find_by_role or dom.find_by_text to list matches.`;
+  }
+  return listed < matchCount
+    ? ` The selector matched ${matchCount} elements; listed the first ${listed}. Narrow the selector or raise maxNodes to see the rest.`
+    : ` The selector matched ${matchCount} elements; all are listed before their descendants.`;
 }

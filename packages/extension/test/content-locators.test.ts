@@ -218,3 +218,46 @@ test('scoped deep walks and queries include closed roots available through chrom
     }
   });
 });
+
+test('label locators match labelled controls, not prose that mentions the label', async () => {
+  await withDocument(
+    '<html><body><h4>Enter tomsmith for the username and SuperSecretPassword! for the password.</h4><form><label for="username">Username</label><input id="username"><label for="password">Password</label><input id="password" type="password"><div role="textbox" aria-label="Username notes" id="notes"></div><a href="#u" id="link">Username help</a></form></body></html>',
+    async () => {
+      const { query } = await loadModules();
+      assert.deepEqual(
+        query
+          .locateElements({ label: 'Username' }, { maxResults: 10 })
+          .matches.map((element) => element.id),
+        ['username', 'notes']
+      );
+      assert.deepEqual(
+        query
+          .locateElements({ label: 'password' }, { maxResults: 10 })
+          .matches.map((element) => element.id),
+        ['password']
+      );
+    }
+  );
+});
+
+test('label locators fall back to the one control beside an unassociated label', async () => {
+  await withDocument(
+    '<html><body><form><div class="row"><div class="col"><label id="userNumber-label">Mobile<small>(10 Digits)</small></label></div><div class="col"><input id="userNumber" placeholder="Mobile Number"></div></div><div class="row"><label>Address</label><input id="street"><input id="city"></div></form></body></html>',
+    async () => {
+      const { query } = await loadModules();
+      assert.deepEqual(
+        query
+          .locateElements({ label: 'Mobile(10 Digits)' }, { maxResults: 10 })
+          .matches.map((element) => element.id),
+        ['userNumber']
+      );
+      assert.deepEqual(
+        query
+          .locateElements({ label: 'Address' }, { maxResults: 10 })
+          .matches.map((element) => element.id),
+        [],
+        'a label beside several controls stays unresolved'
+      );
+    }
+  );
+});

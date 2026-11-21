@@ -124,6 +124,8 @@
     name: string | null;
     textExcerpt: string;
     attrs: Record<string, string | null>;
+    /** Live state of a checkbox or radio input. */
+    checked?: boolean;
     bbox?: { x: number; y: number; width: number; height: number };
   };
 
@@ -134,6 +136,7 @@ element reference. */
     revision: number;
     truncated?: boolean;
     matchCount?: number;
+    matchesListed?: number;
     registrySize: number;
     _registryPruned?: boolean;
   } {
@@ -152,7 +155,23 @@ element reference. */
     const nodes: NodeSummary[] = [];
     let remaining = query.budget.textBudget;
 
-    const queue: Array<{ element: Element; depth: number }> = [{ element: root, depth: 0 }];
+    // A selector matching several elements lists each match first, then their
+    // subtrees breadth-first within the node budget. The native light-DOM
+    // query stays cheap on large pages.
+    const lightMatches = query.withinRef ? [] : document.querySelectorAll(query.selector);
+    const matchCount = lightMatches.length;
+    let roots: Element[] = [root];
+    if (matchCount > 1) {
+      roots = [];
+      for (const match of lightMatches) {
+        if (roots.length >= query.budget.maxNodes) break;
+        if (!roots.some((listed) => listed.contains(match))) roots.push(match);
+      }
+    }
+    const queue: Array<{ element: Element; depth: number }> = roots.map((element) => ({
+      element,
+      depth: 0,
+    }));
     let queueIndex = 0;
     let truncatedByQueueCap = false;
 
@@ -189,15 +208,11 @@ element reference. */
       }
     }
 
-    // The result is the first match's subtree. Say when the selector matched
-    // more, so a broad selector is not mistaken for a complete list. The
-    // native light-DOM count stays cheap on large pages.
-    const matchCount = query.withinRef ? 0 : document.querySelectorAll(query.selector).length;
     const pruned = consumePruned();
     return {
       nodes,
       revision: getDocumentRevision(),
-      ...(matchCount > 1 ? { matchCount } : {}),
+      ...(matchCount > 1 ? { matchCount, matchesListed: roots.length } : {}),
       truncated: truncatedByQueueCap || queueIndex < queue.length || remaining <= 0,
       registrySize: getRegistrySize(),
       ...(pruned ? { _registryPruned: true } : {}),
@@ -225,9 +240,22 @@ element reference. */
         name: element.getAttribute('aria-label') || element.getAttribute('name') || null,
         textExcerpt: text.value,
         attrs: summarizeAttributes(element, attributeAllowlist),
+        ...(isCheckableInput(element) ? { checked: readChecked(element) } : {}),
         ...(includeBbox ? { bbox: toRect(element.getBoundingClientRect()) } : {}),
       },
     };
+  }
+
+  function isCheckableInput(element: Element): boolean {
+    if (element.tagName !== 'INPUT') return false;
+    const type = (element.getAttribute('type') || '').toLowerCase();
+    return type === 'checkbox' || type === 'radio';
+  }
+
+  /** Live checked state, or the default state where no property exists. */
+  function readChecked(element: Element): boolean {
+    const live = (element as { checked?: unknown }).checked;
+    return typeof live === 'boolean' ? live : element.hasAttribute('checked');
   }
 
   /** Extract only allowlisted attributes from an element. */
@@ -732,6 +760,32 @@ re-reads every ancestor's whole subtree, which is quadratic on large pages. */
     'PROGRESS',
   ]);
 
+  // Widgets that take a label but may be custom elements without a native
+  // label association. Name-from-content roles such as headings, links, and
+  // cells are excluded so a label locator never matches surrounding prose.
+  const LABELED_WIDGET_ROLES = new Set([
+    'checkbox',
+    'combobox',
+    'listbox',
+    'radio',
+    'searchbox',
+    'slider',
+    'spinbutton',
+    'switch',
+    'textbox',
+  ]);
+
+  /** True for form controls and elements named by an attribute rather than by
+their own content: the targets a label locator describes. */
+  function canHaveLabel(element: Element): boolean {
+    if (NAME_SOURCE_ATTRIBUTES.some((attribute) => element.hasAttribute(attribute))) return true;
+    const tag = element.tagName.toUpperCase();
+    if (LABELABLE_NAME_TAGS.has(tag)) {
+      return !(tag === 'INPUT' && (element.getAttribute('type') || '').toLowerCase() === 'hidden');
+    }
+    return getElementRoles(element).some((role) => LABELED_WIDGET_ROLES.has(role));
+  }
+
   /** True when no accessible-name source of this element can contain the
 needle: no naming attributes, no associated label containing it, no input
 value or default button name, and subtree text that lacks it. */
@@ -838,6 +892,7 @@ descendant text matches (so `<button><b>Place</b> order</button>` matches
       matchers.label &&
       (element.tagName === 'LABEL' ||
         getElementRoles(element).length === 0 ||
+        !canHaveLabel(element) ||
         (labelIndex !== null && nameCannotContain(element, labelIndex)) ||
         !matchers.label(getAccessibleName(element)))
     ) {
@@ -850,6 +905,48 @@ descendant text matches (so `<button><b>Place</b> order</button>` matches
       return false;
     }
     return true;
+  }
+
+  const UNASSOCIATED_LABEL_SCAN_LIMIT = 200;
+  const LABEL_ROW_CONTROLS =
+    'input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]), select, textarea';
+
+  /** The single form control beside a matching <label> that has none, or null
+when no label, or more than one candidate control, qualifies. */
+  function findUnassociatedLabelControl(
+    matches: TextMatcher,
+    looseNeedle: string | null | undefined
+  ): Element | null {
+    const labels = document.querySelectorAll('label');
+    // Rendered text joins inline children without the spaces text extraction
+    // adds, so a non-exact needle also matches with whitespace removed.
+    const squeeze = (text: string) => text.replace(/\s+/g, '').toLowerCase();
+    const loose = looseNeedle ? squeeze(looseNeedle) : '';
+    const labelMatches = (text: string) =>
+      matches(text) || (loose !== '' && squeeze(text).includes(loose));
+    let found: Element | null = null;
+    for (
+      let index = 0;
+      index < labels.length && index < UNASSOCIATED_LABEL_SCAN_LIMIT;
+      index += 1
+    ) {
+      const label = labels[index] as HTMLLabelElement;
+      if (label.control || label.hasAttribute('for') || !labelMatches(getMatchableText(label))) {
+        continue;
+      }
+      let container = label.parentElement;
+      let control: Element | null = null;
+      for (let depth = 0; container && depth < 2 && !control; depth += 1) {
+        const controls = container.querySelectorAll(LABEL_ROW_CONTROLS);
+        if (controls.length > 1) break;
+        if (controls.length === 1) control = controls[0];
+        container = container.parentElement;
+      }
+      if (!control) continue;
+      if (found && found !== control) return null;
+      found = control;
+    }
+    return found;
   }
 
   /** Locate elements by role, accessible name, text, label, placeholder, or test
@@ -911,6 +1008,15 @@ excluded unless `includeHidden` is set. */
       matches.push(element);
       // Existence probes do not need the extra match used to report truncation.
       if (options.lookahead === false && matches.length >= maxResults) break;
+    }
+    // Many app forms render a <label> beside its field without `for` or
+    // nesting. When nothing is labelled, accept a matching unassociated label
+    // whose row holds exactly one form control.
+    if (!matches.length && !scope && matchers.label && truncationReason === null) {
+      const control = findUnassociatedLabelControl(matchers.label, exact ? null : locator.label);
+      if (control && (locator.includeHidden === true || isElementVisible(control))) {
+        matches.push(control);
+      }
     }
     return {
       matches,

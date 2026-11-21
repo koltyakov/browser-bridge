@@ -75,12 +75,8 @@ func TestMCPCallRejectsRoutingInsideParamsAndWarnsOnNearMisses(t *testing.T) {
 	if len(warnings) != 1 || !strings.Contains(mcpText(warned), "did you mean maxResults?") || !strings.Contains(structured.text("summary"), "maxResults") {
 		t.Fatalf("near-miss warning missing: %s", value(warned))
 	}
-	undelivered := mcpClone(structured)
-	for _, suffix := range []string{"Bytes", "Tokens", "CostClass"} {
-		delete(undelivered, "delivered"+suffix)
-	}
-	if size := len(cliJSON(value(object{"content": warned["content"], "structuredContent": value(undelivered)}), false)); structured.number("deliveredBytes") != int64(size) {
-		t.Fatalf("delivered size ignores the warning: %d vs %d", structured.number("deliveredBytes"), size)
+	if structured["deliveredTokens"] != nil {
+		t.Fatalf("small warned result reported its size: %s", value(structured))
 	}
 }
 

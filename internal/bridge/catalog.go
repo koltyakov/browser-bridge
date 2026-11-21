@@ -50,7 +50,7 @@ func describe(params object) object {
 		if entry, ok := catalog.Methods[method]; ok {
 			return describeMethod(method, entry)
 		}
-		return object{"error": value("Unknown bridge method: " + method)}
+		return object{"error": value(unknownMethodMessage(method))}
 	}
 	methods := []object{}
 	for _, entry := range catalog.Methods {

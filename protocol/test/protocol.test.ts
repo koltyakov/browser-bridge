@@ -753,16 +753,21 @@ test('normalizeSelectAction preserves selection intent', () => {
   assert.deepEqual(action.indexes, [0, 3]);
 });
 
-test('normalizeSelectAction defaults non-array selectors', () => {
+test('normalizeSelectAction accepts single string selectors', () => {
   const action = normalizeSelectAction({
     values: 'us',
     labels: 'United States',
     indexes: '0',
   } as unknown as Parameters<typeof normalizeSelectAction>[0]);
 
-  assert.deepEqual(action.values, []);
-  assert.deepEqual(action.labels, []);
+  assert.deepEqual(action.values, ['us']);
+  assert.deepEqual(action.labels, ['United States']);
   assert.deepEqual(action.indexes, []);
+  const singular = normalizeSelectAction({ value: '2', label: 'Option 2' } as unknown as Parameters<
+    typeof normalizeSelectAction
+  >[0]);
+  assert.deepEqual(singular.values, ['2']);
+  assert.deepEqual(singular.labels, ['Option 2']);
 });
 
 /** Ensure viewport actions clamp to the supported behavior set. */
