@@ -730,13 +730,22 @@ test('scoped outline search reports node/depth/scan exhaustion without claiming 
     '<main>' + '<div></div>'.repeat(20001) + '<button>Beyond</button></main>',
     ({ query }) => {
       const result = query.getAccessibilityOutline({ scope: 'auto', find: 'Beyond', context: 0 });
-      assert.equal(result.scope?.fallbackReason, 'scope_scan_limit');
-      assert.equal(result.scope?.scanned, 20000);
+      // Scope discovery uses native selector matching, so the landmark is
+      // found; only the outline walk inside it is bounded.
+      assert.equal(result.scope?.resolved, 'main');
+      assert.equal(result.scope?.fallbackReason, undefined);
       assert.equal(result.scanned, 20000);
-      assert.deepEqual(result.completeness, {
-        complete: false,
-        reasons: ['scopeScanLimit', 'scanLimit'],
-      });
+      assert.deepEqual(result.completeness, { complete: false, reasons: ['scanLimit'] });
+    }
+  );
+  await withQuery(
+    '<main>' +
+      '<div></div>'.repeat(20001) +
+      '</main><div role="dialog" aria-modal="true"><button>Confirm</button></div>',
+    ({ query }) => {
+      const result = query.getAccessibilityOutline({ scope: 'auto', find: 'Confirm', context: 0 });
+      assert.equal(result.scope?.resolved, 'modal');
+      assert.equal(result.search?.matchCount, 1);
     }
   );
 });

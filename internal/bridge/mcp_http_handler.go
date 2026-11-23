@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -227,6 +228,39 @@ func mcpHTTPStartSSE(w http.ResponseWriter) bool {
 	return mcpHTTPEvent(w, nil)
 }
 
+// mcpHTTPHeartbeatInterval spaces SSE comments on a stream awaiting a result.
+const mcpHTTPHeartbeatInterval = 15 * time.Second
+
+// mcpHTTPHeartbeat writes SSE keep-alive comments until the returned stop
+// function runs. stop waits for the writer, so the caller's next write never
+// overlaps a heartbeat.
+func mcpHTTPHeartbeat(w http.ResponseWriter, interval time.Duration) func() {
+	done := make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if !mcpHTTPEvent(w, nil) {
+					return
+				}
+			}
+		}
+	}()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			close(done)
+			<-finished
+		})
+	}
+}
+
 func mcpHTTPEvent(w http.ResponseWriter, payload []byte) bool {
 	controller := http.NewResponseController(w)
 	_ = controller.SetWriteDeadline(time.Now().Add(5 * time.Second))
@@ -353,7 +387,14 @@ func (h *mcpHTTPServer) call(w http.ResponseWriter, r *http.Request, owner *mcpH
 	}
 	// Legacy work deliberately outlives an HTTP disconnect. Its session,
 	// explicit cancellation notification and deadline control its lifetime.
+	stopHeartbeat := func() {}
+	if modern {
+		// A tool call can run for up to two minutes. Keep the stream visibly
+		// alive so proxies and clients do not close an idle connection.
+		stopHeartbeat = mcpHTTPHeartbeat(w, mcpHTTPHeartbeatInterval)
+	}
 	result, err := owner.session.tool(ctx, name, arguments, era)
+	stopHeartbeat()
 	if modern && r.Context().Err() != nil {
 		return
 	}

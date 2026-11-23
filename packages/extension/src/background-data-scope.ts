@@ -5,7 +5,10 @@ import { requestLifetimes } from './background-request-lifetime.js';
 
 export type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
 export type DataScopeDependencies = {
-  state: Pick<import('./background-state.js').ExtensionState, 'enabledWindow' | 'nativePort'>;
+  state: Pick<
+    import('./background-state.js').ExtensionState,
+    'enabledWindow' | 'nativePort' | 'pendingNativePort'
+  >;
   disconnectedDataRequests: Set<string>;
   resolveRequestTarget: (
     request: BridgeRequest
@@ -20,7 +23,7 @@ export type StoreByteArtifact = <K extends import('../../../protocol/src/types.j
 /** Capture transport and window ownership before the first asynchronous lookup. */
 export async function resolveDataRequestScope(request: BridgeRequest, deps: DataScopeDependencies) {
   const access = deps.state.enabledWindow ? { ...deps.state.enabledWindow } : null;
-  const port = deps.state.nativePort;
+  const port = deps.state.nativePort ?? deps.state.pendingNativePort;
   const transportOwner = request.meta?.transport_owner;
   const assertActive = requestLifetimes.guard(request.id);
   if (typeof transportOwner !== 'string' || !transportOwner) {
@@ -33,7 +36,7 @@ export async function resolveDataRequestScope(request: BridgeRequest, deps: Data
     assertActive();
     if (
       !sameWindowGrant(access, deps.state.enabledWindow) ||
-      port !== deps.state.nativePort ||
+      port !== (deps.state.nativePort ?? deps.state.pendingNativePort) ||
       deps.disconnectedDataRequests.has(request.id)
     ) {
       throw new BridgeError(

@@ -22,7 +22,7 @@ export interface BrowserMethodParams {
 "dom.get_accessibility_tree": { "selector"?: string; "maxNodes"?: number; "maxDepth"?: number; "compact"?: boolean; "interactiveOnly"?: boolean; "source"?: "cdp" | "dom"; "format"?: "tree" | "outline"; "scope"?: "auto" | "modal" | "main" | "document"; "find"?: string; "context"?: number };
 "dom.get_attributes": { "elementRef"?: string; "target"?: { "elementRef"?: string; "selector"?: string; "role"?: string; "name"?: string; "text"?: string; "label"?: string; "placeholder"?: string; "testId"?: string; "exact"?: boolean; "nth"?: number; [key: string]: unknown }; "attributes"?: Array<string> };
 "dom.get_html": { "elementRef"?: string; "target"?: { "elementRef"?: string; "selector"?: string; "role"?: string; "name"?: string; "text"?: string; "label"?: string; "placeholder"?: string; "testId"?: string; "exact"?: boolean; "nth"?: number; [key: string]: unknown }; "outer"?: boolean; "maxLength"?: number; "prune"?: boolean };
-"dom.get_text": { "elementRef"?: string; "target"?: { "elementRef"?: string; "selector"?: string; "role"?: string; "name"?: string; "text"?: string; "label"?: string; "placeholder"?: string; "testId"?: string; "exact"?: boolean; "nth"?: number; [key: string]: unknown }; "textBudget"?: number };
+"dom.get_text": { "elementRef"?: string; "target"?: { "elementRef"?: string; "selector"?: string; "role"?: string; "name"?: string; "text"?: string; "label"?: string; "placeholder"?: string; "testId"?: string; "exact"?: boolean; "nth"?: number; [key: string]: unknown }; "textBudget"?: number; "offset"?: number };
 "dom.query": { "selector"?: string; "withinRef"?: string | null; "maxNodes"?: number; "maxDepth"?: number; "textBudget"?: number; "includeBbox"?: boolean; "attributeAllowlist"?: Array<string> };
 "dom.wait_for": { "selector": string; "text"?: string | null; "state"?: "attached" | "detached" | "visible" | "hidden"; "timeoutMs"?: number };
 "download.cancel": { "downloadId": string };
@@ -70,7 +70,7 @@ export interface BrowserMethodParams {
 "page.get_network": { "clear"?: boolean; "limit"?: number; "urlPattern"?: string; "source"?: "fetch-xhr" | "cdp"; "capture"?: "read" | "start" | "clear" | "stop" };
 "page.get_state": Record<string, never>;
 "page.get_storage": { "type"?: "local" | "session"; "keys"?: Array<string> };
-"page.get_text": { "textBudget"?: number };
+"page.get_text": { "textBudget"?: number; "offset"?: number };
 "page.handle_dialog": { "action"?: "inspect" | "accept" | "dismiss"; "promptText"?: string; "expectedDialogId"?: string };
 "page.wait_for_load_state": { "waitForLoad"?: boolean; "timeoutMs"?: number; "url"?: string | null; "urlMatch"?: "exact" | "contains" | "regex" | null };
 "patch.apply_dom": { "target"?: { [key: string]: unknown }; "operation"?: string | null; "name"?: string | null; "value"?: unknown; "patchId"?: string | null; "verify"?: boolean };

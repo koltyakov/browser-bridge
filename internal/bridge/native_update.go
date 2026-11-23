@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 )
 
@@ -56,7 +55,7 @@ func restartUpdatedNative(c config, executable string) error {
 	if executable == "" {
 		return fmt.Errorf("updated native release has no executable")
 	}
-	log, err := os.OpenFile(filepath.Join(c.home, "daemon.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	log, err := openDaemonLog(c.home)
 	if err != nil {
 		return err
 	}

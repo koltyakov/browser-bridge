@@ -667,16 +667,19 @@ descending into shadow roots. */
       if (onTruncated && text.length > budget) onTruncated();
       return collapseText(onTruncated ? text.slice(0, budget) : text, budget);
     }
+    // Adjacent inline text joins without a space, as rendered ("<b>S</b>ave"
+    // reads "Save"); block boundaries and line breaks separate words.
     const parts: string[] = [];
     let length = 0;
-    const stack: Array<{ children: NodeListOf<ChildNode>; index: number }> = [
-      { children: (elementShadowRoot ?? element).childNodes, index: 0 },
+    const stack: Array<{ children: NodeListOf<ChildNode>; index: number; block: boolean }> = [
+      { children: (elementShadowRoot ?? element).childNodes, index: 0, block: false },
     ];
     let scanned = 0;
     while (stack.length && length < budget && scanned++ < DEEP_SCAN_LIMIT) {
       const current = stack[stack.length - 1];
       if (current.index >= current.children.length) {
         stack.pop();
+        if (current.block) parts.push(' ');
         continue;
       }
       const node = current.children[current.index++];
@@ -689,12 +692,19 @@ descending into shadow roots. */
         continue;
       }
       if (node.nodeType !== 1 && node.nodeType !== 11) continue;
-      if (node.nodeType === 1 && NON_RENDERED_TAGS.has((node as Element).tagName)) continue;
+      const tag = node.nodeType === 1 ? String((node as Element).tagName).toUpperCase() : '';
+      if (tag && NON_RENDERED_TAGS.has(tag)) continue;
+      if (tag === 'BR') {
+        parts.push(' ');
+        continue;
+      }
+      const block = BLOCK_TEXT_TAGS.has(tag);
+      if (block) parts.push(' ');
       const root = node.nodeType === 1 ? getShadowRoot(node as Element) : null;
-      stack.push({ children: (root ?? node).childNodes, index: 0 });
+      stack.push({ children: (root ?? node).childNodes, index: 0, block });
     }
     if (onTruncated && stack.length > 0) onTruncated();
-    const text = parts.join(' ');
+    const text = parts.join('');
     if (onTruncated && text.length > budget) onTruncated();
     return collapseText(text, budget);
   }
@@ -824,6 +834,302 @@ but historically matched `listbox` here). */
     return implicit ? [implicit] : [];
   }
 
+  /** Whether a subtree holds any shadow root, within the deep-walk budget. */
+  function hasShadowContent(root: Element): boolean {
+    try {
+      for (const shadowRoot of walkShadowRoots(root)) {
+        if (shadowRoot) return true;
+      }
+    } catch {
+      // Past the walk budget, treat the subtree as composed.
+      return true;
+    }
+    return false;
+  }
+
+  function isRenderedForText(element: Element): boolean {
+    const candidate = element as Element & { checkVisibility?: () => boolean };
+    if (typeof candidate.checkVisibility === 'function') {
+      if (candidate.checkVisibility()) return true;
+      // Slots and display:contents wrappers have no box but render their children.
+      try {
+        return globalThis.getComputedStyle?.(element)?.display === 'contents';
+      } catch {
+        return false;
+      }
+    }
+    if (element.hasAttribute?.('hidden')) return false;
+    if (typeof globalThis.getComputedStyle !== 'function') return true;
+    try {
+      return globalThis.getComputedStyle(element)?.display !== 'none';
+    } catch {
+      return true;
+    }
+  }
+
+  /** Visible text of a subtree as a reader sees it, including open (and, for
+the extension, closed) shadow trees and slotted content, which innerText
+leaves out. Pages without shadow DOM use innerText directly. */
+  function getVisibleText(root: Element, maxChars = 2_000_000): string {
+    const light = root as HTMLElement;
+    if (!hasShadowContent(root)) {
+      return (typeof light.innerText === 'string' ? light.innerText : root.textContent || '')
+        .slice(0, maxChars)
+        .trim();
+    }
+    const out: string[] = [];
+    let length = 0;
+    let visited = 0;
+    const lineBreak = () => {
+      const last = out[out.length - 1];
+      if (last !== undefined && !last.endsWith('\n')) {
+        out.push('\n');
+        length += 1;
+      }
+    };
+    const visit = (node: Node): void => {
+      if (length >= maxChars || ++visited > DEEP_SCAN_LIMIT) return;
+      if (node.nodeType === 3) {
+        const parent = (node as Text).parentElement;
+        const preformatted = parent?.closest?.('pre, textarea') != null;
+        const text = preformatted
+          ? node.textContent || ''
+          : (node.textContent || '').replace(/\s+/g, ' ');
+        if (!text) return;
+        if (text === ' ' && (!out.length || /[\s]$/.test(out[out.length - 1]))) return;
+        out.push(text);
+        length += text.length;
+        return;
+      }
+      if (node.nodeType !== 1 && node.nodeType !== 11) return;
+      let block = false;
+      if (node.nodeType === 1) {
+        const element = node as Element;
+        const tag = String(element.tagName).toUpperCase();
+        if (NON_RENDERED_TAGS.has(tag)) return;
+        if (tag === 'BR') {
+          out.push('\n');
+          length += 1;
+          return;
+        }
+        if (element !== root && !isRenderedForText(element)) return;
+        block = BLOCK_TEXT_TAGS.has(tag);
+        if (block) lineBreak();
+      }
+      const shadowRoot = node.nodeType === 1 ? getShadowRoot(node as Element) : null;
+      const slot = node as Node & { assignedNodes?: (options?: { flatten?: boolean }) => Node[] };
+      const assigned =
+        node.nodeType === 1 &&
+        String((node as Element).tagName).toUpperCase() === 'SLOT' &&
+        typeof slot.assignedNodes === 'function'
+          ? slot.assignedNodes({ flatten: true })
+          : [];
+      const children = shadowRoot
+        ? shadowRoot.childNodes
+        : assigned.length
+          ? assigned
+          : node.childNodes;
+      for (const child of children ?? []) visit(child);
+      if (block) lineBreak();
+    };
+    visit(root);
+    return out
+      .join('')
+      .slice(0, maxChars)
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n[ \t]+/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  /** A budgeted window of text starting at offset, with the offset that
+continues it when more text remains. */
+  function readTextWindow(
+    text: string,
+    budget: number,
+    offset = 0
+  ): {
+    value: string;
+    truncated: boolean;
+    omitted: number;
+    length: number;
+    offset?: number;
+    nextOffset?: number;
+  } {
+    const start = Math.max(0, Math.min(Math.trunc(offset) || 0, text.length));
+    const window = truncateText(text.slice(start), budget);
+    return {
+      ...window,
+      length: text.length,
+      ...(start ? { offset: start } : {}),
+      ...(window.truncated ? { nextOffset: start + Math.max(1, budget - 1) } : {}),
+    };
+  }
+
+  /** Elements whose box starts on its own line, so their text is a separate word. */
+  const BLOCK_TEXT_TAGS = new Set([
+    'ADDRESS',
+    'ARTICLE',
+    'ASIDE',
+    'BLOCKQUOTE',
+    'DD',
+    'DETAILS',
+    'DIALOG',
+    'DIV',
+    'DL',
+    'DT',
+    'FIELDSET',
+    'FIGCAPTION',
+    'FIGURE',
+    'FOOTER',
+    'FORM',
+    'H1',
+    'H2',
+    'H3',
+    'H4',
+    'H5',
+    'H6',
+    'HEADER',
+    'HR',
+    'LEGEND',
+    'LI',
+    'MAIN',
+    'NAV',
+    'OL',
+    'OPTION',
+    'P',
+    'PRE',
+    'SECTION',
+    'SUMMARY',
+    'TABLE',
+    'TBODY',
+    'TD',
+    'TFOOT',
+    'TH',
+    'THEAD',
+    'TR',
+    'UL',
+  ]);
+
+  const NAME_FROM_CONTENT_NODE_LIMIT = 2000;
+
+  /** Whether a descendant is excluded from its ancestor's name. */
+  function isHiddenFromName(element: Element): boolean {
+    if (element.hasAttribute?.('hidden')) return true;
+    if (element.getAttribute?.('aria-hidden') === 'true') return true;
+    if (typeof globalThis.getComputedStyle !== 'function') return false;
+    try {
+      const style = globalThis.getComputedStyle(element);
+      return style?.display === 'none' || style?.visibility === 'hidden';
+    } catch {
+      return false;
+    }
+  }
+
+  /** Name a descendant contributes as a unit (accname step 2C-2E), or null to
+recurse into its content. */
+  function getEmbeddedName(element: Element): string | null {
+    const ariaLabel = element.getAttribute('aria-label')?.trim();
+    if (ariaLabel) return ariaLabel;
+    const tag = String(element.tagName).toUpperCase();
+    if (tag === 'IMG' || tag === 'AREA') {
+      return element.getAttribute('alt') ?? element.getAttribute('title') ?? '';
+    }
+    if (tag === 'SVG') {
+      const title = [...(element.children ?? [])].find(
+        (child) => String(child.tagName).toUpperCase() === 'TITLE'
+      );
+      return title?.textContent?.trim() ?? '';
+    }
+    if (tag === 'INPUT') {
+      const type = (element.getAttribute('type') || 'text').toLowerCase();
+      if (['button', 'submit', 'reset'].includes(type)) {
+        return element.getAttribute('value') ?? '';
+      }
+      if (['checkbox', 'radio', 'file', 'hidden', 'image', 'range', 'color'].includes(type)) {
+        return element.getAttribute('alt') ?? '';
+      }
+      return (element as HTMLInputElement).value ?? '';
+    }
+    if (tag === 'TEXTAREA') return (element as HTMLTextAreaElement).value ?? '';
+    if (tag === 'SELECT') {
+      const select = element as HTMLSelectElement;
+      return [...(select.selectedOptions ?? [])]
+        .map((option) => option.textContent ?? '')
+        .join(' ');
+    }
+    return null;
+  }
+
+  /** Name from content, following the accessible-name algorithm closely
+enough to match what assistive technology announces: inline text joins
+without spaces, hidden descendants are skipped, and images, labelled
+elements, SVG titles, and embedded controls contribute their own names. */
+  function getNameFromContent(element: Element, budget = 200, onTruncated?: () => void): string {
+    const parts: string[] = [];
+    let length = 0;
+    let visited = 0;
+    let truncated = false;
+    const pushText = (source: string, padded = false): void => {
+      const room = budget - length;
+      if (source.length > room) truncated = true;
+      const text = source.slice(0, Math.max(0, room));
+      parts.push(padded ? ` ${text} ` : text);
+      length += text.length;
+    };
+    const visit = (node: Node, depth: number): void => {
+      if (length >= budget || visited++ > NAME_FROM_CONTENT_NODE_LIMIT || depth > 32) {
+        truncated = true;
+        return;
+      }
+      if (node.nodeType === 3) {
+        pushText(node.textContent || '');
+        return;
+      }
+      const isElement = node.nodeType === 1 || node === element;
+      if (!isElement && node.nodeType !== 11) return;
+      let block = false;
+      if (node.nodeType === 1 && node !== element) {
+        const child = node as Element;
+        const tag = String(child.tagName).toUpperCase();
+        if (NON_RENDERED_TAGS.has(tag) || isHiddenFromName(child)) return;
+        if (tag === 'BR') {
+          parts.push(' ');
+          return;
+        }
+        block = BLOCK_TEXT_TAGS.has(tag);
+        const embedded = getEmbeddedName(child);
+        if (embedded !== null) {
+          pushText(embedded, block);
+          return;
+        }
+      }
+      const shadowRoot = isElement ? getShadowRoot(node as Element) : null;
+      if (!shadowRoot && isElement && !node.childNodes?.length) {
+        pushText(node.textContent || '', block);
+        return;
+      }
+      if (block) parts.push(' ');
+      const slot = node as Node & { assignedNodes?: (options?: { flatten?: boolean }) => Node[] };
+      const assigned =
+        isElement &&
+        String((node as Element).tagName).toUpperCase() === 'SLOT' &&
+        typeof slot.assignedNodes === 'function'
+          ? slot.assignedNodes({ flatten: true })
+          : [];
+      const children = shadowRoot
+        ? shadowRoot.childNodes
+        : assigned.length
+          ? assigned
+          : node.childNodes;
+      for (const childNode of children ?? []) visit(childNode, depth + 1);
+      if (block) parts.push(' ');
+    };
+    visit(element, 0);
+    if (truncated && onTruncated) onTruncated();
+    return collapseText(parts.join(''), budget);
+  }
+
   /** Practical accessible-name computation covering the common sources:
 aria-labelledby, aria-label, associated labels, alt, button values,
 content for name-from-content roles, title, and placeholder. */
@@ -861,8 +1167,12 @@ content for name-from-content roles, title, and placeholder. */
     }
     const roles = getElementRoles(element);
     if (roles.some((role) => NAME_FROM_CONTENT_ROLES.has(role)) || tag === 'LABEL') {
-      const content = getElementTextContent(element, budget, onTruncated);
+      const content = getNameFromContent(element, budget, onTruncated);
       if (content) return content;
+    }
+    if (tag === 'svg' || tag === 'SVG') {
+      const title = getEmbeddedName(element);
+      if (title) return title;
     }
     return (
       bounded(element.getAttribute('title')) || bounded(element.getAttribute('placeholder')) || ''
@@ -889,7 +1199,9 @@ content for name-from-content roles, title, and placeholder. */
     getElementRoles,
     getElementTextContent,
     getShadowRoot,
+    getVisibleText,
     isElementVisible,
+    readTextWindow,
     isNodeAttached,
     querySelectorAllDeep,
     querySelectorAllDeepNative,

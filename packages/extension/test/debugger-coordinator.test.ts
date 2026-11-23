@@ -822,3 +822,64 @@ test('TabDebuggerCoordinator does not replay detached work unless explicitly opt
   assert.equal(taskCalls, 1);
   assert.equal(attachCalls, 1);
 });
+
+test('a lane task that never settles times out, discards the session, and frees the lane', async () => {
+  const events: string[] = [];
+  const discarded: number[] = [];
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      events.push('attach');
+    },
+    detach: async () => {
+      events.push('detach');
+    },
+    onSessionDiscarded: (tabId) => discarded.push(tabId),
+  });
+  await assert.rejects(
+    coordinator.run(9, () => new Promise<never>(() => {}), { timeoutMs: 20 }),
+    (error: { code?: string; details?: { sessionDiscarded?: boolean } }) =>
+      error.code === 'TIMEOUT' && error.details?.sessionDiscarded === true
+  );
+  assert.deepEqual(discarded, [9], 'owners reconciled after the bridge detached');
+  assert.equal(coordinator.attachedTabs.has(9), false);
+  const value = await coordinator.run(9, async () => 'next', { releaseAfterRun: true });
+  assert.equal(value, 'next', 'later work on the tab runs on a fresh session');
+  assert.deepEqual(events.slice(0, 3), ['attach', 'detach', 'attach']);
+});
+
+test('canceled debugger work reports REQUEST_CANCELED', async () => {
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {},
+    detach: async () => {},
+  });
+  let release: () => void = () => {};
+  const running = coordinator.run(
+    4,
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      })
+  );
+  await nextTick();
+  await coordinator.discard(4);
+  release();
+  await assert.rejects(running, (error: { code?: string }) => error.code === 'REQUEST_CANCELED');
+});
+
+test('a released session lingers so a following one-shot read reuses it', async () => {
+  const events: string[] = [];
+  const coordinator = new TabDebuggerCoordinator({
+    attach: async () => {
+      events.push('attach');
+    },
+    detach: async () => {
+      events.push('detach');
+    },
+    releaseLingerMs: 40,
+  });
+  await coordinator.run(5, async () => 'first', { releaseAfterRun: true });
+  await coordinator.run(5, async () => 'second', { releaseAfterRun: true });
+  assert.deepEqual(events, ['attach'], 'the second read reused the session');
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.deepEqual(events, ['attach', 'detach'], 'the session detached after the linger');
+});

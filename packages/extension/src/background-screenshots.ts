@@ -20,6 +20,8 @@ export type TabDebuggerLike = {
     options?: import('./debugger-coordinator.js').DebuggerRunOptions
   ) => Promise<T>;
   discard?: (tabId: number) => Promise<void>;
+  /** Discard and reconcile CDP owners, as after an external detach. */
+  discardSession?: (tabId: number) => Promise<void>;
 };
 
 /** Chrome can leave Page.captureScreenshot pending indefinitely for a hidden
@@ -280,7 +282,10 @@ export async function handleScreenshot(
       if (!(error instanceof ScreenshotCaptureTimeout)) throw error;
       // Detaching makes Chrome reject the abandoned command and frees the tab's
       // debugger lane, so the retry and later requests start a fresh session.
-      await deps.tabDebugger.discard?.(target.tabId).catch(() => {});
+      const discard = deps.tabDebugger.discardSession
+        ? deps.tabDebugger.discardSession(target.tabId)
+        : deps.tabDebugger.discard?.(target.tabId);
+      await discard?.catch(() => {});
       return null;
     });
     if (data !== null) break;

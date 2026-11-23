@@ -85,6 +85,7 @@ import {
   ACCESS_DENIED_TAB_CLOSE,
   KEEPALIVE_ALARM_NAME,
   NATIVE_SETUP_RETRY_ALARM,
+  getActiveNativePort,
   isNumber,
   normalizeActionLogSource,
   normalizeActionLogEntry,
@@ -268,6 +269,8 @@ async function refreshWorkingTabIndicators(): Promise<void> {
   }
 }
 const recoveryTelemetry = new RecoveryTelemetryCollector();
+/** The native port senders use, including one inside its stability window. */
+const activeNativePort = () => getActiveNativePort(state);
 
 const tabDebugger = new TabDebuggerCoordinator({
   attach: (target, protocolVersion) => chrome.debugger.attach(target, protocolVersion),
@@ -281,6 +284,11 @@ const tabDebugger = new TabDebuggerCoordinator({
   },
   protocolVersion: DEBUGGER_PROTOCOL_VERSION,
   recordReattach: (outcome) => recoveryTelemetry.record('debugger_reattach', outcome),
+  // Chrome sends no onDetach for a detach the bridge requests itself.
+  onSessionDiscarded: (tabId) => reconcileDebuggerOwnersAfterDetach(tabId),
+  // One-shot reads (screenshots, AX trees) often come in bursts; keep the
+  // session briefly so the next one skips attach and Page.enable.
+  releaseLingerMs: 300,
 });
 
 const cdpNetworkCapture = createCdpNetworkCapture({
@@ -297,8 +305,8 @@ const emulation = createEmulationController({
   send: (tabId, method, params) => chrome.debugger.sendCommand({ tabId }, method, params),
 });
 
-const journals = createJournalTransport(() => state.nativePort);
-const artifactTransport = createArtifactTransport(() => state.nativePort);
+const journals = createJournalTransport(() => activeNativePort());
+const artifactTransport = createArtifactTransport(() => activeNativePort());
 const recordings = createRecordingController({
   acquireReplay: (tabId) => tabDebugger.acquire(tabId),
   releaseReplay: (tabId) => tabDebugger.release(tabId),
@@ -372,15 +380,21 @@ const downloads = createDownloadController({
   storage: chrome.storage.session,
 });
 
+/** Mark every CDP owner of a tab as detached, so network capture, emulation,
+fetch interception and recordings do not report a dead session as armed. */
+function reconcileDebuggerOwnersAfterDetach(tabId: number): void {
+  emulation.detached(tabId);
+  recordings.handleDetach(tabId);
+  void cdpNetworkCapture.handleDetach(tabId);
+  // Drop interception rules for the dead session so list reflects reality
+  // (covers infobar cancel, tab close, and external debugger takeover).
+  fetchInterceptor.handleDetach(tabId);
+}
+
 chrome.debugger.onDetach.addListener((source, reason) => {
   if (typeof source.tabId === 'number') {
     tabDebugger.handleDetach(source.tabId, reason);
-    emulation.detached(source.tabId);
-    recordings.handleDetach(source.tabId);
-    void cdpNetworkCapture.handleDetach(source.tabId);
-    // Drop interception rules for the dead session so list reflects reality
-    // (covers infobar cancel, tab close, and external debugger takeover).
-    fetchInterceptor.handleDetach(source.tabId);
+    reconcileDebuggerOwnersAfterDetach(source.tabId);
   }
 });
 
@@ -455,7 +469,7 @@ const tabCleanupController = createTabCleanupController(chrome, {
   resources: [
     {
       name: 'visual baselines',
-      clear: (tabId) => invalidateVisualBaselines(state.nativePort, tabId),
+      clear: (tabId) => invalidateVisualBaselines(activeNativePort(), tabId),
     },
     { name: 'DOM baselines', clear: (tabId) => domBaselines.clearTab(tabId) },
     { name: 'WebMCP', clear: (tabId) => webmcp.clearTab(tabId) },
@@ -673,12 +687,13 @@ const mutationGate = createMutationGate({
     return { documentId: result.documentId, url: result.result };
   },
   send: (message) => {
-    if (!state.nativePort)
+    const port = activeNativePort();
+    if (!port)
       throw new BridgeError(
         ERROR_CODES.EXTENSION_DISCONNECTED,
         'Native connection disappeared while scheduling.'
       );
-    state.nativePort.postMessage(message);
+    port.postMessage(message);
   },
 });
 
@@ -718,7 +733,7 @@ const webmcp = createWebMcpController(chrome, {
   resolveRequestTarget,
   getSessionKey() {
     const window = state.enabledWindow;
-    const port = state.nativePort;
+    const port = activeNativePort();
     if (!window || !port) return null;
     let connection = webMcpConnections.get(port);
     if (!connection) {
@@ -786,7 +801,7 @@ const developmentReload = createDevelopmentReloadController(chrome, {
 const extensionUpdates = createExtensionUpdateController(chrome, {
   enabled: !DEVELOPMENT_AUTO_RELOAD,
   send: (message) => {
-    const port = state.nativePort ?? state.pendingNativePort;
+    const port = activeNativePort();
     if (!port) return false;
     try {
       port.postMessage(message);
@@ -897,11 +912,11 @@ async function storeByteArtifact<K extends import('../../../protocol/src/types.j
   bytes: Uint8Array,
   metadata: { kind: K; mimeType: string }
 ): Promise<import('../../../protocol/src/types.js').ArtifactDescriptor<K>> {
-  const port = state.nativePort;
+  const port = activeNativePort();
   const assertActive = requestLifetimes.guard(requestId);
   const send = async (message: Record<string, unknown>) => {
     assertActive();
-    if (state.nativePort !== port)
+    if (activeNativePort() !== port)
       throw new BridgeError(ERROR_CODES.EXTENSION_DISCONNECTED, 'Artifact destination changed.');
     if (requestLifetimes.acknowledgesArtifacts(requestId)) await artifactTransport.send(message);
     else {
@@ -912,7 +927,7 @@ async function storeByteArtifact<K extends import('../../../protocol/src/types.j
     }
     assertActive();
   };
-  if (!state.nativePort) {
+  if (!activeNativePort()) {
     throw new BridgeError(ERROR_CODES.EXTENSION_DISCONNECTED, 'Native host is disconnected.');
   }
   if (bytes.byteLength > MAX_ARTIFACT_BYTES) {
@@ -977,16 +992,16 @@ function bytesToBase64(value: Uint8Array) {
   return btoa(binary);
 }
 
-/** Auto execution mode: use debugger (trusted) input only when it is already
-attached to the tab, or when the target likely ignores synthetic events
-(file pickers, media, new-window links, rich editors). Otherwise stay on DOM
-events so no debugger banner appears. */
+/** Auto execution mode: use debugger (trusted) input only when the target
+likely ignores synthetic events (file pickers, media, new-window links, rich
+editors). Otherwise stay on DOM events so no debugger banner appears. The
+choice depends on the target alone, not on whether a debugger session
+happens to be attached, so the same action behaves the same cold and warm. */
 async function chooseInputExecutionMode(
   tabId: number,
   method: string,
   params: Record<string, unknown>
 ): Promise<{ mode: 'dom' | 'cdp'; reason: string }> {
-  if (tabDebugger.attachedTabs.has(tabId)) return { mode: 'cdp', reason: 'debugger-attached' };
   try {
     const hint = (await sendTabMessage(
       tabId,
@@ -1006,8 +1021,30 @@ async function chooseInputExecutionMode(
   return { mode: 'dom', reason: 'synthetic-dom-default' };
 }
 
+/** Recently created tabs with their opener, for input effects.newTabs. */
+const recentlyOpenedTabs: Array<{ tabId: number; openerTabId: number; url: string; at: number }> =
+  [];
+
+function rememberOpenedTab(tab: chrome.tabs.Tab): void {
+  if (typeof tab.id !== 'number' || typeof tab.openerTabId !== 'number') return;
+  recentlyOpenedTabs.push({
+    tabId: tab.id,
+    openerTabId: tab.openerTabId,
+    url: tab.pendingUrl || tab.url || '',
+    at: Date.now(),
+  });
+  if (recentlyOpenedTabs.length > 32) recentlyOpenedTabs.splice(0, recentlyOpenedTabs.length - 32);
+}
+
+function tabsOpenedBy(tabId: number, sinceMs: number): Array<{ tabId: number; url: string }> {
+  return recentlyOpenedTabs
+    .filter((entry) => entry.openerTabId === tabId && entry.at >= sinceMs)
+    .map((entry) => ({ tabId: entry.tabId, url: entry.url }));
+}
+
 const tabBoundRequestDependencies: Parameters<typeof executeTabBoundRequest>[1] = {
   captureAccess: () => captureWindowGrant(state),
+  tabsOpenedBy,
   contentScriptTimeoutMs: CONTENT_SCRIPT_TIMEOUT_MS,
   assertNoDialog: (tabId) => tabDebugger.assertNoDialog(tabId),
   runWithDialogGuard: (tabId, operation) => tabDebugger.runGuarded(tabId, operation),
@@ -1082,6 +1119,7 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 });
 
 chrome.tabs.onCreated.addListener((tab) => {
+  rememberOpenedTab(tab);
   const captureGrant = () => (state.enabledWindow ? { ...state.enabledWindow } : null);
   const grant = accessStateReady
     ? Promise.resolve(captureGrant())
@@ -1113,7 +1151,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     invalidateFrames(tabId);
     mutationGate.invalidate(tabId);
     domBaselines.invalidateNavigation(tabId);
-    invalidateVisualBaselines(state.nativePort, tabId);
+    invalidateVisualBaselines(activeNativePort(), tabId);
     void webmcp.clearTab(tabId).catch(reportAsyncError);
   }
   navigationWaits.handleTabUpdated(tabId, changeInfo, tab);
@@ -1121,7 +1159,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 chrome.tabs.onDetached?.addListener((tabId, detachInfo) => {
-  invalidateVisualBaselines(state.nativePort, tabId);
+  invalidateVisualBaselines(activeNativePort(), tabId);
   mutationGate.invalidate(tabId);
   void webmcp.clearTab(tabId).catch(reportAsyncError);
   tabMoveCleanup.handleDetached(tabId, detachInfo);
@@ -1154,7 +1192,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
   mutationGate.invalidate(tabId);
   void webmcp.clearTab(tabId).catch(reportAsyncError);
   domBaselines.clearTab(tabId);
-  invalidateVisualBaselines(state.nativePort, tabId);
+  invalidateVisualBaselines(activeNativePort(), tabId);
   void clearActionLogForTab(tabId)
     .finally(() => emitUiState())
     .catch(reportAsyncError);
@@ -1162,7 +1200,10 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     .handleTabRemoved(tabId)
     .then(() => syncWorkingTabIndicators())
     .catch(reportAsyncError);
-  void tabMoveCleanup.handleRemoved(tabId).catch(reportAsyncError);
+  void tabMoveCleanup
+    .handleRemoved(tabId)
+    .catch(reportAsyncError)
+    .finally(() => tabDebugger.forgetTab(tabId));
   void handleTabRemoved(tabId, removeInfo).catch(reportAsyncError);
 });
 
@@ -1214,7 +1255,7 @@ chrome.runtime.onMessage.addListener(
     onWebMcpApproval: webmcp.handleMessage,
     onNavigationSignal: (tabId, kind, channel) => {
       domBaselines.invalidateNavigation(tabId);
-      invalidateVisualBaselines(state.nativePort, tabId);
+      invalidateVisualBaselines(activeNativePort(), tabId);
       void webmcp.clearTab(tabId).catch(reportAsyncError);
       navigationWaits.handleSpaSignal(tabId, kind, channel);
     },
@@ -1223,7 +1264,7 @@ chrome.runtime.onMessage.addListener(
 
 /** Notify the daemon that this browser/profile was recently active so untargeted
 access prompts can be routed to one browser instead of broadcasting. */
-function sendActivityUpdate(port: chrome.runtime.Port | null = state.nativePort): void {
+function sendActivityUpdate(port: chrome.runtime.Port | null = activeNativePort()): void {
   sendActivityUpdateNative(port);
 }
 
@@ -1231,7 +1272,7 @@ function sendActivityUpdate(port: chrome.runtime.Port | null = state.nativePort)
 function sendAccessUpdate(enabled: boolean): void {
   sendAccessUpdateNative(
     enabled,
-    state.nativePort,
+    activeNativePort(),
     state.enabledWindow,
     getAccessSettingsSnapshot(state)
   );
@@ -1241,7 +1282,7 @@ function sendAccessUpdate(enabled: boolean): void {
 current browser-run grant survives worker restarts. */
 async function initializeState(): Promise<void> {
   await accessStateInitialization;
-  if (state.enabledWindow && state.nativePort) {
+  if (state.enabledWindow && activeNativePort()) {
     sendAccessUpdate(true);
   }
   await restoreActionLog();
@@ -1326,11 +1367,12 @@ async function handleActiveBridgeRequest(request: BridgeRequest): Promise<void> 
     reply(response);
     dataRequestOwners.delete(request.id);
     disconnectedDataRequests.delete(request.id);
-    try {
-      await logBridgeAction(request, response, await actionContext);
-    } catch (error) {
-      reportAsyncError(error);
-    }
+    // The log writes two storage areas. Release the request slot and the
+    // tab's mutation turn first, so the next action does not wait on storage.
+    const loggedResponse = response;
+    void actionContext
+      .then((context) => logBridgeAction(request, loggedResponse, context))
+      .catch(reportAsyncError);
   } finally {
     finish();
     mutationGate.release(request.id);
@@ -1397,10 +1439,10 @@ async function dispatchBridgeRequest(request: BridgeRequest): Promise<BridgeResp
           resolveRequestTarget(candidate, { peek: true, requireScriptable: false }),
         captureAccess: () => {
           const assertGrant = captureWindowGrant(state);
-          const port = state.nativePort;
+          const port = activeNativePort();
           return (target) => {
             assertGrant();
-            if (state.nativePort !== port || !isGrantedTab(state, target.tabId, target.windowId))
+            if (activeNativePort() !== port || !isGrantedTab(state, target.tabId, target.windowId))
               throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'Capability scope changed.', {
                 reason: 'access_scope_changed',
               });
@@ -1485,9 +1527,9 @@ async function dispatchBridgeRequest(request: BridgeRequest): Promise<BridgeResp
     case 'emulation.reset': {
       const target = await resolveRequestTarget(request);
       const access = state.enabledWindow;
-      const port = state.nativePort;
+      const port = activeNativePort();
       const assertAccess = async () => {
-        if (!sameWindowGrant(access, state.enabledWindow) || state.nativePort !== port)
+        if (!sameWindowGrant(access, state.enabledWindow) || activeNativePort() !== port)
           throw new BridgeError(
             ERROR_CODES.ACCESS_DENIED,
             'Emulation access or transport changed.'
@@ -1723,9 +1765,11 @@ Chrome DevTools Protocol, avoiding content-script CSP restrictions. */
 async function handlePageEvaluate(request: BridgeRequest): Promise<BridgeResponse> {
   return executePageEvaluate(request, {
     resolveRequestTarget,
-    runWithDebugger: (tabId, operation) => tabDebugger.runGuarded(tabId, operation),
+    runWithDebugger: (tabId, operation, options) =>
+      tabDebugger.runGuarded(tabId, operation, options),
     sendCommand: (target, method, params) =>
       chrome.debugger.sendCommand(target, method, params) as Promise<unknown>,
+    discardDebuggerSession: (tabId) => tabDebugger.discardSession(tabId),
   });
 }
 
@@ -1969,7 +2013,7 @@ function getUiSurfaceFromPortName(portName: string): 'popup' | 'sidepanel' | nul
 to the still-stabilizing port so requests that arrive right after a
 (re)connect are answered instead of silently dropped. */
 function reply(response: BridgeResponse): void {
-  const port = state.nativePort ?? state.pendingNativePort;
+  const port = activeNativePort();
   if (!port) {
     return;
   }

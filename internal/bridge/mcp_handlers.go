@@ -281,6 +281,15 @@ func (s *mcpSession) handleTool(ctx context.Context, name string, args object, e
 	}
 	if ref {
 		elementRef := args.text("elementRef")
+		if elementRef == "" && args.text("selector") != "" && method != "screenshot.capture_element" {
+			// These methods resolve a selector target in the page themselves, so
+			// one round trip replaces a dom.query lookup followed by the read.
+			params["target"] = value(object{"selector": args["selector"]})
+			ref = false
+		}
+	}
+	if ref {
+		elementRef := args.text("elementRef")
 		if elementRef == "" {
 			if args.text("selector") == "" {
 				return mcpErrorResult("INVALID_REQUEST", "Provide either elementRef or selector."), nil

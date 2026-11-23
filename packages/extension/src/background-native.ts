@@ -17,6 +17,7 @@ import {
   NATIVE_FLAP_THRESHOLD,
   NATIVE_FLAP_WINDOW_MS,
   NATIVE_RECONNECT_BASE_MS,
+  NATIVE_RECONNECT_IMMEDIATE_MS,
   NATIVE_RECONNECT_MAX_MS,
   NATIVE_SETUP_POLL_MS,
   NATIVE_SETUP_IDLE_POLL_MS,
@@ -477,6 +478,8 @@ when it has recovered without requiring another connect/disconnect event. */
       method?: string;
       summaryPrefix?: string;
       updateDisconnectedUi?: boolean;
+      /** The port had passed its stability window, so a quick retry is likely to work. */
+      afterStableConnection?: boolean;
     } = {}
   ): void {
     const method = typeof options.method === 'string' ? options.method : 'native.disconnect';
@@ -528,13 +531,18 @@ when it has recovered without requiring another connect/disconnect event. */
     }
     void deps.emitUiState().catch(reportAsyncError);
 
+    // The first reconnect after a stable connection is nearly immediate: a
+    // replaced daemon or restarted host is usually back within milliseconds.
+    // Startup failures and later attempts keep the exponential back-off.
     const retryDelay = registrationMissing
       ? state.uiPorts.size === 0
         ? NATIVE_SETUP_IDLE_POLL_MS
         : now < installationCopyBoostUntil
           ? NATIVE_RECONNECT_BASE_MS
           : NATIVE_SETUP_POLL_MS
-      : nativeReconnectDelay;
+      : options.afterStableConnection === true && reconnectAttempt === 1 && !state.nativeUnstable
+        ? NATIVE_RECONNECT_IMMEDIATE_MS
+        : nativeReconnectDelay;
     const nextDelay = Math.min(nativeReconnectDelay * 2, NATIVE_RECONNECT_MAX_MS);
     void deps.appendActionLogEntry({
       method,
@@ -659,6 +667,7 @@ when it has recovered without requiring another connect/disconnect event. */
           method: 'native.disconnect',
           summaryPrefix: 'Native host disconnected',
           updateDisconnectedUi: state.nativePort === candidatePort,
+          afterStableConnection: state.nativePort === candidatePort,
         });
       });
     } catch (error) {
@@ -902,13 +911,23 @@ export function refreshSetupStatus(
   state.setupStatusPendingRequestId = requestId;
   state.setupStatusError = null;
   clearSetupStatusTimer(state);
-  state.nativePort.postMessage({
-    type: 'host.bridge_request',
-    request: createRequest({
-      id: requestId,
-      method: 'setup.get_status',
-    }),
-  });
+  try {
+    state.nativePort.postMessage({
+      type: 'host.bridge_request',
+      request: createRequest({
+        id: requestId,
+        method: 'setup.get_status',
+      }),
+    });
+  } catch (error) {
+    // A port that disconnected after the check throws here. Clear the pending
+    // flag, or setup status would never refresh again.
+    state.setupStatusPending = false;
+    state.setupStatusPendingRequestId = null;
+    state.setupStatusError = `Host setup request failed: ${error instanceof Error ? error.message : String(error)}`;
+    void deps.emitUiState().catch(reportAsyncError);
+    return;
+  }
   state.setupStatusTimeoutId = setTimeout(() => {
     if (state.setupStatusPendingRequestId !== requestId) {
       return;
@@ -952,14 +971,31 @@ export async function handleSetupInstallAction(
     ok: true,
     summary: getSetupActionStartSummary(action),
   });
-  state.nativePort.postMessage({
-    type: 'host.bridge_request',
-    request: createRequest({
-      id: requestId,
-      method: 'setup.install',
-      params: action,
-    }),
-  });
+  const port = state.nativePort;
+  try {
+    if (!port) throw new Error('Native host is not connected.');
+    port.postMessage({
+      type: 'host.bridge_request',
+      request: createRequest({
+        id: requestId,
+        method: 'setup.install',
+        params: action,
+      }),
+    });
+  } catch (error) {
+    // The port went away during the log write. Release the pending action so
+    // the user can retry instead of waiting on a request that was never sent.
+    const reason = error instanceof Error ? error.message : String(error);
+    state.setupInstallPendingRequestId = null;
+    state.setupInstallPendingAction = null;
+    state.setupInstallPendingKey = null;
+    state.setupInstallError = reason;
+    await deps.appendActionLogEntry({
+      method: getSetupActionMethodLabel(action),
+      ok: false,
+      summary: `Install failed: ${reason}`,
+    });
+  }
   await deps.emitUiState();
 }
 

@@ -176,6 +176,9 @@ async function expandAccessibilitySubtree(
 }
 
 const BOUNDED_AX_ELEMENT_THRESHOLD = 5_000;
+/** How long a load wait on an already-complete tab waits for a navigation
+that a just-dispatched click or submit has not started yet. */
+const LOAD_WAIT_ARMING_MS = 150;
 
 /** Bind page-target resolution plus debugger-backed request handlers to the
 worker's shared state and Chrome APIs. */
@@ -352,9 +355,14 @@ only an unbound or idle-expired session follows the active tab. */
   }
 
   /** Wait for a tab to reach the `complete` status after a navigation-like action. */
-  async function waitForTabComplete(tabId: number, timeoutMs: number): Promise<chrome.tabs.Tab> {
+  async function waitForTabComplete(
+    tabId: number,
+    timeoutMs: number,
+    options: { armingMs?: number } = {}
+  ): Promise<chrome.tabs.Tab> {
     return new Promise((resolve, reject) => {
       let finished = false;
+      let armingId: ReturnType<typeof setTimeout> | undefined;
       const timeoutId = setTimeout(() => {
         cleanup();
         reject(
@@ -371,6 +379,7 @@ only an unbound or idle-expired session follows the active tab. */
         }
         finished = true;
         clearTimeout(timeoutId);
+        clearTimeout(armingId);
         chromeObj.tabs.onUpdated.removeListener(onUpdated);
         chromeObj.tabs.onRemoved.removeListener(onRemoved);
       }
@@ -380,9 +389,10 @@ only an unbound or idle-expired session follows the active tab. */
         changeInfo: TabChangeInfo,
         tab: chrome.tabs.Tab
       ): void {
-        if (updatedTabId !== tabId || changeInfo.status !== 'complete') {
-          return;
-        }
+        if (updatedTabId !== tabId) return;
+        // A navigation started inside the arming window: wait for its load.
+        if (changeInfo.status === 'loading') clearTimeout(armingId);
+        if (changeInfo.status !== 'complete') return;
         cleanup();
         resolve(tab);
       }
@@ -403,8 +413,19 @@ only an unbound or idle-expired session follows the active tab. */
           if (finished || tab.status !== 'complete') {
             return;
           }
-          cleanup();
-          resolve(tab);
+          const armingMs = options.armingMs ?? 0;
+          if (armingMs <= 0) {
+            cleanup();
+            resolve(tab);
+            return;
+          }
+          // Right after a click the old document is still complete and its
+          // navigation may not have started. Give it a moment to begin.
+          armingId = setTimeout(() => {
+            if (finished) return;
+            cleanup();
+            resolve(tab);
+          }, armingMs);
         },
         (error) => {
           if (finished) {
@@ -1024,7 +1045,9 @@ or reset to natural size when width/height are 0. */
       );
     }
     const tab = params.waitForLoad
-      ? await waitForTabComplete(target.tabId, params.timeoutMs)
+      ? await waitForTabComplete(target.tabId, params.timeoutMs, {
+          armingMs: Math.min(LOAD_WAIT_ARMING_MS, params.timeoutMs),
+        })
       : await chromeObj.tabs.get(target.tabId);
     return createSuccess(request.id, summarizeTabResult(tab, request.method), {
       method: request.method,

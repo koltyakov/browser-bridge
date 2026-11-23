@@ -68,7 +68,7 @@ actions still use frame-owned refs or ordinary locator routing.
 | `page.wait_for_load_state`         | Yes  | -          | wait        | `page.read`          | Wait for truthful tab `complete` state and/or a URL condition                              |
 | `page.get_storage`                 | Yes  | -          | page        | `page.read`          | Bounded storage key/presence metadata; optional `keys`; never values                        |
 | `sensitive.read`                   | Yes  | -          | sensitive   | `sensitive.read`     | One exact local/session storage key; sequential, non-retryable, whole-or-error              |
-| `page.get_text`                    | Yes  | -          | page        | `page.read`          | Full page text; `textBudget` limits size                                                   |
+| `page.get_text`                    | Yes  | -          | page        | `page.read`          | Full page text; `textBudget` limits size, `offset` continues a truncated read              |
 | `page.extract_content`             | Yes  | -          | page        | `page.read`          | Node-processed semantic text/Markdown with bounded HTML snapshots and optional settlement   |
 | `page.get_network`                 | Yes  | Conditional | page        | `network.read`       | Fetch/XHR by default; explicit CDP all-resource capture lifecycle                          |
 | `network.export_har`               | Yes  | No*        | page        | `network.read`       | Read an already armed CDP capture as bounded metadata-only HAR 1.2                         |
@@ -439,12 +439,13 @@ bbx call tabs.close '{"tabId":12345}'
 
 ### page.get_text
 
-Extract the full visible text content of the page (`document.body.innerText`). Truncated to `textBudget` (default 8000 chars). Lighter than `dom.query` on `body` when you only need text.
+Extract the visible text of the page, including open shadow roots and slotted content. Truncated to `textBudget` (default 8000 chars). A truncated result reports `nextOffset`; pass it as `offset` to read the next window instead of raising the budget. `dom.get_text` accepts the same `offset`. Lighter than `dom.query` on `body` when you only need text.
 
 ```bash
 bbx page-text
 bbx page-text 8000
 bbx call page.get_text '{"textBudget":2000}'
+bbx call page.get_text '{"textBudget":2000,"offset":1999}'
 ```
 
 ### page.extract_content
@@ -640,6 +641,11 @@ and no retry backoff; they do not establish partial progress or dispatch state.
 | `INPUT_UNSUPPORTED`          | Use DOM execution or a CDP-supported input method              | `retry: false`                               |
 | `INPUT_INVALID_TARGET`       | Choose a control compatible with the input                     | `retry: false`, use `dom.describe`           |
 | `INPUT_FOCUS_CHANGED`        | Inspect focus handlers; do not replay native text blindly      | `retry: false`, use `dom.describe`           |
+| `INPUT_VALUE_REJECTED`       | Fill a value in `details.expectedFormat` or inspect the mask   | `retry: false`, use `dom.describe`           |
+| `EVALUATION_FAILED` | Fix the expression; the page may have run part of it | `retry: false` |
+| `REQUEST_CANCELED` | Inspect postconditions before retrying a mutation | `retry: false` |
+| `BRIDGE_BUSY` | Retry after `retryAfterMs` | `retry: true` |
+| `DAEMON_UNAVAILABLE` | Retry once; then run `bbx doctor` | `retry: true` |
 | `DIALOG_NOT_OPEN`            | Trigger or inspect the current dialog                          | `retry: false`                               |
 | `DIALOG_ACTION_CONFLICT`     | Inspect again; never auto-repeat a dialog mutation              | `retry: false`                               |
 | `CONTENT_SCRIPT_UNAVAILABLE` | Page is restricted (chrome://, extensions, etc.)               | `retry: false`                               |

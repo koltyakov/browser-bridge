@@ -311,9 +311,24 @@ func (manager *updateManager) run(ctx context.Context, action string, supported 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
-	releaseLock, err := updateAcquireLock(ctx, manager.Root)
-	if err != nil {
-		return nil, err
+	var releaseLock func()
+	if manager.Automatic {
+		// An automatic check never waits behind another updater's download;
+		// that one covers this check, and the caller's command goes ahead.
+		release, held, err := tryLockFile(filepath.Join(manager.Root, "update.lock"))
+		if err != nil {
+			return nil, err
+		}
+		if held {
+			return object{"updated": value(false), "reason": value("update_in_progress"), "previousVersion": value(manager.Version)}, nil
+		}
+		releaseLock = release
+	} else {
+		release, err := updateAcquireLock(ctx, manager.Root)
+		if err != nil {
+			return nil, err
+		}
+		releaseLock = release
 	}
 	defer releaseLock()
 	state, err := updateLoadState(manager.Root)
@@ -727,6 +742,11 @@ func updateCompatibleNative(ctx context.Context, c config, extensionVersion stri
 			return unchanged("invalid_extension_version"), nil
 		}
 	}
+	// Skip the browser-profile scan while the last check is fresh and no newer
+	// extension has connected; run applies the same throttle under its lock.
+	if updateCheckedRecently(c, time.Now()) && !updateNewerExtension(c, extensionVersion) {
+		return unchanged("check_throttled"), nil
+	}
 	extensionVersion = updateInstalledExtensionVersion(ctx, extensionVersion)
 	if extensionVersion != "" {
 		extension, err := updateParseVersion(extensionVersion)
@@ -779,13 +799,6 @@ func forwardNativeUpdate(ctx context.Context, c config, args []string) (bool, er
 	if effective != state.Current.Version {
 		return false, nil
 	} // A manually installed newer binary wins.
-	manager, err := newNativeUpdater(c)
-	if err != nil {
-		return true, err
-	}
-	if err := manager.verifyInstalled(*state.Current); err != nil {
-		return true, fmt.Errorf("active native release failed verification; run `bbx update repair` or `bbx update rollback`: %w", err)
-	}
 	executable, err := os.Executable()
 	if err != nil {
 		return true, err
@@ -794,14 +807,26 @@ func forwardNativeUpdate(ctx context.Context, c config, args []string) (bool, er
 	if err != nil {
 		return true, err
 	}
+	// Compare paths before any hashing: the active payload itself has nothing
+	// to forward to, and it is the common case after the first forward.
+	if resolvedRoot, err := filepath.EvalSymlinks(root); err == nil {
+		if filepath.Clean(executable) == filepath.Clean(updatePayloadPath(resolvedRoot, *state.Current)) {
+			return false, nil
+		}
+	}
+	manager, err := newNativeUpdater(c)
+	if err != nil {
+		return true, err
+	}
 	active := updatePayloadPath(manager.Root, *state.Current)
 	if filepath.Clean(executable) == filepath.Clean(active) {
 		return false, nil
 	}
-	command := exec.CommandContext(ctx, active, args...)
-	command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
-	if err := command.Run(); err != nil {
-		return true, err
+	if !updateVerifiedCacheHit(manager.Root, active, *state.Current) {
+		if err := manager.verifyInstalled(*state.Current); err != nil {
+			return true, fmt.Errorf("active native release failed verification; run `bbx update repair` or `bbx update rollback`: %w", err)
+		}
+		updateRememberVerified(manager.Root, active, *state.Current)
 	}
-	return true, nil
+	return true, runNativePayload(ctx, active, args)
 }

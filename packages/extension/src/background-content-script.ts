@@ -11,10 +11,20 @@ import { isUnavailableDocumentError } from './background-helpers.js';
  * is still running. A hung renderer never settles, so the turn is released. */
 export const UNSETTLED_COMMAND_GRACE_MS = 15_000;
 
+/** Pause before re-reading after a navigation interrupted a read. */
+const NAVIGATION_RETRY_DELAY_MS = 250;
+
+/** Longest one content-script injection may take before it counts as hung. */
+export const SCRIPT_INJECTION_TIMEOUT_MS = 10_000;
+/** Frame enumeration runs on every fan-out read, so it fails faster. */
+const FRAME_DISCOVERY_TIMEOUT_MS = 5_000;
+
 export type ContentScriptBridgeDeps = {
   contentScriptTimeoutMs: number;
   /** Override for tests; defaults to UNSETTLED_COMMAND_GRACE_MS. */
   unsettledCommandGraceMs?: number;
+  /** Override for tests; defaults to SCRIPT_INJECTION_TIMEOUT_MS. */
+  scriptInjectionTimeoutMs?: number;
   isRestrictedAutomationUrl: (url: string) => boolean;
   recordReinjection?: (outcome: 'success' | 'failure', group: string) => void;
 };
@@ -108,12 +118,41 @@ export function createContentScriptBridge(
     frames.add(frameId);
     patchFrames.set(tabId, frames);
   }
+  /** executeScript never settles for a hung renderer, and callers share
+coalesced promises, so one stuck injection would block every later request
+for the tab. Bound each call; the coalesced entry clears when it rejects. */
+  function withScriptingDeadline<T>(
+    operation: Promise<T>,
+    stage: string,
+    timeoutMs = deps.scriptInjectionTimeoutMs ?? SCRIPT_INJECTION_TIMEOUT_MS
+  ): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(
+            new BridgeError(
+              ERROR_CODES.TIMEOUT,
+              `Chrome did not finish ${stage} within ${timeoutMs} ms. The page may be busy or blocked by a dialog; the next request tries again.`,
+              { stage }
+            )
+          ),
+        timeoutMs
+      );
+    });
+    operation.catch(() => {});
+    return Promise.race([operation, timeout]).finally(() => clearTimeout(timer));
+  }
+
   async function injectContentScript(tabId: number): Promise<void> {
     try {
-      await chromeObj.scripting.executeScript({
-        target: { tabId },
-        files: CONTENT_SCRIPT_FILES,
-      });
+      await withScriptingDeadline(
+        chromeObj.scripting.executeScript({
+          target: { tabId },
+          files: CONTENT_SCRIPT_FILES,
+        }),
+        'content script injection'
+      );
     } catch (injectError) {
       const msg = injectError instanceof Error ? injectError.message : String(injectError);
       if (isRestrictedScriptingError(msg)) {
@@ -194,12 +233,38 @@ emit navigation-kind events; the background re-reads the authoritative URL. */
     try {
       return await sendTabMessageWithTimeout(tabId, message, timeoutMs, signal);
     } catch (error) {
-      if (signal?.aborted || !isMissingContentScriptReceiverError(error)) {
+      if (signal?.aborted) throw error;
+      if (isNavigationInterruptedRead(error, message)) {
+        // A read that raced a navigation has no side effects: let the new
+        // document commit, inject into it, and read once more.
+        await new Promise((resolve) => setTimeout(resolve, NAVIGATION_RETRY_DELAY_MS));
+        if (signal?.aborted) throw error;
+        await recoverContentScript(tabId);
+        return await sendTabMessageWithTimeout(tabId, message, timeoutMs, signal);
+      }
+      if (!isMissingContentScriptReceiverError(error)) {
         throw error;
       }
       await recoverContentScript(tabId);
       return await sendTabMessageWithTimeout(tabId, message, timeoutMs, signal);
     }
+  }
+
+  /** A batch-safe read whose document unloaded before it answered. */
+  function isNavigationInterruptedRead(error: unknown, message: Record<string, unknown>): boolean {
+    if (!(error instanceof BridgeError) || error.code !== ERROR_CODES.CONTENT_SCRIPT_UNAVAILABLE) {
+      return false;
+    }
+    const details = error.details as { reason?: unknown } | null | undefined;
+    if (details?.reason !== 'document_unloaded' || message.type !== 'bridge.execute') return false;
+    const method = String(
+      message.method ?? ''
+    ) as import('../../../protocol/src/types.js').BridgeMethod;
+    const params =
+      message.params && typeof message.params === 'object'
+        ? (message.params as Record<string, unknown>)
+        : {};
+    return METHOD_SET.has(method) && isBatchSafeBridgeCall(method, params);
   }
 
   async function sendTabMessageWithTimeout(
@@ -323,13 +388,24 @@ emit navigation-kind events; the background re-reads the authoritative URL. */
   type Frame = { frameId: number; tag: string | null };
   const frameCache = new Map<number, { at: number; frames: Frame[] }>();
   const frameDiscoveries = new Map<number, Promise<Frame[]>>();
+  /** Child frames that stayed unscriptable after injection (other extensions'
+   * pages, sandboxed frames), so discovery does not retry them every time. */
+  const uninjectableFrames = new Map<number, Set<number>>();
   const FRAME_CACHE_TTL_MS = 3_000;
   const MAX_SCRIPTED_FRAMES = 12;
+  const MAX_REMEMBERED_UNINJECTABLE_FRAMES = 256;
 
   /** Enumerate scriptable frames and their element-ref tags. Child frames are
 injected on demand so their DOM is reachable (including cross-origin
 frames, which `<all_urls>` host access permits). */
   function listFrames(tabId: number, options: { refresh?: boolean } = {}): Promise<Frame[]> {
+    return listAllFrames(tabId, options).then((frames) => frames.slice(0, MAX_SCRIPTED_FRAMES));
+  }
+
+  /** Every frame Chrome reported, ranked: the top frame, frames whose content
+script answered, then the rest. Fan-out reads use the first
+MAX_SCRIPTED_FRAMES; ref routing searches all of them. */
+  function listAllFrames(tabId: number, options: { refresh?: boolean } = {}): Promise<Frame[]> {
     const pending = frameDiscoveries.get(tabId);
     if (pending) return pending;
     const cached = frameCache.get(tabId);
@@ -359,34 +435,85 @@ frames, which `<all_urls>` host access permits). */
 
   async function discoverFrames(tabId: number): Promise<Frame[]> {
     const read = async (): Promise<Frame[]> => {
-      const results = await chromeObj.scripting.executeScript({
-        target: { tabId, allFrames: true },
-        func: readFrameRefTag,
-      });
+      const results = await withScriptingDeadline(
+        chromeObj.scripting.executeScript({
+          target: { tabId, allFrames: true },
+          func: readFrameRefTag,
+        }),
+        'frame discovery',
+        FRAME_DISCOVERY_TIMEOUT_MS
+      );
       return (results ?? [])
         .filter((entry) => typeof entry?.frameId === 'number')
         .map((entry) => ({
           frameId: entry.frameId,
           tag: typeof entry.result === 'string' ? entry.result : null,
-        }))
-        .slice(0, MAX_SCRIPTED_FRAMES);
+        }));
     };
-    let frames = [];
+    const rank = (frames: Frame[]): Frame[] =>
+      [...frames].sort(
+        (a, b) =>
+          Number(b.frameId === 0) - Number(a.frameId === 0) ||
+          Number(b.tag !== null) - Number(a.tag !== null)
+      );
+    // Another extension's frame (chrome-extension://) makes the whole
+    // allFrames read fail. Fall back to the frames known from the last
+    // discovery, read one at a time, and leave out the ones that fail.
+    const readKnownFrames = async (): Promise<Frame[]> => {
+      const known = frameCache.get(tabId)?.frames ?? [];
+      const ids = [0, ...known.map((frame) => frame.frameId).filter((id) => id !== 0)];
+      const results = await Promise.all(
+        ids.map(async (frameId) => {
+          try {
+            const [entry] = await withScriptingDeadline(
+              chromeObj.scripting.executeScript({
+                target: { tabId, frameIds: [frameId] },
+                func: readFrameRefTag,
+              }),
+              'frame discovery',
+              FRAME_DISCOVERY_TIMEOUT_MS
+            );
+            return { frameId, tag: typeof entry?.result === 'string' ? entry.result : null };
+          } catch {
+            return frameId === 0 ? { frameId: 0, tag: null } : null;
+          }
+        })
+      );
+      return results.filter((frame): frame is Frame => frame !== null);
+    };
+    let frames: Frame[] = [];
     try {
-      frames = await read();
-      if (frames.some((frame) => frame.frameId !== 0 && frame.tag === null)) {
-        const frameIds = frames
-          .filter((frame) => frame.frameId !== 0 && frame.tag === null)
-          .map((frame) => frame.frameId);
-        await chromeObj.scripting
-          .executeScript({ target: { tabId, frameIds }, files: CONTENT_SCRIPT_FILES })
-          .catch(() => {});
+      frames = await read().catch(async (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/Cannot access a chrome-extension:\/\//i.test(message)) throw error;
+        return readKnownFrames();
+      });
+      const skipped = uninjectableFrames.get(tabId) ?? new Set<number>();
+      const frameIds = frames
+        .filter((frame) => frame.frameId !== 0 && frame.tag === null && !skipped.has(frame.frameId))
+        .map((frame) => frame.frameId)
+        .slice(0, MAX_SCRIPTED_FRAMES);
+      if (frameIds.length) {
+        await withScriptingDeadline(
+          chromeObj.scripting.executeScript({
+            target: { tabId, frameIds },
+            files: CONTENT_SCRIPT_FILES,
+          }),
+          'frame content script injection',
+          FRAME_DISCOVERY_TIMEOUT_MS
+        ).catch(() => {});
         frames = await read();
+        for (const frame of frames) {
+          if (!frameIds.includes(frame.frameId) || frame.tag !== null) continue;
+          if (skipped.size >= MAX_REMEMBERED_UNINJECTABLE_FRAMES) break;
+          skipped.add(frame.frameId);
+        }
+        if (skipped.size) uninjectableFrames.set(tabId, skipped);
       }
     } catch {
       frames = [{ frameId: 0, tag: null }];
     }
-    return frames;
+    return rank(frames);
   }
 
   /** Find the frame that minted an element ref (refs embed a per-document tag). */
@@ -394,7 +521,7 @@ frames, which `<all_urls>` host access permits). */
     const tag = /^el_([0-9a-z]{4})_/.exec(elementRef)?.[1];
     if (!tag) return 0;
     for (const refresh of [false, true]) {
-      const frames = await listFrames(tabId, { refresh });
+      const frames = await listAllFrames(tabId, { refresh });
       const owner = frames.find((frame) => frame.tag === tag);
       if (owner) return owner.frameId;
     }
@@ -435,13 +562,15 @@ extension reloads or on tabs that predate the current extension version. */
     return check;
   }
 
-  /** Proactively inject content scripts into all scriptable tabs in a window
-when Bridge access is enabled. Errors on restricted pages are silently
-ignored since ensureContentScript will handle them on demand. */
+  /** Prepare the window's active tab when Bridge access is enabled, so the
+first request there skips injection. Other tabs are injected on demand by
+ensureContentScript; injecting every tab of a large window at once costs
+renderer time in pages the agent may never touch. */
   async function injectContentScriptsForWindow(windowId: number): Promise<void> {
     const tabs = await chromeObj.tabs.query({ windowId });
     await Promise.allSettled(
       tabs
+        .filter((tab) => tab.active !== false)
         .map((tab) =>
           typeof tab.id === 'number' &&
           Number.isFinite(tab.id) &&
@@ -486,12 +615,14 @@ ignored since ensureContentScript will handle them on demand. */
       patchFrames.delete(tabId);
       frameCache.delete(tabId);
       frameDiscoveries.delete(tabId);
+      uninjectableFrames.delete(tabId);
     },
     invalidateFrames: (tabId) => {
       // A navigated document gets new frames, and a reloaded child frame needs
       // its content script again; a cached list would route probes to neither.
       frameCache.delete(tabId);
       frameDiscoveries.delete(tabId);
+      uninjectableFrames.delete(tabId);
     },
     installNavigationSignals,
     uninstallNavigationSignals,

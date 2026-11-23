@@ -158,7 +158,7 @@ Each of two rounds kills the isolated daemon with SIGKILL, stops and verifies re
 
 After every scenario, a separate 10-second cleanup deadline checks pending requests, mutation queues, agent/extension connections, debugger attachments and holds, capture ownership, page recorders, artifact files, native processes, browser tabs, and daemon file descriptors. Descriptor counts allow three transient descriptors above the initial baseline for the same daemon PID. This is a focused leak regression check, not a memory soak or proof of constant memory. Teardown closes clients and the owned browser process group, kills only native executables whose `/proc` environment matches the private bridge home, checks process exit, and removes the temporary directory. Logs and success/failure measurements remain in `dist/chaos-live/<run>/`.
 
-Optional settings: `BBX_CHAOS_ROUNDS=1..5` and `BBX_CHAOS_RECOVERY_MS=5000..60000`. Missing prerequisites fail rather than silently skipping. These destructive tests are excluded from `make test`; Chrome-pipe framing and deadline helper tests run in the ordinary native test suite.
+Optional settings: `BBX_CHAOS_ROUNDS=1..5` and `BBX_CHAOS_RECOVERY_MS=5000..60000`. With branded Google Chrome, which ignores `--load-extension`, set `BBX_CHAOS_PORTABLE=1`: the controller loads the private extension over its CDP pipe and Chrome runs headless (add `BBX_CHAOS_HEADED=1` for a visible window, which needs a display). Missing prerequisites fail rather than silently skipping. These destructive tests are excluded from `make test`; Chrome-pipe framing and deadline helper tests run in the ordinary native test suite.
 
 ## Existing-browser visual tests
 

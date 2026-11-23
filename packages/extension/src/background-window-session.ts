@@ -4,6 +4,10 @@ import {
   normalizeStoredEnabledWindow,
   restoreEnabledWindowState,
 } from './background-access.js';
+import { syncEarlyConsoleCapture } from './background-console.js';
+
+/** Chrome clamps alarm periods below 30 seconds in packed extensions. */
+const KEEPALIVE_PERIOD_MINUTES = 0.5;
 import { getErrorMessage } from './background-helpers.js';
 import {
   ENABLED_WINDOW_STORAGE_KEY,
@@ -156,8 +160,11 @@ export function createWindowSessionController(
       if (browserStarting) return;
       state.enabledWindow = access;
       deps.sendAccessUpdate(true);
+      await syncEarlyConsoleCapture(true, chrome);
       await primeEnabledWindowInstrumentation();
-      await chrome.alarms.create(KEEPALIVE_ALARM_NAME, { periodInMinutes: 0.4 });
+      await chrome.alarms.create(KEEPALIVE_ALARM_NAME, {
+        periodInMinutes: KEEPALIVE_PERIOD_MINUTES,
+      });
       await deps.refreshActionIndicators();
       await deps.emitUiState();
     });
@@ -171,6 +178,7 @@ export function createWindowSessionController(
       state.enabledWindow = null;
       deps.sendAccessUpdate(false);
       await clearStoredEnabledWindow();
+      await syncEarlyConsoleCapture(false, chrome);
       try {
         if (access) {
           deps.cancelNavigationWaitsForWindow(access.windowId);
@@ -341,6 +349,7 @@ export function createWindowSessionController(
       deps.cancelNavigationWaitsForWindow(previousWindowId as number);
       await clearStoredEnabledWindow();
       deps.sendAccessUpdate(false);
+      if (isActiveDisable) await syncEarlyConsoleCapture(false, chrome);
       try {
         await deps.clearWindowBridgeState(previousWindowId as number, previousAccess ?? undefined);
       } catch (error) {
@@ -362,6 +371,7 @@ export function createWindowSessionController(
       );
       state.enabledWindow = access;
       await persistEnabledWindow();
+      await syncEarlyConsoleCapture(true, chrome);
       if (confirmsAccessRequest) {
         try {
           await deps.appendActionLogEntry({
@@ -391,7 +401,9 @@ export function createWindowSessionController(
 
     if (enabled && cleanupErrors.length === 0) {
       deps.sendAccessUpdate(true);
-      await chrome.alarms.create(KEEPALIVE_ALARM_NAME, { periodInMinutes: 0.4 });
+      await chrome.alarms.create(KEEPALIVE_ALARM_NAME, {
+        periodInMinutes: KEEPALIVE_PERIOD_MINUTES,
+      });
       return;
     }
 
@@ -416,10 +428,14 @@ export function createWindowSessionController(
     changeInfo: TabChangeInfo,
     tab: chrome.tabs.Tab
   ): Promise<void> {
+    // The window is labelled by its active tab. Background tabs that animate
+    // their title (chat counters, timers) must not rewrite storage each tick.
     if (
       typeof changeInfo.title === 'string' &&
       state.enabledWindow &&
-      tab.windowId === state.enabledWindow.windowId
+      tab.windowId === state.enabledWindow.windowId &&
+      tab.active !== false &&
+      changeInfo.title !== state.enabledWindow.title
     ) {
       const title = changeInfo.title;
       await enqueueWindowTransition(async () => {

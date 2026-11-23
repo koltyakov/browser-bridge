@@ -11,7 +11,7 @@ func assertElementRefQuery(t *testing.T, params object) {
 	assertJSONEqual(t, value(params), []byte(`{"selector":"#target","maxNodes":1,"maxDepth":1,"textBudget":32,"includeBbox":false,"attributeAllowlist":[]}`))
 }
 
-func TestMCPSelectorLookupOnlyCollectsOneRef(t *testing.T) {
+func TestMCPSelectorReadsTakeOneRoundTrip(t *testing.T) {
 	fixtures := []struct {
 		tool, action, method string
 		args                 object
@@ -51,7 +51,10 @@ func TestMCPSelectorLookupOnlyCollectsOneRef(t *testing.T) {
 				if err != nil || result.boolean("isError") {
 					t.Fatalf("selector call failed: %v %s", err, value(result))
 				}
-				if !explicitRef {
+				// Element capture needs a ref before it measures; every other
+				// method resolves the selector target in the page in one call.
+				lookup := !explicitRef && fixture.method == "screenshot.capture_element"
+				if lookup {
 					query := <-requests
 					if query.text("method") != "dom.query" {
 						t.Fatalf("missing selector lookup: %s", value(query))
@@ -66,12 +69,18 @@ func TestMCPSelectorLookupOnlyCollectsOneRef(t *testing.T) {
 					t.Fatalf("wrong follow-up request: %s", value(request))
 				}
 				params := request.object("params")
-				ref := params.text("elementRef")
-				if fixture.tool == "browser_patch" {
-					ref = params.object("target").text("elementRef")
-				}
-				if ref != "el_test_1" || len(requests) != 0 {
-					t.Fatalf("lookup did not reuse the ref: %s", value(request))
+				if !explicitRef && !lookup {
+					if params.object("target").text("selector") != "#target" || params.text("elementRef") != "" || len(requests) != 0 {
+						t.Fatalf("selector was not passed through in one request: %s", value(request))
+					}
+				} else {
+					ref := params.text("elementRef")
+					if fixture.tool == "browser_patch" {
+						ref = params.object("target").text("elementRef")
+					}
+					if ref != "el_test_1" || len(requests) != 0 {
+						t.Fatalf("lookup did not reuse the ref: %s", value(request))
+					}
 				}
 				for key, expected := range fixture.args {
 					if !jsonEqual(params[key], expected) {

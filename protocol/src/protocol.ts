@@ -2168,8 +2168,10 @@ export function normalizeNetworkInterceptAddParams(
 
 export function normalizePageTextParams(params: PageTextParams = {}): NormalizedPageTextParams {
   optionalParamType(params.textBudget, 'textBudget', 'number');
+  optionalParamType(params.offset, 'offset', 'number');
   return {
     textBudget: clampInt(params.textBudget, 100, 100_000, DEFAULT_PAGE_TEXT_BUDGET),
+    offset: clampInt(params.offset, 0, 10_000_000, 0),
   };
 }
 
@@ -2281,6 +2283,8 @@ export function createRuntimeContext(): {
       INPUT_UNSUPPORTED: 'Execution mode does not support this input operation',
       INPUT_INVALID_TARGET: 'Input target is incompatible with the requested operation',
       INPUT_FOCUS_CHANGED: 'Focus moved before native text dispatch',
+      INPUT_VALUE_REJECTED:
+        'Field did not keep the filled value or the value does not fit its type',
       DIALOG_BLOCKED:
         'Native JavaScript dialog blocked the operation; inspect before responding, never automatically replay',
       DIALOG_NOT_OPEN: 'No JavaScript dialog is currently observable',

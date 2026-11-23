@@ -10,9 +10,15 @@ type Lifetime = {
   cancelers: Set<() => void>;
 };
 
-/** Retain canceled work until it settles. Capacity cannot be reclaimed by
- * timing out a caller while its browser command is still running. */
-export function createRequestLifetimes(maxPending = 128) {
+/** Grace after a request's deadline before its slot is reclaimed. Work past
+ * the deadline has already been aborted; a slot still held this long later
+ * belongs to work that will never settle (a wedged command). */
+export const REQUEST_SLOT_REAP_GRACE_MS = 30_000;
+
+/** Retain canceled work until it settles, within a grace period. Capacity is
+ * not reclaimed when a caller times out while its browser command still runs,
+ * only once the command is long past its deadline. */
+export function createRequestLifetimes(maxPending = 128, reapGraceMs = REQUEST_SLOT_REAP_GRACE_MS) {
   const active = new Map<string, Lifetime>();
   const key = (id: string) => id.split('#', 1)[0];
   const error = () =>
@@ -22,9 +28,33 @@ export function createRequestLifetimes(maxPending = 128) {
       { outcomeUncertain: true }
     );
 
+  /** Drop slots whose work is far past its deadline and was already aborted. */
+  function reap(now: number): number {
+    let reaped = 0;
+    for (const [id, lifetime] of active) {
+      if (now < lifetime.deadline + reapGraceMs) continue;
+      lifetime.controller.abort(error());
+      clearTimeout(lifetime.timer);
+      active.delete(id);
+      reaped += 1;
+    }
+    return reaped;
+  }
+
   function begin(request: Request) {
-    if (active.size >= maxPending || active.has(request.id))
-      throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'Extension request capacity reached.');
+    if (active.has(request.id))
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        `Request id ${request.id.slice(0, 80)} is already in flight. Use a new id for each request.`,
+        { reason: 'duplicate_request_id' }
+      );
+    if (active.size >= maxPending) reap(Date.now());
+    if (active.size >= maxPending)
+      throw new BridgeError(
+        ERROR_CODES.BRIDGE_BUSY,
+        `The extension is running ${active.size} requests, its limit. Nothing was dispatched; retry shortly.`,
+        { retryAfterMs: 500, inFlight: active.size, limit: maxPending }
+      );
     const controller = new AbortController();
     const requested = request.meta?.deadline_ms;
     const deadline = Math.min(

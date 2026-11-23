@@ -2,6 +2,23 @@ import { BridgeError, ERROR_CODES } from '../../../protocol/src/index.js';
 
 const MAX_REGEX_URL_LENGTH = 16_384;
 
+/** Pages the extension cannot script (an OAuth provider's error page, a
+chrome:// hop, another extension's page, or a document mid-unload). URL waits
+continue on tabs.onUpdated there; only SPA history signals are unavailable. */
+function isUnscriptablePageError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /Cannot access contents of/i.test(message) ||
+    /cannot be scripted/i.test(message) ||
+    /Cannot access a chrome(-extension)?:\/\//i.test(message) ||
+    /Cannot script/i.test(message) ||
+    /Frame with ID \d+ (was removed|is showing error page)/i.test(message) ||
+    /No frame with id/i.test(message) ||
+    /document (was )?(unloaded|replaced)/i.test(message) ||
+    /error page/i.test(message)
+  );
+}
+
 export type NavigationKind =
   | 'current'
   | 'full-navigation'
@@ -133,7 +150,9 @@ access revocation and tab-removal events cannot pass an untracked waiter. */
       if (typeof changeInfo.url === 'string') {
         kind = waiter.sawLoading ? 'full-navigation' : 'tabs-url-update';
       }
-      void this._check(waiter, kind);
+      // The event carries the updated tab; reading it again per waiter only
+      // adds round trips.
+      void this._check(waiter, kind, tab);
     }
     if (changeInfo.status === 'complete') void this._refreshSignals(tabId);
   }
@@ -199,10 +218,10 @@ access revocation and tab-removal events cannot pass an untracked waiter. */
     }
   }
 
-  async _check(waiter: NavigationWaiter, observedKind: NavigationKind) {
+  async _check(waiter: NavigationWaiter, observedKind: NavigationKind, knownTab?: chrome.tabs.Tab) {
     if (waiter.settled) return;
     try {
-      const tab = await this._readScopedTab(waiter);
+      const tab = await this._readScopedTab(waiter, knownTab);
       if (waiter.settled) return;
       if (!isSatisfied(tab, waiter.params)) {
         if (tab.url && !waiter.signalsHeld) {
@@ -217,8 +236,12 @@ access revocation and tab-removal events cannot pass an untracked waiter. */
     }
   }
 
-  async _readScopedTab(waiter: NavigationWaiter) {
+  async _readScopedTab(waiter: NavigationWaiter, knownTab?: chrome.tabs.Tab) {
     this._assertAccess(waiter);
+    if (knownTab && knownTab.id === waiter.tabId) {
+      if (knownTab.windowId !== waiter.windowId) throw movedTabError();
+      return knownTab;
+    }
     let tab;
     try {
       tab = await this.getTab(waiter.tabId);
@@ -245,7 +268,9 @@ access revocation and tab-removal events cannot pass an untracked waiter. */
     let lease = this.signalsByTab.get(waiter.tabId);
     if (!lease) {
       const channel = this.createSignalChannel();
-      const installPromise = this.installSignals(waiter.tabId, channel);
+      const installPromise = this.installSignals(waiter.tabId, channel).catch((error) => {
+        if (!isUnscriptablePageError(error)) throw error;
+      });
       lease = { channel, refs: 0, installPromise, refreshTail: installPromise };
       this.signalsByTab.set(waiter.tabId, lease);
     }
@@ -261,7 +286,13 @@ access revocation and tab-removal events cannot pass an untracked waiter. */
   async _refreshSignals(tabId: number) {
     const lease = this.signalsByTab.get(tabId);
     if (!lease) return;
-    lease.refreshTail = lease.refreshTail.then(() => this.installSignals(tabId, lease.channel));
+    lease.refreshTail = lease.refreshTail
+      .then(() => this.installSignals(tabId, lease.channel))
+      .catch((error) => {
+        // An unscriptable hop keeps the wait alive; tabs.onUpdated still reports
+        // the next committed URL.
+        if (!isUnscriptablePageError(error)) throw error;
+      });
     try {
       await lease.refreshTail;
     } catch (error) {
@@ -371,5 +402,21 @@ function isSatisfied(tab: chrome.tabs.Tab, params: WaitParams): boolean {
   if (params.urlMatch === 'exact') return tab.url === params.url;
   if (params.urlMatch === 'contains') return tab.url.includes(params.url);
   if (tab.url.length > MAX_REGEX_URL_LENGTH) return false;
-  return new RegExp(params.url).test(tab.url);
+  return compileUrlPattern(params.url).test(tab.url);
+}
+
+const compiledUrlPatterns = new Map<string, RegExp>();
+
+/** Compile each URL pattern once; every tab update re-checks every waiter. */
+function compileUrlPattern(pattern: string): RegExp {
+  let compiled = compiledUrlPatterns.get(pattern);
+  if (!compiled) {
+    compiled = new RegExp(pattern);
+    if (compiledUrlPatterns.size >= 64) {
+      const oldest = compiledUrlPatterns.keys().next().value;
+      if (oldest !== undefined) compiledUrlPatterns.delete(oldest);
+    }
+    compiledUrlPatterns.set(pattern, compiled);
+  }
+  return compiled;
 }

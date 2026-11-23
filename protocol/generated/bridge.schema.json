@@ -867,6 +867,7 @@
         "INPUT_UNSUPPORTED",
         "INPUT_INVALID_TARGET",
         "INPUT_FOCUS_CHANGED",
+        "INPUT_VALUE_REJECTED",
         "DIALOG_BLOCKED",
         "DIALOG_NOT_OPEN",
         "DIALOG_ACTION_CONFLICT",
@@ -887,7 +888,11 @@
         "INVALID_REQUEST",
         "NATIVE_HOST_UNAVAILABLE",
         "EXTENSION_DISCONNECTED",
-        "TIMEOUT"
+        "TIMEOUT",
+        "EVALUATION_FAILED",
+        "REQUEST_CANCELED",
+        "BRIDGE_BUSY",
+        "DAEMON_UNAVAILABLE"
       ]
     },
     "BridgeRecovery": {
@@ -1678,6 +1683,9 @@
               "$ref": "#/$defs/InputTarget"
             },
             "textBudget": {
+              "type": "number"
+            },
+            "offset": {
               "type": "number"
             }
           },
@@ -2727,6 +2735,9 @@
       "type": "object",
       "properties": {
         "textBudget": {
+          "type": "number"
+        },
+        "offset": {
           "type": "number"
         }
       },
@@ -9372,10 +9383,14 @@
       "properties": {
         "textBudget": {
           "type": "number"
+        },
+        "offset": {
+          "type": "number"
         }
       },
       "required": [
-        "textBudget"
+        "textBudget",
+        "offset"
       ],
       "additionalProperties": true
     },

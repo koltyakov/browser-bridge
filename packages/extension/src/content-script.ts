@@ -52,7 +52,7 @@
     getComputedStyles: (ref: string, properties?: string[]) => unknown;
     getHtml: (params: Record<string, unknown>) => unknown;
     getMatchedRules: (ref: string) => unknown;
-    getText: (ref: string, budget?: number) => unknown;
+    getText: (ref: string, budget?: number, offset?: number) => unknown;
     hitTest: (x: number, y: number) => unknown;
     summarizeNode: (
       element: Element,
@@ -107,11 +107,21 @@
   const patchModule = (globalThis as typeof globalThis & { __BBX_CONTENT_PATCH__?: PatchModule })
     .__BBX_CONTENT_PATCH__ as PatchModule;
 
-  const { truncateText } = contentHelpers as {
+  type TextWindow = {
+    value: string;
+    truncated: boolean;
+    omitted: number;
+    length: number;
+    offset?: number;
+    nextOffset?: number;
+  };
+  const { truncateText, getVisibleText, readTextWindow } = contentHelpers as {
     truncateText: (
       value: string,
       budget: number
     ) => { value: string; truncated: boolean; omitted: number };
+    getVisibleText: (root: Element, maxChars?: number) => string;
+    readTextWindow: (text: string, budget: number, offset?: number) => TextWindow;
   };
   const { getRequiredElement, resolveElementRefFromParams } = registry as {
     getRequiredElement: (ref: string) => Element;
@@ -151,9 +161,9 @@
     if (id && activeRequests.size >= 128) {
       sendResponse({
         error: {
-          code: 'INVALID_REQUEST',
-          message: 'Content request capacity reached.',
-          details: null,
+          code: 'BRIDGE_BUSY',
+          message: 'The page is running 128 bridge requests, its limit. Retry shortly.',
+          details: { retryAfterMs: 500 },
         },
       });
       return false;
@@ -232,7 +242,11 @@
       case 'dom.describe':
         return domQueryModule.describeElement(resolveElementRefFromParams(params));
       case 'dom.get_text':
-        return domQueryModule.getText(resolveElementRefFromParams(params), params.textBudget);
+        return domQueryModule.getText(
+          resolveElementRefFromParams(params),
+          params.textBudget,
+          Number(params.offset) || 0
+        );
       case 'dom.get_attributes':
         return domQueryModule.getAttributes(
           resolveElementRefFromParams(params),
@@ -443,26 +457,15 @@ Lightweight - only checks a few DOM/stylesheet signals. */
     return { tailwind };
   }
 
-  /** Extract the full visible text content of the page. */
-  function getFullPageText(params: Record<string, unknown>): {
-    value: string;
-    truncated: boolean;
-    omitted: number;
-    length: number;
-  } {
+  /** Extract the visible text of the page, including shadow trees, from
+`offset`. A truncated result names the `nextOffset` that continues it. */
+  function getFullPageText(params: Record<string, unknown>): TextWindow {
     const budget = Number(params.textBudget) || 8000;
     const body = document.body;
     if (!body) {
       return { value: '', truncated: false, omitted: 0, length: 0 };
     }
-    const raw = (body.innerText || body.textContent || '').trim();
-    const result = truncateText(raw, budget);
-    return {
-      value: result.value,
-      truncated: result.truncated,
-      omitted: result.omitted,
-      length: raw.length,
-    };
+    return readTextWindow(getVisibleText(body), budget, Number(params.offset) || 0);
   }
 
   /** Read localStorage or sessionStorage entries. */

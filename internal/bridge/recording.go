@@ -24,7 +24,14 @@ type recordingStore struct {
 	root    string
 	writers map[string]string
 	now     func() time.Time
+	// usedBytes is the journal total from the last directory scan plus later
+	// appends, so an append does not list and stat the directory each time.
+	usedBytes int64
+	prunedAt  time.Time
 }
+
+// recordingPruneInterval bounds how stale the cached byte total may be.
+const recordingPruneInterval = time.Second
 
 func newRecordingStore(root string) *recordingStore {
 	return &recordingStore{root: root, writers: make(map[string]string), now: time.Now}
@@ -91,6 +98,7 @@ func (s *recordingStore) prune() (int64, int, error) {
 			size += info.Size()
 		}
 	}
+	s.usedBytes, s.prunedAt = size, s.now()
 	return size, count, nil
 }
 
@@ -136,10 +144,12 @@ func (s *recordingStore) append(id, extension string, offset int64, data string)
 	if err != nil || base64.StdEncoding.EncodeToString(b) != data {
 		return nil, serviceFailure("INVALID_REQUEST", "Invalid journal chunk.")
 	}
-	used, _, err := s.prune()
-	if err != nil {
-		return nil, err
+	if s.prunedAt.IsZero() || s.now().Sub(s.prunedAt) >= recordingPruneInterval {
+		if _, _, err := s.prune(); err != nil {
+			return nil, err
+		}
 	}
+	used := s.usedBytes
 	if used+int64(len(b)) > recordingTotalBytes || offset+int64(len(b)) > recordingMaxBytes {
 		return nil, serviceFailure("ARTIFACT_QUOTA_EXCEEDED", "Recording journal byte quota exceeded.")
 	}
@@ -165,6 +175,7 @@ func (s *recordingStore) append(id, extension string, offset int64, data string)
 	if err := f.Sync(); err != nil {
 		return nil, err
 	}
+	s.usedBytes += int64(len(b))
 	return object{"journalId": value(id), "nextOffset": value(offset + int64(len(b)))}, nil
 }
 

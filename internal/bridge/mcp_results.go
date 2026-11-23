@@ -698,6 +698,12 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 			if mcpIsNumber(r["length"]) {
 				out["length"] = r["length"]
 			}
+			// A truncated read names where to continue; pass it as offset.
+			for _, field := range []string{"offset", "nextOffset"} {
+				if mcpIsNumber(r[field]) {
+					out[field] = r[field]
+				}
+			}
 		}
 		if key == "html" {
 			out = object{"truncated": value(r.boolean("truncated"))}

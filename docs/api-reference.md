@@ -404,6 +404,11 @@ No baseline or delta is created by these reads.
 | `INPUT_UNSUPPORTED`       | No        | Execution path does not support the input method   |
 | `INPUT_INVALID_TARGET`    | No        | Target/control is incompatible with the input      |
 | `INPUT_FOCUS_CHANGED`     | No        | Native text target lost focus before dispatch      |
+| `INPUT_VALUE_REJECTED`    | No        | Field did not keep the filled value                |
+| `EVALUATION_FAILED` | No | Expression threw in the page |
+| `REQUEST_CANCELED` | No | Request canceled before it finished |
+| `BRIDGE_BUSY` | Yes | Bridge at capacity; nothing was dispatched |
+| `DAEMON_UNAVAILABLE` | Yes | Daemon not reachable; nothing was sent |
 | `DIALOG_BLOCKED`          | No        | Native dialog blocked an action; inspect before responding or acting again |
 | `DIALOG_NOT_OPEN`         | No        | No current dialog is observable                    |
 | `DIALOG_ACTION_CONFLICT`  | No        | Dialog observation changed around dispatch         |

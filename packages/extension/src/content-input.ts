@@ -21,6 +21,7 @@
         isNodeAttached: (node: Node | null | undefined) => boolean;
         querySelectorAllDeep: (selector: string, root?: ParentNode) => Element[];
         querySelectorAllDeepNative: (selector: string, root?: ParentNode) => Element[];
+        withDomScanCache: <T>(scan: () => T) => T;
         delay: (ms: number) => Promise<void>;
       };
     }
@@ -61,8 +62,8 @@
     getShadowRoot,
     isElementVisible,
     isNodeAttached,
-    querySelectorAllDeep,
     querySelectorAllDeepNative,
+    withDomScanCache,
   } = contentHelpers;
   const { rememberElement, resolveTarget, resolveInputReference } = registry;
   const MAX_INPUT_CANDIDATES = 25;
@@ -152,6 +153,8 @@ elementFromPoint retargets to the outermost shadow host. */
     element: Element;
     point: { x: number; y: number };
     resolution: InputResolutionMetadata;
+    /** Element under the pointer when the target was hit-tested. */
+    hit?: Element | null;
   };
 
   function createInputError(
@@ -193,9 +196,7 @@ elementFromPoint retargets to the outermost shadow host. */
     const rect = element.getBoundingClientRect();
     const style = readComputedStyle(element);
     const reasons = [];
-    const disabled =
-      ('disabled' in element && Boolean((element as { disabled?: boolean }).disabled)) ||
-      element.getAttribute('aria-disabled') === 'true';
+    const disabled = isDisabledControl(element) || element.getAttribute('aria-disabled') === 'true';
     const inert =
       ('inert' in element && Boolean((element as { inert?: boolean }).inert)) ||
       element.hasAttribute('inert') ||
@@ -231,15 +232,104 @@ elementFromPoint retargets to the outermost shadow host. */
     const visibleBottom = hitRequired
       ? Math.min(viewportHeight, rect.top + rect.height)
       : rect.top + rect.height;
-    const point =
+    const fallbackPoint =
       inViewport && visibleRight > visibleLeft && visibleBottom > visibleTop
         ? {
             x: visibleLeft + (visibleRight - visibleLeft) / 2,
             y: visibleTop + (visibleBottom - visibleTop) / 2,
           }
         : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-    const hit = inViewport ? deepElementFromPoint(point.x, point.y) : null;
+    if (!inViewport) {
+      return {
+        actionable: reasons.length === 0,
+        reasons,
+        inViewport,
+        hitRequired,
+        point: fallbackPoint,
+        hit: null,
+      };
+    }
+    // Wrapped inline elements have line boxes whose bounding-box center can be
+    // blank space. Probe the first line box first, then a few points inside
+    // the visible box, and keep the first point that reaches the element.
+    const points = collectHitPoints(element, fallbackPoint, {
+      left: visibleLeft,
+      top: visibleTop,
+      right: visibleRight,
+      bottom: visibleBottom,
+      viewportWidth: hitRequired ? viewportWidth : Number.POSITIVE_INFINITY,
+      viewportHeight: hitRequired ? viewportHeight : Number.POSITIVE_INFINITY,
+    });
+    let point = points[0];
+    let hit = deepElementFromPoint(point.x, point.y);
+    if (hitRequired && classifyHit(element, hit) === 'none') {
+      for (const candidate of points.slice(1)) {
+        const candidateHit = deepElementFromPoint(candidate.x, candidate.y);
+        if (classifyHit(element, candidateHit) !== 'none') {
+          point = candidate;
+          hit = candidateHit;
+          break;
+        }
+      }
+    }
     return { actionable: reasons.length === 0, reasons, inViewport, hitRequired, point, hit };
+  }
+
+  /** Form controls disabled directly or by a disabled fieldset ancestor. */
+  function isDisabledControl(element: Element): boolean {
+    try {
+      if (typeof element.matches === 'function' && element.matches(':disabled')) return true;
+    } catch {
+      // Engines without :disabled support fall back to the property.
+    }
+    return 'disabled' in element && Boolean((element as { disabled?: boolean }).disabled);
+  }
+
+  /** Ordered hit-test probes: line-box centers, then the visible-box center
+and points between it and the corners. */
+  function collectHitPoints(
+    element: Element,
+    center: { x: number; y: number },
+    box: {
+      left: number;
+      top: number;
+      right: number;
+      bottom: number;
+      viewportWidth: number;
+      viewportHeight: number;
+    }
+  ): Array<{ x: number; y: number }> {
+    const points: Array<{ x: number; y: number }> = [];
+    const add = (x: number, y: number) => {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      if (points.some((point) => Math.abs(point.x - x) < 1 && Math.abs(point.y - y) < 1)) return;
+      points.push({ x, y });
+    };
+    const lineBoxes =
+      typeof element.getClientRects === 'function' ? [...element.getClientRects()] : [];
+    if (lineBoxes.length > 1) {
+      for (const lineBox of lineBoxes.slice(0, 3)) {
+        const left = Math.max(0, lineBox.left);
+        const top = Math.max(0, lineBox.top);
+        const right = Math.min(box.viewportWidth, lineBox.right);
+        const bottom = Math.min(box.viewportHeight, lineBox.bottom);
+        if (right - left >= 1 && bottom - top >= 1) add((left + right) / 2, (top + bottom) / 2);
+      }
+    }
+    add(center.x, center.y);
+    const width = box.right - box.left;
+    const height = box.bottom - box.top;
+    if (width >= 4 && height >= 4) {
+      for (const [fx, fy] of [
+        [0.25, 0.25],
+        [0.75, 0.25],
+        [0.25, 0.75],
+        [0.75, 0.75],
+      ]) {
+        add(box.left + width * fx, box.top + height * fy);
+      }
+    }
+    return points.length ? points : [center];
   }
 
   function classifyHit(element: Element, hit: Element | null): 'target' | 'descendant' | 'none' {
@@ -258,8 +348,20 @@ elementFromPoint retargets to the outermost shadow host. */
     if (id) description.id = id.slice(0, 80);
     if (role) description.role = role.slice(0, 80);
     if (name) description.name = name.slice(0, 120);
+    else {
+      const text = (element.textContent ?? '').replace(/\s+/g, ' ').trim();
+      if (text) description.text = text.slice(0, 60);
+    }
     if (className) description.class = className.trim().split(/\s+/).slice(0, 3).join(' ');
     return description;
+  }
+
+  /** Error text that names the covering element, since some agents see only the message. */
+  function describeObscuredMessage(blocker: Record<string, string> | null): string {
+    if (!blocker) return 'Input target is obscured at every probed point.';
+    const label = blocker.name ?? blocker.text;
+    const id = blocker.id ? `#${blocker.id}` : '';
+    return `Input target is covered by <${blocker.tag}${id}>${label ? ` "${label}"` : ''}. Close or scroll past the covering element, or target it instead.`;
   }
 
   /** Visible text of the nearest ancestor that has any, bounded for errors. */
@@ -352,7 +454,9 @@ Explicit refs retain exact identity unless stale recovery is opted in. */
               ? located.matches.slice(target.nth, target.nth + 1)
               : located.matches;
         } else {
-          allMatches = querySelectorAllDeep(escapeTailwindSelector(String(target?.selector)));
+          // Native matching per tree: no per-element matches() call or clock
+          // read, which made selector targets slow on large pages.
+          allMatches = querySelectorAllDeepNative(escapeTailwindSelector(String(target?.selector)));
         }
       } catch (error) {
         if (
@@ -507,19 +611,30 @@ Explicit refs retain exact identity unless stale recovery is opted in. */
       }
       resolution.hitTest = hit;
       if (hit === 'none' && state.hitRequired) {
-        throw createInputError(
-          'ELEMENT_OBSCURED',
-          'Input target is obscured at its center point.',
-          {
-            elementRef: rememberElement(element),
-            point: state.point,
-            blocker: state.hit ? describeBlocker(state.hit) : null,
-            resolution,
-          }
-        );
+        const blocker = state.hit ? describeBlocker(state.hit) : null;
+        throw createInputError('ELEMENT_OBSCURED', describeObscuredMessage(blocker), {
+          elementRef: rememberElement(element),
+          point: state.point,
+          blocker,
+          resolution,
+        });
       }
     }
-    return { element, point: state.point, resolution };
+    return {
+      element,
+      point: state.point,
+      resolution,
+      ...(options.pointer && state.hit ? { hit: state.hit } : {}),
+    };
+  }
+
+  /** The element a pointer event lands on: the hit descendant under the point
+when there is one, as with a real pointer, otherwise the target itself. */
+  function getPointerDispatchTarget(resolved: ResolvedInputTarget): Element {
+    const hit = resolved.hit;
+    return hit && hit !== resolved.element && classifyHit(resolved.element, hit) === 'descendant'
+      ? hit
+      : resolved.element;
   }
 
   function getExecutionMetadata(mode: 'dom' | 'cdp', point: { x: number; y: number }) {
@@ -583,7 +698,8 @@ Explicit refs retain exact identity unless stale recovery is opted in. */
       });
     }
 
-    return document.activeElement instanceof Element ? document.activeElement : element;
+    const active = deepActiveElement();
+    return active instanceof Element ? active : element;
   }
 
   const FOCUSABLE_SELECTOR =
@@ -597,7 +713,7 @@ cannot take focus. */
       typeof element.closest === 'function' ? element.closest(FOCUSABLE_SELECTOR) : null;
     const target = focusable ?? element;
     focusElement(target);
-    const active = document.activeElement;
+    const active = deepActiveElement();
     if (
       !focusable &&
       active instanceof HTMLElement &&
@@ -611,7 +727,8 @@ cannot take focus. */
   }
 
   function isElementFocused(element: Element): boolean {
-    return document.activeElement === element || element.contains(document.activeElement);
+    const active = deepActiveElement();
+    return active === element || composedContains(element, active);
   }
 
   function getViewportPoint(element: Element): { x: number; y: number } {
@@ -717,12 +834,33 @@ interactions see the same transitions a real pointer would produce. */
       composed: true,
       clientX: point.x,
       clientY: point.y,
+      ...getScreenCoordinates(point),
+      view: getEventView(),
       detail: options.detail ?? 0,
       button: options.button ?? 0,
       buttons: options.buttons ?? 0,
       relatedTarget: options.relatedTarget ?? null,
       ...options.modifiers,
     };
+  }
+
+  /** The window for UIEvent.view; Chrome rejects anything but a Window or null. */
+  function getEventView(): Window | null {
+    const view = globalThis.window;
+    return view && typeof view === 'object' && view === view.window ? view : null;
+  }
+
+  /** Screen coordinates as a real pointer would report them: the viewport
+offset by the window position and its top chrome. */
+  function getScreenCoordinates(point: { x: number; y: number }): {
+    screenX: number;
+    screenY: number;
+  } {
+    const view = getEventView();
+    const left = Number(view?.screenX) || 0;
+    const top = Number(view?.screenY) || 0;
+    const chrome = Math.max(0, (Number(view?.outerHeight) || 0) - (Number(view?.innerHeight) || 0));
+    return { screenX: Math.round(left + point.x), screenY: Math.round(top + chrome + point.y) };
   }
 
   function dispatchMouseEvent(
@@ -958,12 +1096,44 @@ pointer. */
     '`': { code: 'Backquote', keyCode: 192 },
   });
 
-  function getKeyDefinition(key: string): { code: string; keyCode: number } {
+  /** US-layout shifted characters and the unshifted key that produces them. */
+  const SHIFTED_KEYS: Readonly<Record<string, string>> = Object.freeze({
+    '!': '1',
+    '@': '2',
+    '#': '3',
+    $: '4',
+    '%': '5',
+    '^': '6',
+    '&': '7',
+    '*': '8',
+    '(': '9',
+    ')': '0',
+    _: '-',
+    '+': '=',
+    '{': '[',
+    '}': ']',
+    '|': '\\',
+    ':': ';',
+    '"': "'",
+    '<': ',',
+    '>': '.',
+    '?': '/',
+    '~': '`',
+  });
+
+  function getKeyDefinition(key: string): { code: string; keyCode: number; shifted?: boolean } {
     if (Object.hasOwn(KEY_DEFINITIONS, key)) {
       return KEY_DEFINITIONS[key as keyof typeof KEY_DEFINITIONS];
     }
+    if (Object.hasOwn(SHIFTED_KEYS, key)) {
+      return { ...getKeyDefinition(SHIFTED_KEYS[key]), shifted: true };
+    }
     if (/^[a-z]$/i.test(key)) {
-      return { code: `Key${key.toUpperCase()}`, keyCode: key.toUpperCase().charCodeAt(0) };
+      return {
+        code: `Key${key.toUpperCase()}`,
+        keyCode: key.toUpperCase().charCodeAt(0),
+        ...(key !== key.toLowerCase() ? { shifted: true } : {}),
+      };
     }
     if (/^[0-9]$/.test(key)) {
       return { code: `Digit${key}`, keyCode: key.charCodeAt(0) };
@@ -1034,11 +1204,14 @@ pointer. */
     dispatchKeyboardEvent(element, 'keydown', 'Backspace', {});
     if (dispatchBeforeInputEvent(element, '', 'deleteContentBackward')) {
       if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-        element.value = '';
-      } else {
+        // The prototype setter, as React tracks the instance setter and would
+        // drop the input event of a clear-only action as unchanged.
+        setNativeValue(element, '');
+        dispatchInputEvent(element, '', 'deleteContentBackward');
+      } else if (!runEditingCommand(element, 'delete', undefined, { selectAll: true })) {
         element.textContent = '';
+        dispatchInputEvent(element, '', 'deleteContentBackward');
       }
-      dispatchInputEvent(element, '', 'deleteContentBackward');
     }
     dispatchKeyboardEvent(element, 'keyup', 'Backspace', {});
   }
@@ -1058,12 +1231,28 @@ pointer. */
     key: string;
     handled: boolean;
     modifierState: ModifierState;
+    /** keydown and keypress were not canceled, so keyup default actions run. */
+    defaultAllowed: boolean;
   };
 
+  /** Key names agents commonly use for the DOM key values. */
+  const KEY_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+    Space: ' ',
+    Spacebar: ' ',
+    Esc: 'Escape',
+    Return: 'Enter',
+    Left: 'ArrowLeft',
+    Right: 'ArrowRight',
+    Up: 'ArrowUp',
+    Down: 'ArrowDown',
+    Del: 'Delete',
+  });
+
   /** Press a key: keydown, keypress for character keys, then the default
-editing action. A canceled keydown suppresses both, as in real browsers. */
+action a browser would run (editing, activation, focus navigation, caret and
+selection movement). A canceled keydown suppresses both, as in real browsers. */
   function beginKeyAction(element: Element, key: string, modifiers: unknown): PressedKey {
-    const normalizedKey = key === 'Space' ? ' ' : key;
+    const normalizedKey = Object.hasOwn(KEY_ALIASES, key) ? KEY_ALIASES[key] : key;
     const keyboardTarget = focusElement(element);
     const modifierState = normalizeModifierState(modifiers);
     const keyDownAllowed = dispatchKeyboardEvent(
@@ -1083,7 +1272,9 @@ editing action. A canceled keydown suppresses both, as in real browsers. */
         : keyDownAllowed;
 
     if (keyPressAllowed) {
-      const editable = getEditableTarget(keyboardTarget);
+      const editable = isEditableElement(keyboardTarget)
+        ? (keyboardTarget as HTMLInputElement | HTMLTextAreaElement | HTMLElement)
+        : null;
       if (editable && normalizedKey.length === 1 && !commandModifier) {
         handled = insertTextIntoEditable(editable, normalizedKey);
       } else if (editable && normalizedKey === 'Backspace') {
@@ -1092,14 +1283,265 @@ editing action. A canceled keydown suppresses both, as in real browsers. */
         handled = deleteTextFromEditable(editable, 'forward');
       } else if (normalizedKey === 'Enter') {
         handled = handleEnterKey(keyboardTarget);
+      } else if (normalizedKey === 'Tab' && !commandModifier) {
+        handled = moveSequentialFocus(keyboardTarget, modifierState.shiftKey);
+      } else if (
+        (modifierState.ctrlKey || modifierState.metaKey) &&
+        normalizedKey.toLowerCase() === 'a'
+      ) {
+        handled = selectAllIn(editable);
+      } else if (!commandModifier && NAVIGATION_KEYS.has(normalizedKey)) {
+        handled = runNavigationKey(keyboardTarget, normalizedKey, modifierState.shiftKey);
       }
     }
 
-    return { target: keyboardTarget, key: normalizedKey, handled, modifierState };
+    return {
+      target: keyboardTarget,
+      key: normalizedKey,
+      handled,
+      modifierState,
+      defaultAllowed: keyPressAllowed,
+    };
   }
 
   function endKeyAction(pressed: PressedKey): void {
-    dispatchKeyboardEvent(pressed.target, 'keyup', pressed.key, pressed.modifierState);
+    const keyUpAllowed = dispatchKeyboardEvent(
+      pressed.target,
+      'keyup',
+      pressed.key,
+      pressed.modifierState
+    );
+    // Buttons, checkboxes, radios and summaries activate when Space is released.
+    if (
+      pressed.key === ' ' &&
+      pressed.defaultAllowed &&
+      keyUpAllowed &&
+      !pressed.modifierState.ctrlKey &&
+      !pressed.modifierState.metaKey &&
+      !pressed.modifierState.altKey &&
+      isSpaceActivated(pressed.target) &&
+      isConnectedElement(pressed.target)
+    ) {
+      (pressed.target as HTMLElement).click();
+      pressed.handled = true;
+    }
+  }
+
+  const SPACE_ACTIVATED_INPUT_TYPES = new Set([
+    'button',
+    'checkbox',
+    'image',
+    'radio',
+    'reset',
+    'submit',
+  ]);
+
+  function isSpaceActivated(element: Element): boolean {
+    if (isDisabledControl(element)) return false;
+    if (element instanceof HTMLButtonElement) return true;
+    if (element instanceof HTMLInputElement) {
+      return SPACE_ACTIVATED_INPUT_TYPES.has(element.type.toLowerCase());
+    }
+    return element.tagName === 'SUMMARY' && element.parentElement?.tagName === 'DETAILS';
+  }
+
+  const NAVIGATION_KEYS = new Set([
+    'ArrowLeft',
+    'ArrowRight',
+    'ArrowUp',
+    'ArrowDown',
+    'Home',
+    'End',
+  ]);
+
+  /** Focusable elements in sequential navigation order: positive tabindex
+ascending, then tabindex 0 in tree order, skipping disabled, hidden and inert
+elements. Shadow trees are visited in place of their hosts. */
+  function getTabbableElements(): Element[] {
+    let candidates: Element[];
+    try {
+      candidates = querySelectorAllDeepNative(FOCUSABLE_SELECTOR);
+    } catch {
+      candidates = [...document.querySelectorAll(FOCUSABLE_SELECTOR)];
+    }
+    const tabbable = candidates.filter((element) => {
+      const tabIndex = (element as HTMLElement).tabIndex;
+      if (typeof tabIndex !== 'number' || tabIndex < 0) return false;
+      if (isDisabledControl(element)) return false;
+      if (element instanceof HTMLInputElement && element.type.toLowerCase() === 'hidden') {
+        return false;
+      }
+      if (element.closest?.('[inert]')) return false;
+      return isElementVisible(element);
+    });
+    const positive = tabbable
+      .filter((element) => (element as HTMLElement).tabIndex > 0)
+      .sort((a, b) => (a as HTMLElement).tabIndex - (b as HTMLElement).tabIndex);
+    return [...positive, ...tabbable.filter((element) => (element as HTMLElement).tabIndex === 0)];
+  }
+
+  /** Move focus like Tab or Shift+Tab. Focus stays put at either end of the
+document, where a real browser would move it to its own UI. */
+  function moveSequentialFocus(from: Element, backward: boolean): boolean {
+    const order = getTabbableElements();
+    if (!order.length) return false;
+    let index = order.indexOf(from);
+    if (index < 0) {
+      // Focus is on a non-tabbable element or the body: continue from the
+      // first tabbable element after it in tree order.
+      const following = order.findIndex(
+        (candidate) =>
+          typeof from.compareDocumentPosition === 'function' &&
+          Boolean(from.compareDocumentPosition(candidate) & 4)
+      );
+      index = (following < 0 ? order.length : following) - (backward ? 0 : 1);
+    }
+    const next = order[backward ? index - 1 : index + 1];
+    if (!next) return false;
+    focusElement(next);
+    if (next instanceof HTMLInputElement && next.selectionStart !== null) next.select();
+    return true;
+  }
+
+  /** Ctrl/Cmd+A: select the field's contents, or the document's. */
+  function selectAllIn(
+    editable: HTMLInputElement | HTMLTextAreaElement | HTMLElement | null
+  ): boolean {
+    if (editable instanceof HTMLInputElement || editable instanceof HTMLTextAreaElement) {
+      editable.select();
+      return true;
+    }
+    const scope = editable ?? document.body;
+    const selection = getSelectionFor(scope);
+    if (!selection) return false;
+    selection.selectAllChildren(scope);
+    return true;
+  }
+
+  /** Arrow, Home and End keys: change select and radio groups, step number
+and range inputs, and move the caret in text fields and contenteditables. */
+  function runNavigationKey(element: Element, key: string, extend: boolean): boolean {
+    const forward = key === 'ArrowRight' || key === 'ArrowDown';
+    if (element instanceof HTMLSelectElement) return stepSelect(element, key);
+    if (element instanceof HTMLInputElement) {
+      const type = element.type.toLowerCase();
+      if (type === 'radio') return key.startsWith('Arrow') && stepRadioGroup(element, forward);
+      if (type === 'range' || (type === 'number' && (key === 'ArrowUp' || key === 'ArrowDown'))) {
+        return stepNumeric(element, key);
+      }
+    }
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      return moveTextCaret(element, key, extend);
+    }
+    if (element instanceof HTMLElement && element.isContentEditable) {
+      const selection = getSelectionFor(element);
+      if (!selection || typeof selection.modify !== 'function') return false;
+      const granularity =
+        key === 'Home' || key === 'End'
+          ? 'lineboundary'
+          : key === 'ArrowUp' || key === 'ArrowDown'
+            ? 'line'
+            : 'character';
+      const direction =
+        key === 'ArrowLeft' || key === 'ArrowUp' || key === 'Home' ? 'backward' : 'forward';
+      selection.modify(extend ? 'extend' : 'move', direction, granularity);
+      return true;
+    }
+    return false;
+  }
+
+  function stepSelect(element: HTMLSelectElement, key: string): boolean {
+    if (element.multiple || isDisabledControl(element)) return false;
+    const enabled = [...element.options]
+      .map((option, index) => ({ option, index }))
+      .filter(({ option }) => !option.disabled && !option.closest('optgroup[disabled]'));
+    if (!enabled.length) return false;
+    const current = element.selectedIndex;
+    let next: { option: HTMLOptionElement; index: number } | undefined;
+    if (key === 'Home') next = enabled[0];
+    else if (key === 'End') next = enabled[enabled.length - 1];
+    else if (key === 'ArrowDown' || key === 'ArrowRight') {
+      next = enabled.find(({ index }) => index > current);
+    } else {
+      next = [...enabled].reverse().find(({ index }) => index < current);
+    }
+    if (!next || next.index === current) return false;
+    element.selectedIndex = next.index;
+    element.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    return true;
+  }
+
+  function stepRadioGroup(element: HTMLInputElement, forward: boolean): boolean {
+    if (!element.name) return false;
+    const scope: ParentNode = element.form ?? (element.getRootNode() as ParentNode);
+    const group = [...scope.querySelectorAll('input[type="radio"]')].filter(
+      (radio): radio is HTMLInputElement =>
+        radio instanceof HTMLInputElement &&
+        radio.name === element.name &&
+        radio.form === element.form &&
+        !isDisabledControl(radio)
+    );
+    const index = group.indexOf(element);
+    if (group.length < 2 || index < 0) return false;
+    const next = group[(index + (forward ? 1 : -1) + group.length) % group.length];
+    focusElement(next);
+    if (!next.checked) next.click();
+    return true;
+  }
+
+  function stepNumeric(element: HTMLInputElement, key: string): boolean {
+    if (isDisabledControl(element) || element.readOnly) return false;
+    const before = element.value;
+    try {
+      if (key === 'Home' && element.min !== '') setNativeValue(element, element.min);
+      else if (key === 'End' && element.max !== '') setNativeValue(element, element.max);
+      else if (key === 'ArrowUp' || key === 'ArrowRight') element.stepUp();
+      else if (key === 'ArrowDown' || key === 'ArrowLeft') element.stepDown();
+      else return false;
+    } catch {
+      return false;
+    }
+    if (element.value === before) return false;
+    element.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    return true;
+  }
+
+  function moveTextCaret(
+    element: HTMLInputElement | HTMLTextAreaElement,
+    key: string,
+    extend: boolean
+  ): boolean {
+    const start = element.selectionStart;
+    const end = element.selectionEnd;
+    if (start === null || end === null) return false;
+    const value = element.value;
+    const backwardSelection = element.selectionDirection === 'backward';
+    const focus = backwardSelection ? start : end;
+    const anchor = backwardSelection ? end : start;
+    const multiline = element instanceof HTMLTextAreaElement;
+    let next: number;
+    if (key === 'ArrowLeft') {
+      next = !extend && start !== end ? start : Math.max(0, focus - 1);
+    } else if (key === 'ArrowRight') {
+      next = !extend && start !== end ? end : Math.min(value.length, focus + 1);
+    } else if (key === 'Home' || key === 'ArrowUp') {
+      next = multiline && key === 'Home' ? value.lastIndexOf('\n', focus - 1) + 1 : 0;
+    } else {
+      const lineEnd = value.indexOf('\n', focus);
+      next = multiline && key === 'End' && lineEnd >= 0 ? lineEnd : value.length;
+    }
+    if (extend) {
+      element.setSelectionRange(
+        Math.min(anchor, next),
+        Math.max(anchor, next),
+        next < anchor ? 'backward' : 'forward'
+      );
+    } else {
+      element.setSelectionRange(next, next);
+    }
+    return true;
   }
 
   function dispatchKeyboardEvent(
@@ -1119,7 +1561,9 @@ editing action. A canceled keydown suppresses both, as in real browsers. */
         bubbles: true,
         cancelable: true,
         composed: true,
+        view: getEventView(),
         ...modifiers,
+        shiftKey: Boolean(modifiers.shiftKey) || definition.shifted === true,
       })
     );
   }
@@ -1155,14 +1599,70 @@ editing action. A canceled keydown suppresses both, as in real browsers. */
     );
   }
 
-  /** Email, number, and date inputs expose no selection, so setRangeText
-throws on them. Edit those at the end of the value, where a typed caret is. */
-  function setValueWithoutSelection(element: HTMLInputElement, value: string): void {
-    const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  /** Set a form control value through its prototype setter, bypassing
+instance setters such as React's value tracker. Email, number, and date
+inputs expose no selection, so setRangeText throws on them; they are edited
+at the end of the value, where a typed caret is. */
+  function setNativeValue(
+    element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+    value: string
+  ): void {
+    const proto =
+      element instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : element instanceof HTMLSelectElement
+          ? HTMLSelectElement.prototype
+          : HTMLInputElement.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
     if (descriptor?.set) {
       descriptor.set.call(element, value);
     } else {
       element.value = value;
+    }
+  }
+
+  /** Selection for an element's tree; shadow roots keep their own in Chrome. */
+  function getSelectionFor(element: Element): Selection | null {
+    const root = typeof element.getRootNode === 'function' ? element.getRootNode() : null;
+    const rootSelection =
+      root && root !== document
+        ? (root as { getSelection?: () => Selection | null }).getSelection
+        : undefined;
+    const shadowSelection = typeof rootSelection === 'function' ? rootSelection.call(root) : null;
+    return shadowSelection ?? document.getSelection?.() ?? null;
+  }
+
+  /** Run a native editing command at the caret of a contenteditable, which
+keeps markup and the caret and fires a native input event. Puts the caret at
+the end first when the selection is elsewhere. Returns false when the engine
+has no editing commands or nothing changed. */
+  function runEditingCommand(
+    element: HTMLElement,
+    command: 'insertText' | 'insertParagraph' | 'delete' | 'forwardDelete',
+    value?: string,
+    options: { selectAll?: boolean } = {}
+  ): boolean {
+    if (typeof document.execCommand !== 'function') return false;
+    const selection = getSelectionFor(element);
+    if (!selection) return false;
+    try {
+      const anchor = selection.anchorNode;
+      const inside =
+        selection.rangeCount > 0 &&
+        anchor !== null &&
+        (anchor === element || element.contains(anchor));
+      if (options.selectAll || !inside) {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        if (!options.selectAll) range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      const before = element.innerHTML;
+      const applied = document.execCommand(command, false, value);
+      return applied || element.innerHTML !== before;
+    } catch {
+      return false;
     }
   }
 
@@ -1175,13 +1675,15 @@ throws on them. Edit those at the end of the value, where a typed caret is. */
     }
 
     if (element instanceof HTMLInputElement && element.selectionStart === null) {
-      setValueWithoutSelection(element, `${element.value}${value}`);
+      setNativeValue(element, element.value + value);
     } else if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       const start = element.selectionStart ?? element.value.length;
       const end = element.selectionEnd ?? element.value.length;
       element.setRangeText(value, start, end, 'end');
+    } else if (runEditingCommand(element, 'insertText', value)) {
+      return true;
     } else {
-      element.textContent = `${element.textContent || ''}${value}`;
+      element.textContent = (element.textContent || '') + value;
     }
 
     dispatchInputEvent(element, value, 'insertText');
@@ -1199,7 +1701,7 @@ throws on them. Edit those at the end of the value, where a typed caret is. */
 
     if (element instanceof HTMLInputElement && element.selectionStart === null) {
       if (direction === 'backward') {
-        setValueWithoutSelection(element, element.value.slice(0, -1));
+        setNativeValue(element, element.value.slice(0, -1));
       }
     } else if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       const start = element.selectionStart ?? element.value.length;
@@ -1211,10 +1713,12 @@ throws on them. Edit those at the end of the value, where a typed caret is. */
       } else if (direction === 'forward' && end < element.value.length) {
         element.setRangeText('', end, end + 1, 'end');
       }
-    } else {
+    } else if (runEditingCommand(element, direction === 'backward' ? 'delete' : 'forwardDelete')) {
+      return true;
+    } else if (direction === 'backward') {
+      // Without editing commands there is no caret to honour: edit at the end.
       const text = element.textContent || '';
-      element.textContent =
-        direction === 'backward' ? text.slice(0, Math.max(0, text.length - 1)) : text.slice(1);
+      element.textContent = text.slice(0, Math.max(0, text.length - 1));
     }
 
     dispatchInputEvent(element, '', inputType);
@@ -1222,11 +1726,15 @@ throws on them. Edit those at the end of the value, where a typed caret is. */
   }
 
   function handleEnterKey(element: Element): boolean {
-    const editable = getEditableTarget(element);
-    if (
-      editable instanceof HTMLTextAreaElement ||
-      (editable instanceof HTMLElement && editable.isContentEditable)
-    ) {
+    const editable = isEditableElement(element)
+      ? (element as HTMLInputElement | HTMLTextAreaElement | HTMLElement)
+      : null;
+    if (editable instanceof HTMLTextAreaElement) {
+      return insertTextIntoEditable(editable, '\n');
+    }
+    if (editable instanceof HTMLElement && editable.isContentEditable) {
+      if (!dispatchBeforeInputEvent(editable, '', 'insertParagraph')) return false;
+      if (runEditingCommand(editable, 'insertParagraph')) return true;
       return insertTextIntoEditable(editable, '\n');
     }
 
@@ -1235,11 +1743,24 @@ throws on them. Edit those at the end of the value, where a typed caret is. */
       return true;
     }
 
+    if (isDisabledControl(element)) return false;
+
     if (
       element instanceof HTMLButtonElement ||
-      (element instanceof HTMLInputElement && ['button', 'submit'].includes(element.type))
+      (element instanceof HTMLInputElement &&
+        ['button', 'submit', 'reset', 'image'].includes(element.type.toLowerCase()))
     ) {
-      element.click();
+      (element as HTMLElement).click();
+      return true;
+    }
+
+    // Links and disclosure summaries activate on Enter.
+    if ((element.tagName === 'A' || element.tagName === 'AREA') && element.hasAttribute('href')) {
+      (element as HTMLElement).click();
+      return true;
+    }
+    if (element.tagName === 'SUMMARY' && element.parentElement?.tagName === 'DETAILS') {
+      (element as HTMLElement).click();
       return true;
     }
 
@@ -1314,6 +1835,9 @@ for a double click. */
       recoverStale: params.recoverStale === true,
     });
     const { element, point, resolution } = resolved;
+    // A real pointer lands on the innermost element under it, so handlers on
+    // a nested link or button inside the target run too.
+    const pointerTarget = getPointerDispatchTarget(resolved);
     const button = normalizeMouseButton(params.button);
     const clickCount = clamp(params.clickCount ?? 1, 1, 2);
     const modifiers = normalizeModifierState(params.modifiers);
@@ -1321,13 +1845,13 @@ for a double click. */
     const state = getMouseButtonState(button);
     const clickType = button === 'left' ? 'click' : button === 'right' ? 'contextmenu' : 'auxclick';
 
-    movePointerTo(element, point, modifiers);
-    let releaseTarget = element;
+    movePointerTo(pointerTarget, point, modifiers);
+    let releaseTarget = pointerTarget;
     for (let detail = 1; detail <= clickCount; detail += 1) {
-      const pressed = pressMouseButton(element, point, button, detail, modifiers);
-      if (detail === 1 && pressed.focusAllowed) focusForPointerPress(element);
+      const pressed = pressMouseButton(pointerTarget, point, button, detail, modifiers);
+      if (detail === 1 && pressed.focusAllowed) focusForPointerPress(pointerTarget);
       if (holdMs > 0) await sleep(holdMs);
-      releaseTarget = getReleaseTarget(element, point);
+      releaseTarget = getReleaseTarget(pointerTarget, point);
       releaseMouseButton(
         releaseTarget,
         point,
@@ -1381,8 +1905,25 @@ for a double click. */
     };
   }
 
+  /** Characters typed between event-loop yields, so a long string stays cancelable. */
+  const TYPE_YIELD_EVERY = 32;
+
+  /** Yield one macrotask. MessageChannel is not throttled in background tabs,
+unlike timers, and lets a cancellation message arrive. */
+  function yieldToEventLoop(): Promise<void> {
+    if (typeof MessageChannel !== 'function') return delay(0);
+    return new Promise((resolve) => {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = () => {
+        channel.port1.close();
+        resolve();
+      };
+      channel.port2.postMessage(null);
+    });
+  }
+
   /** Type text into an editable control or contenteditable region. */
-  function typeIntoTarget(params: InputParams): Record<string, unknown> {
+  async function typeIntoTarget(params: InputParams): Promise<Record<string, unknown>> {
     // Without a target, type into the focused editable control, as keyboard
     // input does after a click or focus step.
     const active = deepActiveElement();
@@ -1410,18 +1951,35 @@ for a double click. */
 
     const resolved = finalizeDerivedTarget(base, editable);
     focusElement(editable);
+    const valueBefore = getEditableValue(editable);
 
     if (params.clear) {
       clearEditableValue(editable);
     }
 
     const text = String(params.text ?? '');
-    for (const character of text) {
-      runKeyAction(editable, character, params.modifiers);
+    const characters = [...text];
+    for (let index = 0; index < characters.length; index += 1) {
+      runKeyAction(editable, characters[index], params.modifiers);
+      if ((index + 1) % TYPE_YIELD_EVERY === 0 && index + 1 < characters.length) {
+        await yieldToEventLoop();
+        assertInputActive(params);
+      }
+    }
+
+    // Programmatic edits reset the browser's change baseline, so the change a
+    // user would cause by leaving or submitting the field never fires itself.
+    // Focus stays put so suggestion lists opened by typing remain open.
+    if (
+      (editable instanceof HTMLInputElement || editable instanceof HTMLTextAreaElement) &&
+      getEditableValue(editable) !== valueBefore
+    ) {
+      editable.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     if (params.submit) {
-      submitElement(editable);
+      const form = editable.closest('form');
+      if (form) form.requestSubmit();
     }
 
     return {
@@ -1477,9 +2035,9 @@ mode:
     const base = resolveActionableTarget(params.target, {
       pointer: false,
       recoverStale: params.recoverStale === true,
-      prefer: (element) => getEditableTarget(element) !== null,
+      prefer: (element) => getFillTarget(element) !== null,
     });
-    const editable = getEditableTarget(base.element);
+    const editable = getFillTarget(base.element);
     if (!editable) {
       throw createInputError('INPUT_INVALID_TARGET', 'Target is not an editable control.', {
         elementRef: rememberElement(base.element),
@@ -1488,9 +2046,29 @@ mode:
     }
 
     const resolved = finalizeDerivedTarget(base, editable);
+    const inputType = editable instanceof HTMLInputElement ? editable.type.toLowerCase() : '';
+    const structured = STRUCTURED_FILL_TYPES.has(inputType);
+    const requestedValue = String(params.value ?? '');
+    let value = requestedValue;
+    if (structured) {
+      const normalized = normalizeStructuredValue(inputType, requestedValue);
+      if (normalized === null) {
+        throw createInputError(
+          'INPUT_VALUE_REJECTED',
+          `The ${inputType} input cannot hold "${requestedValue.slice(0, 60)}". Use ${STRUCTURED_FILL_FORMATS[inputType]}.`,
+          {
+            elementRef: rememberElement(editable),
+            inputType,
+            requested: requestedValue.slice(0, 200),
+            expectedFormat: STRUCTURED_FILL_FORMATS[inputType],
+            notDispatched: true,
+          }
+        );
+      }
+      value = normalized;
+    }
     focusElement(editable);
 
-    const value = String(params.value ?? '');
     const requestedMode = params.mode || 'auto';
     let usedMode = 'setter';
 
@@ -1528,10 +2106,12 @@ mode:
         editable.dispatchEvent(new Event('change', { bubbles: true }));
       }
 
-      // auto mode: verify value stuck, fallback to keystrokes if not
+      // auto mode: verify value stuck, fallback to keystrokes if not. Date,
+      // range and color inputs take no keystroke text, so they never fall back.
       if (
         requestedMode === 'auto' &&
         usedMode !== 'rich-text' &&
+        !structured &&
         getEditableValue(editable) !== value
       ) {
         usedMode = 'keystrokes-fallback';
@@ -1546,13 +2126,196 @@ mode:
     // page-level Enter still reaches the field. React's onBlur listens to focusout.
     dispatchBlurSignals(editable);
 
+    const actualValue = getEditableValue(editable);
+    if (usedMode !== 'rich-text' && !fillValueMatches(editable, value, actualValue)) {
+      throw createInputError(
+        'INPUT_VALUE_REJECTED',
+        `The field did not keep the value: it holds "${actualValue.slice(0, 60)}" instead of "${value.slice(0, 60)}".${structured ? ` Use ${STRUCTURED_FILL_FORMATS[inputType]}.` : ' Inspect the field for a mask, length limit, or custom widget.'}`,
+        {
+          elementRef: rememberElement(editable),
+          ...(inputType ? { inputType } : {}),
+          requested: value.slice(0, 200),
+          actual: actualValue.slice(0, 200),
+          mode: usedMode,
+        }
+      );
+    }
+
     return {
       elementRef: rememberElement(editable),
-      value: getEditableValue(editable),
+      value: actualValue,
+      ...(value !== requestedValue ? { normalizedValue: value } : {}),
       mode: usedMode,
       resolution: resolved.resolution,
       execution: getExecutionMetadata('dom', resolved.point),
     };
+  }
+
+  /** Input types whose value has a fixed format the browser sanitizes. */
+  const STRUCTURED_FILL_TYPES = new Set([
+    'date',
+    'datetime-local',
+    'month',
+    'week',
+    'time',
+    'number',
+    'range',
+    'color',
+  ]);
+
+  const STRUCTURED_FILL_FORMATS: Readonly<Record<string, string>> = Object.freeze({
+    date: 'YYYY-MM-DD',
+    'datetime-local': 'YYYY-MM-DDTHH:MM',
+    month: 'YYYY-MM',
+    week: 'YYYY-Www',
+    time: 'HH:MM in 24-hour time',
+    number: 'a plain number such as 1234.5',
+    range: 'a number within the input min and max',
+    color: '#rrggbb',
+  });
+
+  /** Fill accepts editable text controls plus color and range inputs. */
+  function getFillTarget(
+    element: Element
+  ): HTMLInputElement | HTMLTextAreaElement | HTMLElement | null {
+    const editable = getEditableTarget(element);
+    if (editable) return editable;
+    const isValueInput = (candidate: Element | null): candidate is HTMLInputElement =>
+      candidate instanceof HTMLInputElement &&
+      ['color', 'range'].includes(candidate.type.toLowerCase());
+    if (isValueInput(element)) return element;
+    const nested =
+      element instanceof HTMLElement
+        ? element.querySelector('input[type="color"], input[type="range"]')
+        : null;
+    return isValueInput(nested) ? nested : null;
+  }
+
+  function padNumber(value: number, width = 2): string {
+    return String(value).padStart(width, '0');
+  }
+
+  /** Parse a human date that names a four-digit year. Numeric day/month
+orders are accepted only when they cannot be read both ways. */
+  function parseLooseDate(value: string): Date | null {
+    const numeric = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(value);
+    if (numeric) {
+      const first = Number(numeric[1]);
+      const second = Number(numeric[2]);
+      const year = Number(numeric[3]);
+      let month: number;
+      let day: number;
+      if (first > 12 && second <= 12) [day, month] = [first, second];
+      else if (second > 12 && first <= 12) [month, day] = [first, second];
+      else if (first === second) [month, day] = [first, second];
+      else return null;
+      const date = new Date(year, month - 1, day);
+      return date.getMonth() === month - 1 && date.getDate() === day ? date : null;
+    }
+    if (!/\d{4}/.test(value)) return null;
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : new Date(parsed);
+  }
+
+  function parseLooseTime(value: string): string | null {
+    const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(?:([ap])\.?\s?m\.?)?$/i.exec(value);
+    if (!match) return null;
+    let hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    const meridiem = match[4]?.toLowerCase();
+    if (meridiem) {
+      if (hours < 1 || hours > 12) return null;
+      hours = (hours % 12) + (meridiem === 'p' ? 12 : 0);
+    }
+    if (hours > 23 || minutes > 59) return null;
+    const seconds = match[3] === undefined ? '' : `:${match[3]}`;
+    return `${padNumber(hours)}:${padNumber(minutes)}${seconds}`;
+  }
+
+  function normalizeColorValue(value: string): string | null {
+    if (/^#[0-9a-f]{6}$/i.test(value)) return value.toLowerCase();
+    if (/^#[0-9a-f]{3}$/i.test(value)) {
+      return `#${[...value.slice(1)].map((digit) => digit + digit).join('')}`.toLowerCase();
+    }
+    const canvas =
+      typeof document.createElement === 'function' ? document.createElement('canvas') : null;
+    const context = (canvas as HTMLCanvasElement | null)?.getContext?.('2d');
+    if (!context) return null;
+    const sentinel = '#010203';
+    context.fillStyle = sentinel;
+    context.fillStyle = value;
+    const resolved = String(context.fillStyle);
+    if (resolved === sentinel && value.toLowerCase() !== sentinel) return null;
+    return /^#[0-9a-f]{6}$/.test(resolved) ? resolved : null;
+  }
+
+  /** Convert a requested value to the wire format of a structured input, or
+null when it cannot be read unambiguously. */
+  function normalizeStructuredValue(type: string, raw: string): string | null {
+    const value = raw.trim();
+    if (!value) return '';
+    switch (type) {
+      case 'date': {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+        const date = parseLooseDate(value);
+        return date
+          ? `${date.getFullYear()}-${padNumber(date.getMonth() + 1)}-${padNumber(date.getDate())}`
+          : null;
+      }
+      case 'datetime-local': {
+        if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?$/.test(value)) {
+          return value.replace(' ', 'T');
+        }
+        const date = parseLooseDate(value);
+        return date
+          ? `${date.getFullYear()}-${padNumber(date.getMonth() + 1)}-${padNumber(date.getDate())}T${padNumber(date.getHours())}:${padNumber(date.getMinutes())}`
+          : null;
+      }
+      case 'month': {
+        if (/^\d{4}-\d{2}$/.test(value)) return value;
+        const date = parseLooseDate(value) ?? parseLooseDate(`1 ${value}`);
+        return date ? `${date.getFullYear()}-${padNumber(date.getMonth() + 1)}` : null;
+      }
+      case 'week':
+        return /^\d{4}-w\d{2}$/i.test(value) ? value.toUpperCase() : null;
+      case 'time':
+        return parseLooseTime(value);
+      case 'number':
+      case 'range': {
+        const compact = value.replace(/[\s,_]/g, '');
+        return /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(compact)
+          ? compact.replace(/^\+/, '')
+          : null;
+      }
+      case 'color':
+        return normalizeColorValue(value);
+      default:
+        return value;
+    }
+  }
+
+  /** Whether a filled field kept the requested value. Text fields may be
+reformatted by masks (spacing, punctuation, case) as long as every letter and
+digit survives in order; structured inputs must hold the exact value. */
+  function fillValueMatches(element: Element, requested: string, actual: string): boolean {
+    if (actual === requested) return true;
+    const type = element instanceof HTMLInputElement ? element.type.toLowerCase() : '';
+    if (STRUCTURED_FILL_TYPES.has(type)) {
+      if (type === 'number' || type === 'range') {
+        return requested !== '' && actual !== '' && Number(actual) === Number(requested);
+      }
+      if (type === 'color') return actual.toLowerCase() === requested.toLowerCase();
+      const trimSeconds = (text: string) => text.replace(/:00(\.0+)?$/, '');
+      return trimSeconds(actual) === trimSeconds(requested);
+    }
+    const compact = (text: string) =>
+      text
+        .normalize('NFKC')
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]/gu, '');
+    const wanted = compact(requested);
+    const kept = compact(actual);
+    return wanted ? kept.includes(wanted) : kept === '';
   }
 
   /** Send one keyboard interaction to the currently focused or targeted element,
@@ -1565,11 +2328,8 @@ optionally holding the key down for holdMs before keyup. */
             recoverStale: params.recoverStale === true,
           })
         : {
-            element:
-              document.activeElement instanceof Element ? document.activeElement : document.body,
-            point: getViewportPoint(
-              document.activeElement instanceof Element ? document.activeElement : document.body
-            ),
+            element: deepActiveElement() ?? document.body,
+            point: getViewportPoint(deepActiveElement() ?? document.body),
             resolution: {
               strategy: 'elementRef',
               candidateCount: 1,
@@ -1579,7 +2339,14 @@ optionally holding the key down for holdMs before keyup. */
               recovered: false,
             } as InputResolutionMetadata,
           };
-    const target = resolved.element;
+    // A targeted wrapper that cannot take focus forwards keys to its field.
+    const target =
+      isEditableElement(resolved.element) ||
+      (typeof resolved.element.matches === 'function' &&
+        resolved.element.matches(FOCUSABLE_SELECTOR)) ||
+      resolved.element === document.body
+        ? resolved.element
+        : (getEditableTarget(resolved.element) ?? resolved.element);
     focusElement(target);
     const key = String(params.key ?? '');
     if (!key) {
@@ -1735,7 +2502,7 @@ optionally holding the key down for holdMs before keyup. */
     const modifiers = normalizeModifierState(params.modifiers);
     const duration = clamp(params.duration ?? 0, 0, 5000);
 
-    movePointerTo(element, point, modifiers);
+    movePointerTo(getPointerDispatchTarget(resolved), point, modifiers);
 
     const ref = rememberElement(element);
     if (duration > 0) {
@@ -1793,34 +2560,32 @@ sortable lists, sliders, and canvases listen for. */
       recoverStale: params.recoverStale === true,
     });
     const source = sourceResolved.element;
-    const sourcePoint = sourceResolved.point;
+    const destinationResolved = resolveActionableTarget(params.destination, {
+      pointer: true,
+      recoverStale: params.recoverStale === true,
+    });
+    const destination = destinationResolved.element;
+    // Scrolling to the destination can move the source away. Bring it back
+    // with the smallest scroll, then read both positions before pressing, so
+    // libraries that drop by pointer delta land on the destination.
+    let sourceState = inspectActionability(source);
+    if (!sourceState.inViewport) {
+      source.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+      sourceResolved.resolution.scrolled = true;
+      sourceState = inspectActionability(source);
+    }
+    const destinationState = inspectActionability(destination);
+    const sourcePoint = sourceState.point;
+    const destPoint = destinationState.point;
+    const pressTarget = getPointerDispatchTarget({ ...sourceResolved, hit: sourceState.hit });
     const offsetX = Number(params.offsetX) || 0;
     const offsetY = Number(params.offsetY) || 0;
     const native = isNativeDragSource(source);
 
-    movePointerTo(source, sourcePoint, NO_MODIFIERS);
-    const pressed = pressMouseButton(source, sourcePoint, 'left', 1, NO_MODIFIERS);
-    if (pressed.focusAllowed) focusForPointerPress(source);
+    movePointerTo(pressTarget, sourcePoint, NO_MODIFIERS);
+    const pressed = pressMouseButton(pressTarget, sourcePoint, 'left', 1, NO_MODIFIERS);
+    if (pressed.focusAllowed) focusForPointerPress(pressTarget);
 
-    let destinationResolved;
-    try {
-      destinationResolved = resolveActionableTarget(params.destination, {
-        pointer: true,
-        recoverStale: params.recoverStale === true,
-      });
-    } catch (error) {
-      releaseMouseButton(
-        source,
-        sourcePoint,
-        'left',
-        1,
-        NO_MODIFIERS,
-        pressed.mouseEventsSuppressed
-      );
-      throw error;
-    }
-    const destination = destinationResolved.element;
-    const destPoint = destinationResolved.point;
     const endPoint = { x: destPoint.x + offsetX, y: destPoint.y + offsetY };
 
     if (native) {
@@ -1845,7 +2610,7 @@ sortable lists, sliders, and canvases listen for. */
         pointerElement = destination;
       } else {
         releaseMouseButton(
-          source,
+          pressTarget,
           sourcePoint,
           'left',
           1,
@@ -1855,7 +2620,7 @@ sortable lists, sliders, and canvases listen for. */
       }
     } else {
       const steps = 10;
-      let current = source;
+      let current = pressTarget;
       let currentPoint = sourcePoint;
       try {
         for (let step = 1; step <= steps; step += 1) {
@@ -2162,8 +2927,8 @@ This helper performs no click, typing, value setting, or drag mutation. */
         elementRef: ref,
       });
     }
-    if (document.activeElement !== element) {
-      const active = document.activeElement;
+    if (deepActiveElement() !== element) {
+      const active = deepActiveElement();
       throw createInputError(
         'INPUT_FOCUS_CHANGED',
         'Focus moved away from the native text target.',
@@ -2509,6 +3274,7 @@ to `timeoutMs`. Saves agents a separate wait call plus a retry round trip. */
     const deadline = start + Math.max(0, options.timeoutMs);
     for (;;) {
       options.assertActive?.();
+      const attemptStarted = Date.now();
       try {
         const resolved = resolveActionableTarget(target, options);
         if (hasRunningAnimation(resolved.element) && Date.now() < deadline) {
@@ -2531,7 +3297,14 @@ to `timeoutMs`. Saves agents a separate wait call plus a retry round trip. */
           throw error;
         }
       }
+      // On a page that mutates constantly, every mutation would trigger
+      // another full resolve. Space attempts by twice the last scan's cost,
+      // so a 50 ms scan runs at most about every 100 ms instead of back to back.
+      const scanMs = Date.now() - attemptStarted;
+      const resumeAt = Math.min(deadline, Date.now() + Math.max(16, scanMs * 2));
       await waitForDomActivity(Math.min(WAIT_POLL_MS, deadline - Date.now()));
+      const gap = resumeAt - Date.now();
+      if (gap > 0) await sleep(gap);
     }
   }
 
@@ -2547,8 +3320,10 @@ to `timeoutMs`. Saves agents a separate wait call plus a retry round trip. */
   }
 
   function visibleDialogs(): Element[] {
-    return querySelectorAllDeepNative(DIALOG_SELECTOR).filter((element) =>
-      isElementVisible(element)
+    // One scan cache shares closed-shadow-root lookups across the walk; this
+    // runs twice per observed action.
+    return withDomScanCache(() =>
+      querySelectorAllDeepNative(DIALOG_SELECTOR).filter((element) => isElementVisible(element))
     );
   }
 
@@ -2899,6 +3674,11 @@ action as exact refs, so the action itself stays synchronous and atomic. */
           source.details && typeof source.details === 'object' && !Array.isArray(source.details)
             ? (source.details as Record<string, unknown>)
             : {};
+        // Validation that fails before any event reached the page is certain.
+        if (details.notDispatched === true) {
+          aftermath.dispatch = 'not_started';
+          delete details.notDispatched;
+        }
         throw Object.assign(
           new Error(typeof source.message === 'string' ? source.message : String(error)),
           {

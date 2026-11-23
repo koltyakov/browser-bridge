@@ -39,6 +39,8 @@ export type TabBoundRequestDependencies = {
   ) => Promise<ResolvedTabTarget>;
   ensureContentScript: (tabId: number) => Promise<void>;
   assertNoDialog?: (tabId: number) => void;
+  /** Tabs this tab opened since a time (popups, target=_blank links). */
+  tabsOpenedBy?: (tabId: number, sinceMs: number) => Array<{ tabId: number; url: string }>;
   /** Optional page request tracking for observed input (see content-input). */
   activitySignals?: {
     install: (tabId: number, frameId: number, channel: string) => Promise<boolean>;
@@ -297,6 +299,7 @@ export async function handleTabBoundRequest(
   let dispatchSent = false;
   const execute = async (): Promise<BridgeResponse> => {
     assertAccess();
+    const dispatchedAt = Date.now();
     const timeoutMs = getContentScriptTimeout(
       request.method,
       payload,
@@ -373,6 +376,7 @@ export async function handleTabBoundRequest(
     }
     const staleOutcome = getStaleRecoveryOutcome(response);
     if (staleOutcome) dependencies.recordStaleRecovery?.(staleOutcome, request.method);
+    response = withOpenedTabs(response, request.method, target.tabId, dispatchedAt, dependencies);
     return createSuccess(request.id, markInputExecution(response, autoSelection, guarded), {
       method: request.method,
       ...(request.method === 'dom.get_accessibility_tree' && payload.source === 'dom'
@@ -403,6 +407,28 @@ export async function handleTabBoundRequest(
       aftermath.observation = { status: 'interrupted', reason: 'action_interrupted' };
     throw inputAftermathError(error, aftermath);
   }
+}
+
+/** Report tabs an input action opened (window.open, target=_blank, a
+middle click) in effects.newTabs, so the agent can switch to the popup
+instead of reading the unchanged opener. */
+export function withOpenedTabs(
+  response: unknown,
+  method: string,
+  tabId: number,
+  sinceMs: number,
+  dependencies: Pick<TabBoundRequestDependencies, 'tabsOpenedBy'>
+): unknown {
+  if (!method.startsWith('input.') || !dependencies.tabsOpenedBy) return response;
+  if (!response || typeof response !== 'object') return response;
+  const opened = dependencies.tabsOpenedBy(tabId, sinceMs);
+  if (!opened.length) return response;
+  const record = response as Record<string, unknown>;
+  const effects =
+    record.effects && typeof record.effects === 'object'
+      ? (record.effects as Record<string, unknown>)
+      : {};
+  return { ...record, effects: { ...effects, newTabs: opened.slice(0, 5), changed: true } };
 }
 
 /** Reads that also search child frames (merged into the top frame's result). */
@@ -495,12 +521,76 @@ export async function resolveContentFrame(
       return false;
     }
   };
+  // Probe child frames in parallel and take the first match in frame order,
+  // so a page with many frames costs one probe timeout instead of one each.
+  const probeChildren = async (refresh: boolean): Promise<number | null> => {
+    const childFrames = (await frames.listFrames(tabId, refresh ? { refresh: true } : {})).filter(
+      (frame) => frame.frameId !== 0
+    );
+    const found = await Promise.all(childFrames.map((frame) => probe(frame.frameId)));
+    const index = found.indexOf(true);
+    return index >= 0 ? childFrames[index].frameId : null;
+  };
   if (await probe(0)) return 0;
-  const childFrames = (await frames.listFrames(tabId)).filter((frame) => frame.frameId !== 0);
-  for (const frame of childFrames) {
-    if (await probe(frame.frameId)) return frame.frameId;
+  const child = await probeChildren(false);
+  if (child !== null) return child;
+  // An action that may auto-wait can target an iframe that loads after the
+  // first enumeration. Look once more with a fresh frame list.
+  if (Number(payload.timeoutMs) > 0) {
+    await new Promise((resolve) => setTimeout(resolve, LATE_FRAME_RECHECK_MS));
+    if (await probe(0)) return 0;
+    const late = await probeChildren(true);
+    if (late !== null) return late;
   }
   return 0;
+}
+
+/** Pause before re-enumerating frames for a target that may be in a late iframe. */
+const LATE_FRAME_RECHECK_MS = 300;
+
+const PAGE_TEXT_MAX_BUDGET = 100_000;
+
+/** Window of merged top-frame and child-frame text at an offset. The top
+frame already returned its own window; child sections follow the top
+frame's full text in the merged stream. */
+function mergeOffsetPageText(
+  top: Record<string, unknown>,
+  usable: Array<{ frameId: number; result: Record<string, unknown> }>,
+  offset: number,
+  budget: number,
+  metadata: { sourceTruncated: boolean; frameMetadata: Record<string, unknown> }
+): Record<string, unknown> {
+  const topLength = Number(top.length ?? 0);
+  const topValue = typeof top.value === 'string' ? top.value.replace(/…$/, '') : '';
+  const frameText = usable
+    .filter((entry) => typeof entry.result.value === 'string' && entry.result.value)
+    .map((entry) => `[frame ${entry.frameId}]\n${String(entry.result.value)}`)
+    .join('\n');
+  const totalLength = topLength + (frameText ? 1 + frameText.length : 0);
+  const room = budget - topValue.length;
+  const frameStart = Math.max(0, offset - topLength - 1);
+  const framePart =
+    room > 0 && frameText && offset + topValue.length >= topLength
+      ? frameText.slice(frameStart, frameStart + room)
+      : '';
+  const value = (topValue && framePart ? `${topValue}\n${framePart}` : topValue || framePart).slice(
+    0,
+    budget
+  );
+  const end = Math.min(totalLength, offset + value.length);
+  const rest: Record<string, unknown> = { ...top };
+  delete rest.nextOffset;
+  return {
+    ...rest,
+    value,
+    length: totalLength,
+    offset,
+    omitted: Math.max(0, totalLength - end),
+    truncated: metadata.sourceTruncated || end < totalLength,
+    ...(end < totalLength ? { nextOffset: end } : {}),
+    frames: usable.length,
+    ...metadata.frameMetadata,
+  };
 }
 
 /** Merge frame reads under one response budget. Shell matches must not hide
@@ -524,13 +614,30 @@ async function mergeChildFrameResults(
     return topResponse;
   const childFrames = (await frames.listFrames(tabId)).filter((frame) => frame.frameId !== 0);
   if (!childFrames.length) return topResponse;
+  // An offset addresses the merged text, so child frames read from their
+  // start, far enough to fill the window after the top frame's text.
+  const textOffset = isPageText ? Math.max(0, Number(params.offset) || 0) : 0;
+  const childMessage =
+    isPageText && textOffset > 0
+      ? {
+          ...message,
+          params: {
+            ...params,
+            offset: 0,
+            textBudget: Math.min(
+              PAGE_TEXT_MAX_BUDGET,
+              textOffset + (Number(params.textBudget) || 8000)
+            ),
+          },
+        }
+      : message;
   const childResults = await Promise.all(
     childFrames.map(async (frame) => {
       try {
         const result = await frames.sendFrameMessage(
           tabId,
           frame.frameId,
-          message,
+          childMessage,
           FRAME_PROBE_TIMEOUT_MS
         );
         return result && typeof result === 'object' && !('error' in result)
@@ -552,6 +659,12 @@ async function mergeChildFrameResults(
     usable.reduce((total, entry) => total + Number(entry.result.scanned ?? 0), 0);
   const sourceTruncated =
     incomplete || top.truncated === true || usable.some((entry) => entry.result.truncated === true);
+  if (isPageText && textOffset > 0) {
+    return mergeOffsetPageText(top, usable, textOffset, Number(params.textBudget) || 8000, {
+      sourceTruncated,
+      frameMetadata,
+    });
+  }
   if (isPageText) {
     const budget = Number(params.textBudget) || 8000;
     const sections = usable

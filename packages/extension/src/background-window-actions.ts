@@ -63,7 +63,7 @@ export function createWindowActionsController(
       throw new Error(
         "Update the other browser's extension and native host to control its window."
       );
-    const port = state.nativePort;
+    const port = state.nativePort ?? state.pendingNativePort;
     if (!port) throw new Error('Native host is disconnected.');
     if (pending.size >= 16)
       throw new Error('Too many window actions are pending. Try again shortly.');

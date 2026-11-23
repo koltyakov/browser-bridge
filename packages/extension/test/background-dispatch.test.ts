@@ -2176,7 +2176,7 @@ test('background dispatch returns evaluation failures from page.evaluate', async
   );
 
   assert.equal(response.ok, false);
-  assert.equal(response.error.code, ERROR_CODES.INTERNAL_ERROR);
+  assert.equal(response.error.code, ERROR_CODES.EVALUATION_FAILED);
   assert.equal(response.error.message, 'ReferenceError: missingValue is not defined');
   assert.equal(response.meta?.method, 'page.evaluate');
 });
@@ -4105,4 +4105,43 @@ test('background dispatch rejects invalid native requests before method dispatch
   assert.equal(response.id, 'dispatch-invalid-method');
   assert.equal(response.error.code, ERROR_CODES.INVALID_REQUEST);
   assert.match(response.error.message, /Unsupported method: not\.a\.real\.method/);
+});
+
+test('a load wait on a complete tab follows a navigation that starts just after the call', async () => {
+  const activeTab = createDispatchActiveTab({
+    id: 92,
+    title: 'Form',
+    url: 'https://example.com/form',
+    status: 'complete',
+  });
+  const { loaded } = await loadEnabledDispatchBackground({
+    queryLabel: 'test-background-dispatch-wait-for-load-arming',
+    activeTab,
+    chromeOverrides: {
+      tabs: {
+        async get() {
+          return { ...activeTab };
+        },
+      },
+    },
+  });
+  const responsePromise = loaded.dispatch(
+    createRequest({
+      id: 'dispatch-wait-for-load-arming',
+      method: 'page.wait_for_load_state',
+      params: { timeoutMs: 2000 },
+    })
+  );
+  const tabEvents = getTabEvents(loaded);
+  await waitForListenerCount(() => tabEvents.onUpdated.listeners.length, 2);
+  tabEvents.onUpdated.dispatch(92, { status: 'loading' }, { ...activeTab, status: 'loading' });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  tabEvents.onUpdated.dispatch(
+    92,
+    { status: 'complete' },
+    { ...activeTab, title: 'Thanks', url: 'https://example.com/thanks', status: 'complete' }
+  );
+  const response = await responsePromise;
+  if (!response.ok) assert.fail(response.error.message);
+  assert.equal((response.result as { url?: string }).url, 'https://example.com/thanks');
 });

@@ -25,6 +25,10 @@
     throw new Error('Browser Bridge helpers and registry must load before content-patch.js.');
   }
 
+  const isNodeAttached =
+    (contentHelpers as { isNodeAttached?: (node: Node | null | undefined) => boolean })
+      .isNodeAttached ?? ((node: Node | null | undefined) => Boolean(node?.isConnected));
+
   const {
     rememberElement,
     createContentId,
@@ -263,15 +267,90 @@
     }));
   }
 
-  /** Roll back a previously applied patch if it still exists. */
-  function rollbackPatch(patchId: string): { patchId: string; rolledBack: boolean } {
+  /** State a patch restores, as comparable keys: style:<property>,
+class:<name>, attr:<name>, or text. */
+  function getPatchKeys(patch: StoredPatch): Set<string> {
+    const keys = new Set<string>();
+    if (patch.kind === 'style') {
+      for (const property of patch.previous.keys()) keys.add(`style:${property}`);
+      for (const [property, shorthand] of patch.shorthands) {
+        keys.add(`style:${property}`);
+        for (const longhand of shorthand.longhands) keys.add(`style:${longhand}`);
+      }
+      return keys;
+    }
+    if (patch.operation === 'set_text') keys.add('text');
+    // An add/remove that found the class already in place restores nothing.
+    if (patch.previous.toggledClass && patch.previous.changed !== false) {
+      keys.add(`class:${patch.previous.toggledClass}`);
+    }
+    for (const name of Object.keys(patch.previous.attributes || {})) keys.add(`attr:${name}`);
+    return keys;
+  }
+
+  /** Whether two patches on one element change overlapping state. Writing the
+whole class or style attribute overlaps every class or style patch. */
+  function patchesOverlap(first: Set<string>, second: Set<string>): boolean {
+    const covers = (attributeKeys: Set<string>, otherKeys: Set<string>, attribute: string) =>
+      attributeKeys.has(`attr:${attribute}`) &&
+      [...otherKeys].some((key) => key.startsWith(`${attribute}:`));
+    return (
+      [...first].some((key) => second.has(key)) ||
+      covers(first, second, 'class') ||
+      covers(second, first, 'class') ||
+      covers(first, second, 'style') ||
+      covers(second, first, 'style')
+    );
+  }
+
+  /** Later active patches on the same element that change state this patch
+restores. Rolling back under them would restore a value they captured as
+their own previous value, so the page would never return to its original. */
+  function findOverlappingLaterPatches(patchId: string): string[] {
+    const entries = [...getPatchRegistry().entries()];
+    const index = entries.findIndex(([id]) => id === patchId);
+    if (index < 0) return [];
+    const patch = entries[index][1];
+    const keys = getPatchKeys(patch);
+    return entries
+      .slice(index + 1)
+      .filter(
+        ([, other]) => other.element === patch.element && patchesOverlap(keys, getPatchKeys(other))
+      )
+      .map(([otherId]) => otherId);
+  }
+
+  /** Roll back a previously applied patch if it still exists. Patches that
+overlap a later active patch must be rolled back newest first. */
+  function rollbackPatch(patchId: string): {
+    patchId: string;
+    rolledBack: boolean;
+    reason?: string;
+  } {
     const patchRegistry = getPatchRegistry();
     const patch = patchRegistry.get(patchId);
     if (!patch) {
       return { patchId, rolledBack: false };
     }
+    const overlapping = findOverlappingLaterPatches(patchId);
+    if (overlapping.length) {
+      throw Object.assign(
+        new Error(
+          `Patch ${patchId} overlaps ${overlapping.length} later patch${overlapping.length > 1 ? 'es' : ''} on the same element (newest ${overlapping[overlapping.length - 1]}). Roll back newest first.`
+        ),
+        {
+          code: 'INVALID_REQUEST',
+          details: {
+            patchId,
+            rollBackFirst: [...overlapping].reverse().slice(0, 10),
+            overlappingCount: overlapping.length,
+          },
+        }
+      );
+    }
 
     const element = patch.element;
+    const attached = isNodeAttached(element);
     if (patch.kind === 'style') {
       const htmlElement = element as HTMLElement;
       const present = new Set(Array.from(htmlElement.style));
@@ -337,6 +416,9 @@
     }
 
     patchRegistry.delete(patchId);
+    // The element left the document, so the page shows neither the patch nor
+    // its rollback. Report that instead of claiming the page was restored.
+    if (!attached) return { patchId, rolledBack: false, reason: 'element_detached' };
     return { patchId, rolledBack: true };
   }
 

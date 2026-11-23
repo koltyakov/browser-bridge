@@ -45,9 +45,19 @@ func register(c config, role string) (net.Conn, *bufio.Reader, error) {
 }
 
 func registerConnection(c config, role string) (net.Conn, *bufio.Reader, object, error) {
+	clientID := ""
+	if role == "agent" {
+		clientID = "go_" + uniqueID()
+	}
+	return registerConnectionAs(c, role, clientID)
+}
+
+// registerConnectionAs dials the daemon and registers with role and, for
+// agents, clientID. CLI, MCP and the native host share this one handshake.
+func registerConnectionAs(c config, role, clientID string) (net.Conn, *bufio.Reader, object, error) {
 	conn, err := c.dial()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, wrapDialError(err)
 	}
 	token, err := c.credential(role)
 	// Existing Node Unix-socket and named-pipe daemons rely on filesystem
@@ -63,7 +73,7 @@ func registerConnection(c config, role string) (net.Conn, *bufio.Reader, object,
 	w := wireWriter{out: conn}
 	registration := protocol.BridgeRegistration{Type: "register", Role: role, AuthToken: protocol.Optional[string]{Value: token, Set: true}}
 	if role == "agent" {
-		registration.ClientId = protocol.Optional[string]{Value: "go_" + uniqueID(), Set: true}
+		registration.ClientId = protocol.Optional[string]{Value: clientID, Set: true}
 	}
 	message, err := decodeObject(value(registration))
 	if err != nil {

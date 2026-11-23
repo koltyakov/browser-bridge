@@ -16,6 +16,7 @@ export const ERROR_CODES = Object.freeze({
   INPUT_UNSUPPORTED: 'INPUT_UNSUPPORTED',
   INPUT_INVALID_TARGET: 'INPUT_INVALID_TARGET',
   INPUT_FOCUS_CHANGED: 'INPUT_FOCUS_CHANGED',
+  INPUT_VALUE_REJECTED: 'INPUT_VALUE_REJECTED',
   OUTCOME_NOT_MET: 'OUTCOME_NOT_MET',
   DIALOG_BLOCKED: 'DIALOG_BLOCKED',
   DIALOG_NOT_OPEN: 'DIALOG_NOT_OPEN',
@@ -38,6 +39,10 @@ export const ERROR_CODES = Object.freeze({
   NATIVE_HOST_UNAVAILABLE: 'NATIVE_HOST_UNAVAILABLE',
   EXTENSION_DISCONNECTED: 'EXTENSION_DISCONNECTED',
   TIMEOUT: 'TIMEOUT',
+  EVALUATION_FAILED: 'EVALUATION_FAILED',
+  REQUEST_CANCELED: 'REQUEST_CANCELED',
+  BRIDGE_BUSY: 'BRIDGE_BUSY',
+  DAEMON_UNAVAILABLE: 'DAEMON_UNAVAILABLE',
 });
 
 /** Machine-actionable recovery hints keyed by error code. */
@@ -143,6 +148,11 @@ export const ERROR_RECOVERY: Readonly<
     alternativeMethod: 'dom.describe',
     hint: 'Focus moved away from the resolved editable target before native text dispatch. Inspect focus handlers or target the control that retained focus.',
   },
+  [ERROR_CODES.INPUT_VALUE_REJECTED]: {
+    retry: false,
+    alternativeMethod: 'dom.describe',
+    hint: 'The field did not keep the requested value, or the value does not fit the input type. Read details.actual and details.expectedFormat, then fill a value in that format or inspect the field for a mask or custom widget.',
+  },
   [ERROR_CODES.DIALOG_BLOCKED]: {
     retry: false,
     alternativeMethod: 'page.handle_dialog',
@@ -162,6 +172,24 @@ export const ERROR_RECOVERY: Readonly<
     retry: false,
     alternativeMethod: 'tabs.list',
     hint: 'Tab was closed or not found. Use tabs.list to find an available tab.',
+  },
+  [ERROR_CODES.EVALUATION_FAILED]: {
+    retry: false,
+    hint: 'The expression threw in the page. details.exception has the message. Fix the expression; the page may already have run part of it.',
+  },
+  [ERROR_CODES.REQUEST_CANCELED]: {
+    retry: false,
+    hint: 'The request was canceled before it finished, because it was canceled, its tab access was cleared, or its debugger session was replaced. Inspect postconditions before retrying a mutation.',
+  },
+  [ERROR_CODES.BRIDGE_BUSY]: {
+    retry: true,
+    retryAfterMs: 500,
+    hint: 'The bridge is at capacity with other requests. Nothing was dispatched; retry after retryAfterMs.',
+  },
+  [ERROR_CODES.DAEMON_UNAVAILABLE]: {
+    retry: true,
+    retryAfterMs: 1000,
+    hint: 'The bridge daemon was not reachable, so nothing was sent. Retry once; if it persists run bbx doctor and check daemon.log.',
   },
   [ERROR_CODES.TIMEOUT]: {
     retry: true,

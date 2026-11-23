@@ -643,3 +643,135 @@ test('document unload errors are recognized separately from missing receivers', 
     false
   );
 });
+
+test('a hung content-script injection times out and clears the shared check', async () => {
+  let injections = 0;
+  const chromeFake = createChromeFake({
+    tabs: {
+      sendMessage: async () => {
+        throw new Error('Could not establish connection. Receiving end does not exist.');
+      },
+    },
+    scripting: {
+      executeScript: async () => {
+        injections += 1;
+        // A hung renderer: Chrome never answers the first injection.
+        if (injections === 1) return new Promise(() => {});
+        return [];
+      },
+    },
+  });
+  const bridge = createContentScriptBridge(chromeFake as unknown as typeof chrome, {
+    contentScriptTimeoutMs: 20,
+    scriptInjectionTimeoutMs: 20,
+    isRestrictedAutomationUrl: () => false,
+  });
+  const shared = [bridge.ensureContentScript(5), bridge.ensureContentScript(5)];
+  for (const check of shared) {
+    await assert.rejects(check, (error: { code?: string }) => error.code === ERROR_CODES.TIMEOUT);
+  }
+  await bridge.ensureContentScript(5);
+  assert.equal(injections, 2, 'a later request retries instead of joining the hung injection');
+});
+
+test('frame discovery ranks answered frames first and routes refs past the fan-out cap', async () => {
+  const frames = Array.from({ length: 20 }, (_, index) => index);
+  const tagged = new Map([
+    [0, 'top0'],
+    [19, 'kid9'],
+  ]);
+  let injected: number[] = [];
+  const chromeFake = createChromeFake({
+    scripting: {
+      executeScript: async (config: { target: { frameIds?: number[] }; files?: string[] }) => {
+        if (config.files) {
+          injected = config.target.frameIds ?? [];
+          return [];
+        }
+        return frames.map((frameId) => ({ frameId, result: tagged.get(frameId) ?? null }));
+      },
+    },
+  });
+  const bridge = createContentScriptBridge(chromeFake as unknown as typeof chrome, {
+    contentScriptTimeoutMs: 100,
+    isRestrictedAutomationUrl: () => false,
+  });
+  const listed = await bridge.listFrames(3);
+  assert.equal(listed.length, 12);
+  assert.deepEqual(
+    listed.slice(0, 2).map((frame) => frame.frameId),
+    [0, 19]
+  );
+  assert.equal(injected.length, 12, 'injection is bounded');
+  assert.equal(await bridge.getFrameForRef(3, 'el_kid9_1'), 19);
+});
+
+test('a read interrupted by navigation is retried once on the new document', async () => {
+  let sends = 0;
+  let injections = 0;
+  const chromeFake = createChromeFake({
+    tabs: {
+      sendMessage: async () => {
+        sends += 1;
+        if (sends === 1)
+          throw new Error(
+            'The page keeping the extension port is moved into back/forward cache, so the message channel is closed.'
+          );
+        return { value: 'fresh' };
+      },
+    },
+    scripting: {
+      executeScript: async () => {
+        injections += 1;
+        return [];
+      },
+    },
+  });
+  const bridge = createContentScriptBridge(chromeFake as unknown as typeof chrome, {
+    contentScriptTimeoutMs: 100,
+    isRestrictedAutomationUrl: () => false,
+  });
+  const result = await bridge.sendTabMessage(
+    4,
+    { type: 'bridge.execute', method: 'page.get_text', params: {} },
+    1_000
+  );
+  assert.deepEqual(result, { value: 'fresh' });
+  assert.equal(sends, 2);
+  assert.equal(injections, 1);
+});
+
+test('another extension frame does not hide the known child frames', async () => {
+  let round = 0;
+  const chromeFake = createChromeFake({
+    scripting: {
+      executeScript: async (config: {
+        target: { allFrames?: boolean; frameIds?: number[] };
+        files?: string[];
+      }) => {
+        if (config.files) return [];
+        if (config.target.allFrames) {
+          round += 1;
+          if (round > 1)
+            throw new Error('Cannot access a chrome-extension:// URL of different extension');
+          return [
+            { frameId: 0, result: 'top0' },
+            { frameId: 4, result: 'kid4' },
+          ];
+        }
+        const [frameId] = config.target.frameIds ?? [];
+        return [{ frameId, result: frameId === 0 ? 'top0' : 'kid4' }];
+      },
+    },
+  });
+  const bridge = createContentScriptBridge(chromeFake as unknown as typeof chrome, {
+    contentScriptTimeoutMs: 100,
+    isRestrictedAutomationUrl: () => false,
+  });
+  assert.equal((await bridge.listFrames(6)).length, 2);
+  const again = await bridge.listFrames(6, { refresh: true });
+  assert.deepEqual(
+    again.map((frame) => frame.frameId),
+    [0, 4]
+  );
+});

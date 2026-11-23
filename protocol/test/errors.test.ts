@@ -21,6 +21,11 @@ const EXPECTED_ERROR_CODES: readonly string[] = [
   'INPUT_UNSUPPORTED',
   'INPUT_INVALID_TARGET',
   'INPUT_FOCUS_CHANGED',
+  'INPUT_VALUE_REJECTED',
+  'EVALUATION_FAILED',
+  'REQUEST_CANCELED',
+  'BRIDGE_BUSY',
+  'DAEMON_UNAVAILABLE',
   'OUTCOME_NOT_MET',
   'DIALOG_BLOCKED',
   'DIALOG_NOT_OPEN',
@@ -87,7 +92,13 @@ test('ERROR_RECOVERY marks exactly the retryable codes', () => {
     .map(([code]) => code)
     .sort();
 
-  assert.deepEqual(retryable, ['EXTENSION_DISCONNECTED', 'INTERNAL_ERROR', 'TIMEOUT']);
+  assert.deepEqual(retryable, [
+    'BRIDGE_BUSY',
+    'DAEMON_UNAVAILABLE',
+    'EXTENSION_DISCONNECTED',
+    'INTERNAL_ERROR',
+    'TIMEOUT',
+  ]);
 
   assert.equal(ERROR_RECOVERY[ERROR_CODES.TIMEOUT].retryAfterMs, 1000);
   assert.equal(ERROR_RECOVERY[ERROR_CODES.EXTENSION_DISCONNECTED].retryAfterMs, 3000);

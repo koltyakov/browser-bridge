@@ -20,7 +20,13 @@ func TestParseBrowserProfileArgsKeepsTopLevelBrowsers(t *testing.T) {
 		{[]string{"/usr/bin/python3", "--user-data-dir=/x"}, "", ""},
 	} {
 		got, ok := parseBrowserProfileArgs(tc.args)
-		if ok != (tc.browser != "") || got.browser != tc.browser || got.userDataDir != tc.dir {
+		// The parser cleans paths with the host's rules; Windows turns /home/a/p
+		// into \home\a\p, so compare against the same cleaning.
+		want := tc.dir
+		if want != "" {
+			want = filepath.Clean(want)
+		}
+		if ok != (tc.browser != "") || got.browser != tc.browser || got.userDataDir != want {
 			t.Errorf("%v => %+v %v", tc.args, got, ok)
 		}
 	}

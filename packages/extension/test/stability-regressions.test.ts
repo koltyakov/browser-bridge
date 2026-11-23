@@ -55,7 +55,15 @@ test('request lifetimes preserve cancellation in captured guards, isolate owners
     id: 'lifetime-b',
     meta: { ...first.meta, transport_owner: 'b' },
   });
-  assert.throws(() => requests.begin({ ...first, id: 'lifetime-c' }), /capacity/);
+  assert.throws(
+    () => requests.begin({ ...first, id: 'lifetime-c' }),
+    (error: { code?: string }) => error.code === 'BRIDGE_BUSY'
+  );
+  assert.throws(
+    () => requests.begin(first),
+    (error: { code?: string; details?: { reason?: string } }) =>
+      error.code === 'INVALID_REQUEST' && error.details?.reason === 'duplicate_request_id'
+  );
   requests.cancelOwner('a');
   assert.throws(guard, /canceled/);
   requests.guard('lifetime-b')();
@@ -67,6 +75,28 @@ test('request lifetimes preserve cancellation in captured guards, isolate owners
   finishOther();
   assert.equal(requests.size(), 0);
   assert.throws(requests.guard('untracked', Date.now() - 1), /expired/);
+});
+
+test('request slots long past their deadline are reclaimed instead of wedging admission', (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000_000 });
+  const requests = createRequestLifetimes(1, 30_000);
+  const wedged = createRequest({
+    id: 'wedged',
+    method: 'health.ping',
+    meta: { deadline_ms: 1_000_000 + 5_000 },
+  });
+  requests.begin(wedged);
+  const guard = requests.guard('wedged');
+  assert.throws(() => requests.begin({ ...wedged, id: 'next' }), /limit/);
+  t.mock.timers.tick(5_000 + 30_001);
+  const finishNext = requests.begin({
+    ...wedged,
+    id: 'next',
+    meta: { ...wedged.meta, deadline_ms: Date.now() + 60_000 },
+  });
+  assert.throws(guard, /canceled|expired/);
+  assert.equal(requests.size(), 1);
+  finishNext();
 });
 
 test('canceling a timed input sequence prevents its next mutation', async () => {

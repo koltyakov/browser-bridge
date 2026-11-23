@@ -350,8 +350,15 @@ func cliSummaryBody(response object, method string, now int64) object {
 		suffix := ""
 		if r.boolean("truncated") {
 			suffix = " (truncated)"
+			if next := r["nextOffset"]; next != nil && string(next) != "null" {
+				suffix = fmt.Sprintf(" (truncated; continue with offset %s)", next)
+			}
 		}
-		return done(fmt.Sprintf("%s: %s chars%s.", label, count, suffix), value(object{"text": cliStringValue(cliSlice(text, 500)), "length": value(length), "truncated": r["truncated"]}), true)
+		evidence := object{"text": cliStringValue(cliSlice(text, 500)), "length": value(length), "truncated": r["truncated"]}
+		if next := r["nextOffset"]; next != nil {
+			evidence["nextOffset"] = next
+		}
+		return done(fmt.Sprintf("%s: %s chars%s.", label, count, suffix), value(evidence), true)
 	}
 	if tabs, ok := arr("tabs"); ok {
 		page := r.object("pagination")

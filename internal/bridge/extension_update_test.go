@@ -91,3 +91,25 @@ func TestExtensionUpdateNativeControlMessagesRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestExtensionReloadIsGrantedWhenTheOnlyCallerDisconnects(t *testing.T) {
+	d := serviceTestDaemon(t)
+	extension := extensionUpdateTestPeer(t, d, "2.2.1", publishedExtensionID, true)
+	agent := serviceTestPeer(t, d, "agent")
+	d.route(agent, newRequest("dom.query", object{"selector": value("main")}, object{"target_extension": value(extension.id)}, 0))
+	_ = serviceNextMessage(t, extension)
+	d.requestExtensionReload(extension, "2.3.0")
+	if len(extension.out) != 0 {
+		t.Fatal("granted reload before the active call settled")
+	}
+	d.disconnect(agent)
+	sawApply := false
+	for len(extension.out) > 0 {
+		if serviceNextMessage(t, extension).text("type") == "extension.update_apply" {
+			sawApply = true
+		}
+	}
+	if !sawApply {
+		t.Fatal("reload stayed pending after the caller disconnected")
+	}
+}

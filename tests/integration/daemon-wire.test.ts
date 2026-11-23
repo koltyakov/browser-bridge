@@ -119,6 +119,35 @@ test('Go CLI timeout propagates a remapped cancellation without restarting the d
   }
 });
 
+test('Go daemon routes a request made during a browser reconnect to the returning extension', async () => {
+  const ctx = await startTestDaemon(0, { BBX_RECONNECT_WAIT_MS: '5000' });
+  const first = await connectFakeExtension(ctx);
+  const client = await connectTestClient(ctx);
+  try {
+    assert.equal((await client.request({ method: 'health.ping' })).ok, true);
+    first.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const waiting = client.request({ method: 'page.get_text' });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const second = await connectFakeExtension(ctx);
+    try {
+      // Registration or an access report re-routes waiting requests.
+      second.enableAccess();
+      const forwarded = await second.nextRequest();
+      assert.equal(forwarded.method, 'page.get_text');
+      second.respondOk(forwarded, { value: 'back' });
+      const response = await waiting;
+      assert.equal(response.ok, true);
+    } finally {
+      second.destroy();
+    }
+  } finally {
+    await client.close();
+    first.destroy();
+    await ctx.stop();
+  }
+});
+
 test('Go daemon merges extension health and clears pending requests on disconnect', async () => {
   const ctx = await startTestDaemon();
   const extension = await connectFakeExtension(ctx);

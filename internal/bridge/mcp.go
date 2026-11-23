@@ -52,6 +52,10 @@ func mcpRPCResult(id json.RawMessage, method, era string, result object) object 
 }
 
 func toolResult(response object, err error) object {
+	if isDaemonUnavailable(err) {
+		// Nothing was sent, so this is safe to retry, unlike a lost connection.
+		return mcpResponse(failure("", "DAEMON_UNAVAILABLE", err.Error()+". Nothing was sent to the browser; retry, and if it persists run bbx doctor."), "", nil)
+	}
 	if err != nil {
 		// A local cancellation, timeout, or transport failure can race with
 		// browser dispatch. There is no confirmed bridge result here, so the
@@ -257,7 +261,9 @@ func mcpServe(ctx context.Context, c config, input io.Reader, output io.Writer) 
 			select {
 			case semaphore <- struct{}{}:
 			default:
-				_ = writer.send(rpcError(id, -32603, "Too many concurrent MCP requests."))
+				// A busy tool result, not a protocol error: the agent sees the
+				// retry hint instead of a generic internal failure.
+				_ = mcpWriteToolResult(writer, id, era, mcpResponse(failure("", "BRIDGE_BUSY", "Too many concurrent MCP tool calls in this session. Nothing was sent; retry after a running call finishes."), "", nil))
 				continue
 			}
 			callCtx, callCancel := context.WithTimeout(requestCtx, 124*time.Second)

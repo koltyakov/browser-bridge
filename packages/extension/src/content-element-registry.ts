@@ -23,6 +23,7 @@
         isNodeAttached?: (node: Node | null | undefined) => boolean;
         querySelectorAllDeep?: (selector: string, root?: ParentNode) => Element[];
         querySelectorDeep?: (selector: string, root?: ParentNode) => Element | null;
+        querySelectorAllDeepNative?: (selector: string, root?: ParentNode) => Element[];
       };
     }
   ).__BBX_CONTENT_HELPERS__;
@@ -42,6 +43,7 @@
     ((selector: string) => [...document.querySelectorAll(selector)]);
   const queryDeep =
     contentHelpers.querySelectorDeep ?? ((selector: string) => document.querySelector(selector));
+  const queryAllDeepNative = contentHelpers.querySelectorAllDeepNative ?? queryAllDeep;
 
   /**
    * Short per-injection tag so refs stay compact (≈4 tokens instead of a
@@ -76,14 +78,73 @@
     budget: Budget;
   };
 
-  const elementRegistry = new Map<string, Element>();
+  /** Ref -> element map that does not keep removed DOM alive. A detached
+  subtree referenced only by old refs can be collected; its refs then read as
+  stale, which they already were. Engines without WeakRef keep strong refs. */
+  class WeakElementMap {
+    readonly #entries = new Map<string, WeakRef<Element> | Element>();
+    readonly #finalizer =
+      typeof FinalizationRegistry === 'function'
+        ? new FinalizationRegistry<string>((ref) => {
+            const held = this.#entries.get(ref);
+            if (held && this.#deref(held) === undefined) this.#entries.delete(ref);
+          })
+        : null;
+
+    #deref(held: WeakRef<Element> | Element): Element | undefined {
+      return typeof WeakRef === 'function' && held instanceof WeakRef
+        ? held.deref()
+        : (held as Element);
+    }
+
+    get size(): number {
+      return this.#entries.size;
+    }
+
+    get(ref: string): Element | undefined {
+      const held = this.#entries.get(ref);
+      if (!held) return undefined;
+      const element = this.#deref(held);
+      if (!element) this.#entries.delete(ref);
+      return element;
+    }
+
+    has(ref: string): boolean {
+      return this.get(ref) !== undefined;
+    }
+
+    set(ref: string, element: Element): this {
+      this.#entries.set(ref, typeof WeakRef === 'function' ? new WeakRef(element) : element);
+      this.#finalizer?.register(element, ref);
+      return this;
+    }
+
+    delete(ref: string): boolean {
+      return this.#entries.delete(ref);
+    }
+
+    *entries(): IterableIterator<[string, Element]> {
+      for (const [ref, held] of this.#entries) {
+        const element = this.#deref(held);
+        if (element) yield [ref, element];
+        else this.#entries.delete(ref);
+      }
+    }
+  }
+
+  const elementRegistry = new WeakElementMap();
   const reverseRegistry = new WeakMap<Element, string>();
 
   const elementDescriptors: Map<string, ElementDescriptor> = new Map();
   const patchRegistry = new Map<string, import('./content-types.js').StoredPatch>();
   const MAX_REGISTRY_SIZE = 5000;
   const ELEMENT_REGISTRY_PRUNE_BATCH_SIZE = 100;
-  const MAX_STALE_RECOVERY_CANDIDATES = 100;
+  /** Candidates compared during stale recovery. Candidates are pre-filtered by
+the attribute behind the strongest descriptor field, so this bounds work on
+pages with thousands of same-tag elements rather than typical pages. */
+  const MAX_STALE_RECOVERY_CANDIDATES = 5000;
+  /** Stale recovery fails fast instead of consuming the action's timeout. */
+  const STALE_RECOVERY_TIME_MS = 3000;
   const MAX_PATCH_REGISTRY_SIZE = 2000;
   let registryPruned = false;
 
@@ -274,8 +335,17 @@ length and two independent 32-bit hashes, never the source value. */
       .padStart(8, '0')}`;
   }
 
+  let cachedDocumentUrl: string | null = null;
+  let cachedDocumentUrlFingerprint = '';
+
+  /** URL fingerprint, recomputed only when the URL changes (SPA navigation). */
   function getCurrentDocumentUrl(): string {
-    return fingerprintDescriptorValue(document.URL || globalThis.location?.href || '');
+    const url = document.URL || globalThis.location?.href || '';
+    if (url !== cachedDocumentUrl) {
+      cachedDocumentUrl = url;
+      cachedDocumentUrlFingerprint = fingerprintDescriptorValue(url);
+    }
+    return cachedDocumentUrlFingerprint;
   }
 
   /** Resolve an explicit ref without changing its identity unless strict,
@@ -346,14 +416,26 @@ same-document recovery was explicitly requested. */
         }
       );
     }
-    const candidateNodes = queryAllDeep(descriptor.tag);
-    const evaluatedCount = Math.min(candidateNodes.length, MAX_STALE_RECOVERY_CANDIDATES);
-    const candidates = [];
-    for (let index = 0; index < evaluatedCount; index += 1) {
-      candidates.push(candidateNodes[index]);
+    let candidateNodes: Element[];
+    try {
+      candidateNodes = queryAllDeepNative(getRecoveryCandidateSelector(descriptor, strongFields));
+    } catch {
+      candidateNodes = [];
     }
-    const matches = candidates.filter((candidate) => descriptorMatches(candidate, descriptor));
-    if (candidateNodes.length > evaluatedCount) {
+    const started = Date.now();
+    let evaluatedCount = 0;
+    const matches: Element[] = [];
+    for (const candidate of candidateNodes) {
+      if (evaluatedCount >= MAX_STALE_RECOVERY_CANDIDATES) break;
+      if (evaluatedCount % 64 === 0 && Date.now() - started > STALE_RECOVERY_TIME_MS) break;
+      evaluatedCount += 1;
+      if (descriptorMatches(candidate, descriptor, strongFields)) {
+        matches.push(candidate);
+        // Two matches already prove ambiguity.
+        if (matches.length > 1) break;
+      }
+    }
+    if (matches.length < 2 && candidateNodes.length > evaluatedCount) {
       throw createRegistryError(
         'ELEMENT_AMBIGUOUS',
         'Stale reference recovery scan was incomplete; uniqueness could not be proven.',
@@ -410,18 +492,74 @@ same-document recovery was explicitly requested. */
     return [];
   }
 
-  function descriptorMatches(element: Element, descriptor: ElementDescriptor): boolean {
-    const current = describeElementIdentity(element);
-    const fields = getStrongDescriptorFields(descriptor);
-    return (
-      fields.length > 0 &&
-      fields.every(
+  /** Attribute selector that every element matching the strong fields has,
+so recovery does not compare every same-tag element on large pages. */
+  function getRecoveryCandidateSelector(descriptor: ElementDescriptor, fields: string[]): string {
+    const tag = /^[a-z][a-z0-9-]*$/i.test(descriptor.tag) ? descriptor.tag : '*';
+    const withAttributes = (attributes: string[]) =>
+      attributes.map((attribute) => `${tag}[${attribute}]`).join(', ');
+    if (fields[0] === 'testId') return withAttributes(['data-testid', 'data-test', 'data-cy']);
+    if (fields[0] === 'id') return withAttributes(['id']);
+    if (fields[0] === 'href') return withAttributes(['href']);
+    if (fields[0] === 'role') return withAttributes(['role']);
+    return tag;
+  }
+
+  /** Compute one identity field without building the whole descriptor. */
+  function readDescriptorField(element: Element, field: string): string {
+    switch (field) {
+      case 'testId':
+        return fingerprintDescriptorValue(
+          element.getAttribute('data-testid') ||
+            element.getAttribute('data-test') ||
+            element.getAttribute('data-cy')
+        );
+      case 'id':
+        return fingerprintDescriptorValue(element.id || element.getAttribute('id'));
+      case 'role':
+        return fingerprintDescriptorValue(element.getAttribute('role'));
+      case 'href':
+        return fingerprintDescriptorValue(element.getAttribute('href'));
+      case 'type':
+        return fingerprintDescriptorValue(element.getAttribute('type'));
+      case 'tag':
+        return element.tagName.toLowerCase();
+      case 'label':
+        return fingerprintDescriptorValue(getElementLabelText(element));
+      case 'name':
+        return fingerprintDescriptorValue(
+          element.getAttribute('aria-label') ||
+            element.getAttribute('title') ||
+            getElementLabelText(element)
+        );
+      default:
+        return '';
+    }
+  }
+
+  function descriptorMatches(
+    element: Element,
+    descriptor: ElementDescriptor,
+    fields: string[] = getStrongDescriptorFields(descriptor)
+  ): boolean {
+    if (!fields.length || element.tagName.toLowerCase() !== descriptor.tag) return false;
+    if (
+      !fields.every(
         (field) =>
-          current[field as keyof ElementDescriptor] === descriptor[field as keyof ElementDescriptor]
-      ) &&
-      (!descriptor.ancestry.length ||
-        descriptor.ancestry.every((marker, index) => current.ancestry[index] === marker))
-    );
+          readDescriptorField(element, field) === descriptor[field as keyof ElementDescriptor]
+      )
+    ) {
+      return false;
+    }
+    if (!descriptor.ancestry.length) return true;
+    const ancestry: string[] = [];
+    let parent = element.parentElement;
+    while (parent && ancestry.length < 3) {
+      const marker = getAncestryMarker(parent);
+      if (marker) ancestry.push(marker);
+      parent = parent.parentElement;
+    }
+    return descriptor.ancestry.every((marker, index) => ancestry[index] === marker);
   }
 
   function createRegistryError(
@@ -437,7 +575,7 @@ pruning work is amortized across calls instead of scanning the full
 registry at once. */
   function pruneElementRegistry(): void {
     const result = pruneElementRegistryEntries({
-      registry: elementRegistry,
+      registry: elementRegistry as unknown as Map<string, Element>,
       reverseRegistry,
       iterator: elementRegistryPruneIterator,
       containsElement: (element) => isAttached(element),
@@ -571,7 +709,14 @@ registry at once. */
 
   let documentRevision = 0;
   let revisionObserver: MutationObserver | null = null;
-  if (typeof MutationObserver === 'function' && document.documentElement) {
+
+  /** Start counting mutations on the first read that needs a revision. Frames
+  the bridge never reads (most ads and embeds) then pay no observer cost.
+  Revisions compare reads within one document, so a late start is harmless. */
+  function ensureRevisionObserver(): void {
+    if (revisionObserver || typeof MutationObserver !== 'function' || !document.documentElement) {
+      return;
+    }
     try {
       revisionObserver = new MutationObserver(() => {
         documentRevision++;
@@ -586,8 +731,10 @@ registry at once. */
       revisionObserver = null;
     }
   }
+
   /** Mutation revisions avoid copying the entire body's text on every read. */
   function getDocumentRevision(): number {
+    ensureRevisionObserver();
     if (revisionObserver?.takeRecords().length) documentRevision++;
     return documentRevision;
   }

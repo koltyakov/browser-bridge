@@ -17,7 +17,13 @@ test('disposable headed-Chrome fault recovery', { timeout: 1_800_000 }, async (t
   );
   const recoveryMs = positiveSetting('BBX_CHAOS_RECOVERY_MS', 20_000, 5000, 60_000);
   const rounds = positiveSetting('BBX_CHAOS_ROUNDS', 2, 1, 5);
-  const harness = new ChaosHarness();
+  // Branded Chrome ignores --load-extension. Portable mode loads the private
+  // extension through the controller's CDP pipe instead, headless unless
+  // BBX_CHAOS_HEADED=1, so the suite also runs on an installed Google Chrome.
+  const portable = process.env.BBX_CHAOS_PORTABLE === '1';
+  const harness = new ChaosHarness(
+    portable ? { portable: true, headless: process.env.BBX_CHAOS_HEADED !== '1' } : {}
+  );
   let passed = false;
   t.after(async () => {
     let cleanupOk = false;

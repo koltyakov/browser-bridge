@@ -1312,7 +1312,10 @@ test('active DOM patches survive read-registry eviction and retain exact detache
         await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'retained' }),
         {
           patchId: 'retained',
-          rolledBack: true,
+          // The detached element is restored, but the page shows the
+          // replacement, so the rollback does not claim the page changed.
+          rolledBack: false,
+          reason: 'element_detached',
         }
       );
       assert.equal(target.getAttribute('data-state'), 'old');
@@ -1797,6 +1800,7 @@ test('content script page text requests honor the text budget cap', async (t) =>
       truncated: true,
       omitted: 5,
       length: 10,
+      nextOffset: 4,
     },
   ]);
 });
@@ -2695,10 +2699,15 @@ test('content script rejects patches past MAX_PATCH_REGISTRY_SIZE without orphan
   assert.equal(patches[0]?.patchId, 'patch-0');
   assert.equal(patches.at(-1)?.patchId, 'patch-1999');
 
-  const oldest = await execute('patch.rollback', { patchId: 'patch-0' });
+  // Every patch sets color, so the oldest can only roll back after the rest.
+  const oldest = await executeBridgeMethod(listener, 'patch.rollback', { patchId: 'patch-0' });
+  assert.equal((oldest.error as { code?: unknown }).code, 'INVALID_REQUEST');
+  const details = (
+    oldest.error as { details?: { rollBackFirst?: unknown[]; overlappingCount?: unknown } }
+  ).details;
+  assert.equal(details?.overlappingCount, 1999);
+  assert.equal(details?.rollBackFirst?.[0], 'patch-1999');
   const newest = await execute('patch.rollback', { patchId: 'patch-1999' });
-
-  assert.deepEqual(oldest, { patchId: 'patch-0', rolledBack: true });
   assert.deepEqual(newest, { patchId: 'patch-1999', rolledBack: true });
 });
 
@@ -3331,6 +3340,7 @@ test('content script dispatches dom describe, style, and layout reads', async (t
     value: 'Click me',
     truncated: false,
     omitted: 0,
+    length: 8,
   });
   assert.deepEqual(attrs, {
     id: 'target',
@@ -4801,7 +4811,7 @@ test('stale ref recovery is opt-in, same-URL, descriptor-strong, and ambiguity-s
     URL: 'https://example.test/form',
     contains: (element: unknown) => attached.has(element as FakeElementLike),
     querySelectorAll(selector: string) {
-      return selector === 'button' ? currentButtons : base.querySelectorAll(selector);
+      return selector.startsWith('button') ? currentButtons : base.querySelectorAll(selector);
     },
   };
 
@@ -4857,21 +4867,27 @@ test('stale ref recovery is opt-in, same-URL, descriptor-strong, and ambiguity-s
   assert.equal((ambiguous.error as { code?: unknown }).code, 'ELEMENT_AMBIGUOUS');
 });
 
-test('stale ref recovery rejects an unevaluated duplicate after 100 candidates', async (t) => {
+async function runLargePageRecovery(
+  t: import('node:test').TestContext,
+  duplicateLast: boolean
+): Promise<Record<string, unknown>> {
   const harness = createChromeHarness();
   const inputs = installInputDomGlobals(t);
   const original = inputs.createButton({ textContent: 'Save' });
   original.attributes?.set('data-testid', 'save-button');
-  const firstMatch = inputs.createButton({ textContent: 'Save' });
-  firstMatch.attributes?.set('data-testid', 'save-button');
-  const decoys = Array.from({ length: 99 }, (_, index) => {
+  const replacement = inputs.createButton({ textContent: 'Save' });
+  replacement.attributes?.set('data-testid', 'save-button');
+  const decoys = Array.from({ length: 250 }, (_, index) => {
     const decoy = inputs.createButton({ textContent: `Decoy ${index}` });
     decoy.attributes?.set('data-testid', `decoy-${index}`);
     return decoy;
   });
-  const duplicateAfterLimit = inputs.createButton({ textContent: 'Save duplicate' });
-  duplicateAfterLimit.attributes?.set('data-testid', 'save-button');
-  const candidates = [firstMatch, ...decoys, duplicateAfterLimit];
+  const candidates = [...decoys, replacement];
+  if (duplicateLast) {
+    const duplicate = inputs.createButton({ textContent: 'Save duplicate' });
+    duplicate.attributes?.set('data-testid', 'save-button');
+    candidates.push(duplicate);
+  }
   const body = inputs.createBody([original, ...candidates]);
   const attached = new Set<FakeElementLike>([body, original]);
   const base = createDocumentHarness(body, { '#original': original });
@@ -4880,7 +4896,7 @@ test('stale ref recovery rejects an unevaluated duplicate after 100 candidates',
     URL: 'https://example.test/bounded-recovery',
     contains: (element: unknown) => attached.has(element as FakeElementLike),
     querySelectorAll(selector: string) {
-      return selector === 'button' ? candidates : base.querySelectorAll(selector);
+      return selector.startsWith('button') ? candidates : base.querySelectorAll(selector);
     },
   };
 
@@ -4892,24 +4908,29 @@ test('stale ref recovery rejects an unevaluated duplicate after 100 candidates',
   attached.delete(original);
   for (const candidate of candidates) attached.add(candidate);
 
-  const result = await executeBridgeMethod(listener, 'input.focus', {
+  return executeBridgeMethod(listener, 'input.focus', {
     target: { elementRef: String(remembered.elementRef) },
     recoverStale: true,
   });
+}
+
+test('stale ref recovery finds a unique test id among hundreds of same-tag elements', async (t) => {
+  const result = await runLargePageRecovery(t, false);
+  assert.equal(result.error, undefined, JSON.stringify(result.error));
+  const resolution = result.resolution as { recovered?: unknown; matchedFields?: unknown };
+  assert.equal(resolution.recovered, true);
+  assert.deepEqual(resolution.matchedFields, ['testId']);
+});
+
+test('stale ref recovery evaluates late candidates and rejects a duplicate', async (t) => {
+  const result = await runLargePageRecovery(t, true);
   const error = result.error as {
     code?: unknown;
-    details?: {
-      reason?: unknown;
-      candidateCount?: unknown;
-      evaluatedCount?: unknown;
-      matchCount?: unknown;
-    };
+    details?: { reason?: unknown; candidateCount?: unknown };
   };
   assert.equal(error.code, 'ELEMENT_AMBIGUOUS');
-  assert.equal(error.details?.reason, 'scan_incomplete');
-  assert.equal(error.details?.candidateCount, 101);
-  assert.equal(error.details?.evaluatedCount, 100);
-  assert.equal(error.details?.matchCount, 1);
+  assert.equal(error.details?.reason, undefined);
+  assert.equal(error.details?.candidateCount, 2);
 });
 
 test('pointer resolution clips hit coordinates and rejects a null viewport hit', async (t) => {
@@ -5129,7 +5150,7 @@ test('stale descriptors distinguish full values with identical bounded prefixes'
     URL: 'https://example.test/collision',
     contains: (element: unknown) => attached.has(element as FakeElementLike),
     querySelectorAll(selector: string) {
-      return selector === 'button' ? candidates : base.querySelectorAll(selector);
+      return selector.startsWith('button') ? candidates : base.querySelectorAll(selector);
     },
   };
   await loadContentScript(t, { withHelpers: true, chrome: harness.chrome, document });

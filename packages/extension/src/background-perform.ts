@@ -51,6 +51,11 @@ const ACTION_STEP_METHODS = new Set([
 
 /** Read-only steps that would otherwise observe the document an action is
 leaving. They are safe to repeat on the next document. */
+/** Actions that commonly start a navigation (links, submit buttons, Enter). */
+const NAVIGATING_STEP_METHODS = new Set(['input.click', 'input.press_key']);
+/** Pause before re-reading tab status after such an action. */
+const NAVIGATION_ARMING_MS = 120;
+
 const READ_STEP_METHODS = new Set([
   'page.get_state',
   'page.get_text',
@@ -211,7 +216,13 @@ export async function executeInputPerform(
       // submit click, must observe the next document rather than the old one.
       const settleNavigation = async (): Promise<boolean> => {
         if (!dependencies.getTabStatus) return false;
-        const status = await dependencies.getTabStatus(target.tabId).catch(() => undefined);
+        let status = await dependencies.getTabStatus(target.tabId).catch(() => undefined);
+        // A submit's navigation can start a few milliseconds after the click
+        // returns, while the old document still reads complete. Look again.
+        if (status !== 'loading' && NAVIGATING_STEP_METHODS.has(params.steps[index - 1].method)) {
+          await new Promise((resolve) => setTimeout(resolve, NAVIGATION_ARMING_MS));
+          status = await dependencies.getTabStatus(target.tabId).catch(() => undefined);
+        }
         if (status !== 'loading') return false;
         await dispatchStep(
           'page.wait_for_load_state',

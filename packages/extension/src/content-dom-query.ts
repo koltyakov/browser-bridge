@@ -51,6 +51,13 @@
         withDomScanCache: <T>(scan: () => T) => T;
         DEEP_WALK_LIMIT: number;
         DEEP_WALK_TIME_MS: number;
+        getVisibleText: (root: Element, maxChars?: number) => string;
+        querySelectorAllDeepNative: (selector: string, root?: ParentNode) => Element[];
+        readTextWindow: (
+          text: string,
+          budget: number,
+          offset?: number
+        ) => { value: string; truncated: boolean; omitted: number; length: number };
       };
     }
   ).__BBX_CONTENT_HELPERS__;
@@ -86,7 +93,10 @@
     getElementRoles,
     getElementTextContent,
     getShadowRoot,
+    getVisibleText,
     isElementVisible,
+    readTextWindow,
+    querySelectorAllDeepNative,
     querySelectorMatchesDeep,
     querySelectorDeep,
     toRect,
@@ -156,16 +166,25 @@ element reference. */
     let remaining = query.budget.textBudget;
 
     // A selector matching several elements lists each match first, then their
-    // subtrees breadth-first within the node budget. The native light-DOM
-    // query stays cheap on large pages.
-    const lightMatches = query.withinRef ? [] : document.querySelectorAll(query.selector);
-    const matchCount = lightMatches.length;
+    // subtrees breadth-first within the node budget. Matching runs natively
+    // in each tree, so shadow-root matches count as they do for the root.
+    let allMatches: ArrayLike<Element>;
+    if (query.withinRef) {
+      allMatches = [];
+    } else {
+      try {
+        allMatches = querySelectorAllDeepNative(query.selector);
+      } catch {
+        allMatches = document.querySelectorAll(query.selector);
+      }
+    }
+    const matchCount = allMatches.length;
     let roots: Element[] = [root];
     if (matchCount > 1) {
       roots = [];
-      for (const match of lightMatches) {
+      for (const match of Array.from(allMatches)) {
         if (roots.length >= query.budget.maxNodes) break;
-        if (!roots.some((listed) => listed.contains(match))) roots.push(match);
+        if (!roots.some((listed) => composedContainsElement(listed, match))) roots.push(match);
       }
     }
     const queue: Array<{ element: Element; depth: number }> = roots.map((element) => ({
@@ -192,14 +211,15 @@ element reference. */
       remaining -= summary.textLength;
       nodes.push(summary.node);
 
+      const children = getComposedChildren(element);
       if (depth >= query.budget.maxDepth) {
-        if (element.children.length > 0) {
+        if (children.length > 0) {
           truncatedByQueueCap = true;
         }
         continue;
       }
 
-      for (const child of element.children) {
+      for (const child of children) {
         if (nodes.length + (queue.length - queueIndex) >= query.budget.maxNodes) {
           truncatedByQueueCap = true;
           break;
@@ -217,6 +237,27 @@ element reference. */
       registrySize: getRegistrySize(),
       ...(pruned ? { _registryPruned: true } : {}),
     };
+  }
+
+  /** Shadow-tree children, then light children (which the shadow tree slots). */
+  function getComposedChildren(element: Element): Element[] {
+    const shadowRoot = getShadowRoot(element);
+    const light = Array.from(element.children ?? []);
+    return shadowRoot ? [...Array.from(shadowRoot.children ?? []), ...light] : light;
+  }
+
+  /** `contains` that also crosses into shadow trees. */
+  function composedContainsElement(ancestor: Element, node: Element): boolean {
+    let current: Node | null = node;
+    while (current) {
+      if (current === ancestor) return true;
+      const parent: Node | null = current.parentNode;
+      current =
+        parent && parent.nodeType === 11 && (parent as ShadowRoot).host
+          ? (parent as ShadowRoot).host
+          : parent;
+    }
+    return false;
   }
 
   /** Create a compact, token-efficient summary for a single element. */
@@ -237,7 +278,9 @@ element reference. */
         elementRef,
         tag: element.tagName.toLowerCase(),
         role: element.getAttribute('role'),
-        name: element.getAttribute('aria-label') || element.getAttribute('name') || null,
+        // The accessible name locators match, so a listed name can be reused
+        // as {role, name}.
+        name: getAccessibleName(element, 120) || null,
         textExcerpt: text.value,
         attrs: summarizeAttributes(element, attributeAllowlist),
         ...(isCheckableInput(element) ? { checked: readChecked(element) } : {}),
@@ -293,13 +336,15 @@ element reference. */
     };
   }
 
-  /** Return bounded text content for an element. */
+  /** Return bounded visible text for an element, shadow trees included,
+starting at offset. */
   function getText(
     elementRef: string,
-    budget: number = 600
-  ): { value: string; truncated: boolean; omitted: number } {
-    const element = getRequiredElement(elementRef) as HTMLElement;
-    return truncateText((element.innerText || element.textContent || '').trim(), budget);
+    budget: number = 600,
+    offset = 0
+  ): { value: string; truncated: boolean; omitted: number; length: number } {
+    const element = getRequiredElement(elementRef);
+    return readTextWindow(getVisibleText(element), budget, offset);
   }
 
   /** Read a selected set of attributes from an element reference. */
@@ -489,9 +534,12 @@ element reference. */
   }
 
   /** Wait for a DOM condition using MutationObserver + polling fallback. */
-  function waitForDom(
-    params: Record<string, unknown>
-  ): Promise<{ found: boolean; elementRef: string | null; duration: number }> {
+  function waitForDom(params: Record<string, unknown>): Promise<{
+    found: boolean;
+    elementRef: string | null;
+    duration: number;
+    incomplete?: boolean;
+  }> {
     const text = typeof params.text === 'string' && params.text.trim() ? String(params.text) : null;
     const selector = String(params.selector || (text !== null ? '*' : ''));
     if (!selector && text === null) {
@@ -501,8 +549,22 @@ element reference. */
     const timeout = clamp(params.timeoutMs ?? 5000, 100, 30000);
     const start = Date.now();
 
+    // A scan that hit its work limit has not proven absence: keep waiting,
+    // and report an incomplete result if the wait times out that way.
+    let incomplete = false;
     function check(): { found: boolean; element: Element | null } {
-      return withDomScanCache(checkOnce);
+      try {
+        return withDomScanCache(checkOnce);
+      } catch (error) {
+        if (
+          (error as { code?: unknown })?.code !== 'RESULT_TRUNCATED' ||
+          waitState === 'detached'
+        ) {
+          throw error;
+        }
+        incomplete = true;
+        return { found: false, element: null };
+      }
     }
 
     function checkOnce(): { found: boolean; element: Element | null } {
@@ -570,7 +632,12 @@ element reference. */
         signal?.removeEventListener('abort', tryResolve);
       }
 
-      function finish(result: { found: boolean; elementRef: string | null; duration: number }) {
+      function finish(result: {
+        found: boolean;
+        elementRef: string | null;
+        duration: number;
+        incomplete?: boolean;
+      }) {
         if (settled) return;
         cleanup();
         resolve(result);
@@ -610,7 +677,12 @@ element reference. */
           if (settled) return;
           tryResolve();
           if (Date.now() - start >= timeout) {
-            finish({ found: false, elementRef: null, duration: Date.now() - start });
+            finish({
+              found: false,
+              elementRef: null,
+              duration: Date.now() - start,
+              ...(incomplete ? { incomplete: true } : {}),
+            });
           }
         }
       }
@@ -1238,6 +1310,9 @@ locator target. Hidden matches count: the action decides actionability. */
     'table',
   ]);
   const OUTLINE_NAME_BUDGET = 80;
+  /** Elements that can carry the dialog, alertdialog, or main role. */
+  const OUTLINE_SCOPE_SELECTOR =
+    'dialog, [role="dialog"], [role="alertdialog"], main, [role="main"]';
   const OUTLINE_SCAN_LIMIT = 20000;
 
   /** Include a scoped root without eagerly traversing its descendants. Read one
@@ -1362,11 +1437,16 @@ locator target. Hidden matches count: the action decides actionability. */
     if (requested === 'document') return { root: null, scope };
     const modals: Element[] = [];
     const mains: Element[] = [];
-    for (const element of walkOutlineCandidates(null)) {
-      if (scope.scanned >= OUTLINE_SCAN_LIMIT) {
-        scope.fallbackReason = 'scope_scan_limit';
-        return { root: null, scope };
-      }
+    // Native selector matching per tree finds a dialog portalled to the end
+    // of a large body, where a bounded element walk would stop short.
+    let landmarks: Element[];
+    try {
+      landmarks = querySelectorAllDeepNative(OUTLINE_SCOPE_SELECTOR);
+    } catch {
+      scope.fallbackReason = 'scope_scan_limit';
+      return { root: null, scope };
+    }
+    for (const element of landmarks) {
       scope.scanned += 1;
       const role = getElementRoles(element)[0];
       if (!['dialog', 'alertdialog', 'main'].includes(role)) continue;

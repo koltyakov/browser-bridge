@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 )
@@ -48,6 +49,17 @@ type mcpHTTPServer struct {
 	stopped      chan struct{}
 	maintained   chan struct{}
 	nativeTokens [2]string
+	// credentialCache keeps each client's token keyed by its file's stat, so
+	// the once-a-second expiry sweep stats files instead of reading them.
+	credentialMu    sync.Mutex
+	credentialCache map[string]cachedMCPCredential
+}
+
+type cachedMCPCredential struct {
+	modTime time.Time
+	size    int64
+	mode    os.FileMode
+	token   string
 }
 
 func startMCPHTTP(ctx context.Context, c config, settings mcpHTTPSettings) (*mcpHTTPServer, error) {
@@ -119,8 +131,34 @@ func (h *mcpHTTPServer) dedicatedToken(token string) bool {
 }
 
 func (h *mcpHTTPServer) credentialCurrent(name string, digest [32]byte) bool {
-	token, err := mcpHTTPCredential(h.settings.Clients[name])
+	token, err := h.cachedCredential(h.settings.Clients[name])
 	return err == nil && h.dedicatedToken(token) && sha256.Sum256([]byte(token)) == digest
+}
+
+// cachedCredential returns the token in path, reading the file only when its
+// size, mode, or modification time changed since the last read.
+func (h *mcpHTTPServer) cachedCredential(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	h.credentialMu.Lock()
+	cached, ok := h.credentialCache[path]
+	h.credentialMu.Unlock()
+	if ok && cached.modTime.Equal(info.ModTime()) && cached.size == info.Size() && cached.mode == info.Mode() {
+		return cached.token, nil
+	}
+	token, err := mcpHTTPCredential(path)
+	if err != nil {
+		return "", err
+	}
+	h.credentialMu.Lock()
+	if h.credentialCache == nil {
+		h.credentialCache = make(map[string]cachedMCPCredential)
+	}
+	h.credentialCache[path] = cachedMCPCredential{modTime: info.ModTime(), size: info.Size(), mode: info.Mode(), token: token}
+	h.credentialMu.Unlock()
+	return token, nil
 }
 
 func (h *mcpHTTPServer) expire(now time.Time, all bool) {

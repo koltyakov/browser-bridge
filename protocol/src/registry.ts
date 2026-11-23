@@ -450,7 +450,7 @@ export const BRIDGE_METHOD_REGISTRY: Readonly<
     'page.get_text',
     'page',
     true,
-    ['textBudget'],
+    ['textBudget', 'offset'],
     'low',
     METHOD_POLICIES.pageRead,
     { paramsType: 'PageTextParams', example: { textBudget: 800 } }
@@ -608,7 +608,7 @@ export const BRIDGE_METHOD_REGISTRY: Readonly<
     'dom.get_text',
     'inspect',
     true,
-    ['elementRef', 'target', 'textBudget'],
+    ['elementRef', 'target', 'textBudget', 'offset'],
     'low',
     METHOD_POLICIES.domRead
   ),

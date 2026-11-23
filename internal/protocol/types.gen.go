@@ -895,6 +895,8 @@ const (
 
 	ErrorCodeINPUTFOCUSCHANGED ErrorCode = "INPUT_FOCUS_CHANGED"
 
+	ErrorCodeINPUTVALUEREJECTED ErrorCode = "INPUT_VALUE_REJECTED"
+
 	ErrorCodeDIALOGBLOCKED ErrorCode = "DIALOG_BLOCKED"
 
 	ErrorCodeDIALOGNOTOPEN ErrorCode = "DIALOG_NOT_OPEN"
@@ -936,11 +938,19 @@ const (
 	ErrorCodeEXTENSIONDISCONNECTED ErrorCode = "EXTENSION_DISCONNECTED"
 
 	ErrorCodeTIMEOUT ErrorCode = "TIMEOUT"
+
+	ErrorCodeEVALUATIONFAILED ErrorCode = "EVALUATION_FAILED"
+
+	ErrorCodeREQUESTCANCELED ErrorCode = "REQUEST_CANCELED"
+
+	ErrorCodeBRIDGEBUSY ErrorCode = "BRIDGE_BUSY"
+
+	ErrorCodeDAEMONUNAVAILABLE ErrorCode = "DAEMON_UNAVAILABLE"
 )
 
 func (v ErrorCode) Valid() bool {
 	switch v {
-	case ErrorCodeOUTCOMENOTMET, ErrorCodeWEBMCPUNAVAILABLE, ErrorCodeWEBMCPTOOLSTALE, ErrorCodeWEBMCPBUSY, ErrorCodeWEBMCPAPPROVALDENIED, ErrorCodeWEBMCPEXECUTIONUNCERTAIN, ErrorCodeACCESSDENIED, ErrorCodeTABMISMATCH, ErrorCodeELEMENTSTALE, ErrorCodeELEMENTAMBIGUOUS, ErrorCodeELEMENTNOTACTIONABLE, ErrorCodeELEMENTOBSCURED, ErrorCodeELEMENTNOTFOUND, ErrorCodeINPUTUNSUPPORTED, ErrorCodeINPUTINVALIDTARGET, ErrorCodeINPUTFOCUSCHANGED, ErrorCodeDIALOGBLOCKED, ErrorCodeDIALOGNOTOPEN, ErrorCodeDIALOGACTIONCONFLICT, ErrorCodeRESULTTRUNCATED, ErrorCodeRESULTTOOLARGE, ErrorCodeSENSITIVETARGETNOTFOUND, ErrorCodeCONTENTSCRIPTUNAVAILABLE, ErrorCodeARTIFACTNOTFOUND, ErrorCodeARTIFACTQUOTAEXCEEDED, ErrorCodeARTIFACTTRANSFERINVALID, ErrorCodeDOMBASELINENOTFOUND, ErrorCodeDOMBASELINEINVALIDATED, ErrorCodeDOMBASELINEQUOTAEXCEEDED, ErrorCodeVISUALBASELINENOTFOUND, ErrorCodeVISUALBASELINEINVALIDATED, ErrorCodeVISUALBASELINEQUOTAEXCEEDED, ErrorCodeINTERNALERROR, ErrorCodeINVALIDREQUEST, ErrorCodeNATIVEHOSTUNAVAILABLE, ErrorCodeEXTENSIONDISCONNECTED, ErrorCodeTIMEOUT:
+	case ErrorCodeOUTCOMENOTMET, ErrorCodeWEBMCPUNAVAILABLE, ErrorCodeWEBMCPTOOLSTALE, ErrorCodeWEBMCPBUSY, ErrorCodeWEBMCPAPPROVALDENIED, ErrorCodeWEBMCPEXECUTIONUNCERTAIN, ErrorCodeACCESSDENIED, ErrorCodeTABMISMATCH, ErrorCodeELEMENTSTALE, ErrorCodeELEMENTAMBIGUOUS, ErrorCodeELEMENTNOTACTIONABLE, ErrorCodeELEMENTOBSCURED, ErrorCodeELEMENTNOTFOUND, ErrorCodeINPUTUNSUPPORTED, ErrorCodeINPUTINVALIDTARGET, ErrorCodeINPUTFOCUSCHANGED, ErrorCodeINPUTVALUEREJECTED, ErrorCodeDIALOGBLOCKED, ErrorCodeDIALOGNOTOPEN, ErrorCodeDIALOGACTIONCONFLICT, ErrorCodeRESULTTRUNCATED, ErrorCodeRESULTTOOLARGE, ErrorCodeSENSITIVETARGETNOTFOUND, ErrorCodeCONTENTSCRIPTUNAVAILABLE, ErrorCodeARTIFACTNOTFOUND, ErrorCodeARTIFACTQUOTAEXCEEDED, ErrorCodeARTIFACTTRANSFERINVALID, ErrorCodeDOMBASELINENOTFOUND, ErrorCodeDOMBASELINEINVALIDATED, ErrorCodeDOMBASELINEQUOTAEXCEEDED, ErrorCodeVISUALBASELINENOTFOUND, ErrorCodeVISUALBASELINEINVALIDATED, ErrorCodeVISUALBASELINEQUOTAEXCEEDED, ErrorCodeINTERNALERROR, ErrorCodeINVALIDREQUEST, ErrorCodeNATIVEHOSTUNAVAILABLE, ErrorCodeEXTENSIONDISCONNECTED, ErrorCodeTIMEOUT, ErrorCodeEVALUATIONFAILED, ErrorCodeREQUESTCANCELED, ErrorCodeBRIDGEBUSY, ErrorCodeDAEMONUNAVAILABLE:
 		return true
 	}
 	return false
@@ -2204,18 +2214,20 @@ func (v SensitiveStorageSource) Valid() bool {
 type PageTextParams struct {
 	TextBudget Optional[float64] `json:"textBudget,omitzero"`
 
+	Offset Optional[float64] `json:"offset,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v PageTextParams) MarshalJSON() ([]byte, error) {
 	type alias PageTextParams
-	return marshalOpen(alias(v), v.Extra, []string{"textBudget"})
+	return marshalOpen(alias(v), v.Extra, []string{"textBudget", "offset"})
 }
 
 func (v *PageTextParams) UnmarshalJSON(data []byte) error {
 	type alias PageTextParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"textBudget"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"textBudget", "offset"})
 	if err != nil {
 		return err
 	}
@@ -7182,18 +7194,20 @@ func (v *NormalizedNetworkInterceptAddParams) UnmarshalJSON(data []byte) error {
 type NormalizedPageTextParams struct {
 	TextBudget float64 `json:"textBudget"`
 
+	Offset float64 `json:"offset"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v NormalizedPageTextParams) MarshalJSON() ([]byte, error) {
 	type alias NormalizedPageTextParams
-	return marshalOpen(alias(v), v.Extra, []string{"textBudget"})
+	return marshalOpen(alias(v), v.Extra, []string{"textBudget", "offset"})
 }
 
 func (v *NormalizedPageTextParams) UnmarshalJSON(data []byte) error {
 	type alias NormalizedPageTextParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"textBudget"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"textBudget", "offset"})
 	if err != nil {
 		return err
 	}
@@ -7488,18 +7502,20 @@ type BridgeMethodParamsDomGetText struct {
 
 	TextBudget Optional[float64] `json:"textBudget,omitzero"`
 
+	Offset Optional[float64] `json:"offset,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v BridgeMethodParamsDomGetText) MarshalJSON() ([]byte, error) {
 	type alias BridgeMethodParamsDomGetText
-	return marshalOpen(alias(v), v.Extra, []string{"elementRef", "target", "textBudget"})
+	return marshalOpen(alias(v), v.Extra, []string{"elementRef", "target", "textBudget", "offset"})
 }
 
 func (v *BridgeMethodParamsDomGetText) UnmarshalJSON(data []byte) error {
 	type alias BridgeMethodParamsDomGetText
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"elementRef", "target", "textBudget"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"elementRef", "target", "textBudget", "offset"})
 	if err != nil {
 		return err
 	}

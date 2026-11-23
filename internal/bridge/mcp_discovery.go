@@ -260,13 +260,24 @@ func (s *mcpSession) destinationTabs(ctx context.Context, args object, era strin
 	}
 	tabs, results := []object{}, []object{}
 	failures := 0
-	for _, destination := range destinations {
-		options := mcpClone(args)
-		options["destinationId"] = destination["id"]
-		response, err := s.bridge(ctx, "tabs.list", object{}, options, era)
-		if err != nil {
-			response = failure("", "INTERNAL_ERROR", err.Error())
-		}
+	// Each remote can take a full dial timeout when it is down; ask them all
+	// at once and assemble the answers in destination order.
+	responses := make([]object, len(destinations))
+	var workers sync.WaitGroup
+	for i, destination := range destinations {
+		workers.Go(func() {
+			options := mcpClone(args)
+			options["destinationId"] = destination["id"]
+			response, err := s.bridge(ctx, "tabs.list", object{}, options, era)
+			if err != nil {
+				response = failure("", "INTERNAL_ERROR", err.Error())
+			}
+			responses[i] = response
+		})
+	}
+	workers.Wait()
+	for i, destination := range destinations {
+		response := responses[i]
 		listed := response.object("result")
 		record := object{"destinationId": destination["id"], "ok": value(response.boolean("ok") && !listed.boolean("partial"))}
 		if !record.boolean("ok") {

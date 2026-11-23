@@ -1,4 +1,4 @@
-import { createSuccess } from '../../../protocol/src/index.js';
+import { BridgeError, createSuccess, ERROR_CODES } from '../../../protocol/src/index.js';
 import { isMissingContentScriptReceiverError } from './background-content-script.js';
 import { isUnavailableDocumentError } from './background-helpers.js';
 import { requestLifetimes } from './background-request-lifetime.js';
@@ -182,7 +182,11 @@ export function waitAcrossFrames(
     }
     untrack = requestLifetimes.track(request.id, () =>
       finish(() => {
-        throw new Error('Request canceled');
+        throw new BridgeError(
+          ERROR_CODES.REQUEST_CANCELED,
+          'The frame wait was canceled before a frame matched.',
+          { stage: 'frame_wait' }
+        );
       })
     );
     if (!done) {

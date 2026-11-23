@@ -1,15 +1,10 @@
 package bridge
 
 import (
-	"bufio"
 	"context"
 	"errors"
-	"fmt"
-	"io"
-	"net"
 	"os"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -20,35 +15,10 @@ type mcpConnecting struct {
 }
 
 func mcpConnect(c config, clientID string) (*client, error) {
-	conn, err := c.dial()
+	conn, reader, reply, err := registerConnectionAs(c, "agent", clientID)
 	if err != nil {
 		return nil, err
 	}
-	token, err := c.credential("agent")
-	if errors.Is(err, os.ErrNotExist) && c.network == "unix" {
-		token, err = "", nil
-	}
-	if err != nil {
-		_ = conn.Close()
-		return nil, err
-	}
-	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
-	writer := wireWriter{out: conn}
-	err = writer.send(object{"type": value("register"), "role": value("agent"), "authToken": value(token), "clientId": value(clientID)})
-	if err != nil {
-		_ = conn.Close()
-		return nil, err
-	}
-	reader := bufio.NewReader(conn)
-	reply, err := readLine(reader)
-	if err == nil && (reply.text("type") != "registered" || reply.text("role") != "agent") {
-		err = fmt.Errorf("bridge registration failed: %s", reply.object("error").text("message"))
-	}
-	if err != nil {
-		_ = conn.Close()
-		return nil, err
-	}
-	_ = conn.SetDeadline(time.Time{})
 	cl := &client{conn: conn, writer: wireWriter{out: conn}, pending: make(map[string]chan callResult), supportsCancellation: reply.boolean("requestCancellation")}
 	go cl.read(reader)
 	return cl, nil
@@ -148,7 +118,7 @@ func mcpRetrySafe(method string, params object) bool {
 }
 
 func mcpConnectionLost(err error) bool {
-	return errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.EPIPE) || strings.Contains(err.Error(), "Bridge socket closed")
+	return isDaemonUnavailable(err) || connectionLost(err)
 }
 func mcpPause(ctx context.Context, delay time.Duration) error {
 	timer := time.NewTimer(delay)

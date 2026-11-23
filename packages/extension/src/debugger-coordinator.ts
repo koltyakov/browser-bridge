@@ -4,7 +4,16 @@ export type DebuggerTarget = { tabId: number };
 export type DebuggerAttach = (target: DebuggerTarget, protocolVersion: string) => Promise<void>;
 export type DebuggerDetach = (target: DebuggerTarget) => Promise<void>;
 export type DebuggerInitialize = (target: DebuggerTarget) => Promise<void>;
-export type DebuggerRunOptions = { retryDetached?: boolean; releaseAfterRun?: boolean };
+export type DebuggerRunOptions = {
+  retryDetached?: boolean;
+  releaseAfterRun?: boolean;
+  /** Longest a task may hold the tab's lane before the session is discarded. */
+  timeoutMs?: number;
+};
+
+/** Backstop for any lane task: longer than the longest request lifetime, so
+only a command that will never settle reaches it. */
+export const DEFAULT_LANE_TIMEOUT_MS = 125_000;
 
 /** Chrome rejects sendCommand unless this extension owns the attachment.
  * Use a non-mutating Page read, not a V8 command restricted to trusted clients.
@@ -86,6 +95,9 @@ export class TabDebuggerCoordinator {
   declare dialogIdentityPrefix: string;
   declare nextDialogGeneration: number;
   declare recentReason: { reason: DebuggerReason; at: number } | null;
+  declare laneTimeoutMs: number;
+  declare onSessionDiscarded: (tabId: number) => void;
+  declare releaseLingerMs: number;
 
   constructor({
     attach,
@@ -95,6 +107,9 @@ export class TabDebuggerCoordinator {
     burstIdleMs = 5_000,
     recordReattach = () => {},
     ownsAttachment = async () => false,
+    laneTimeoutMs = DEFAULT_LANE_TIMEOUT_MS,
+    onSessionDiscarded = () => {},
+    releaseLingerMs = 0,
   }: {
     attach: DebuggerAttach;
     detach: DebuggerDetach;
@@ -105,7 +120,17 @@ export class TabDebuggerCoordinator {
     /** Must use Chrome's extension-owned sendCommand boundary, never the
      * getTargets attached flag, which includes other debuggers. */
     ownsAttachment?: (target: DebuggerTarget) => Promise<boolean>;
+    laneTimeoutMs?: number;
+    /** Reconcile CDP owners (capture, emulation, interception, recordings)
+     * after the bridge itself discards a session; Chrome sends no onDetach. */
+    onSessionDiscarded?: (tabId: number) => void;
+    /** How long a releaseAfterRun session stays attached for a following
+     * read, so bursts of one-shot debugger reads skip attach and Page.enable. */
+    releaseLingerMs?: number;
   }) {
+    this.laneTimeoutMs = laneTimeoutMs;
+    this.releaseLingerMs = releaseLingerMs;
+    this.onSessionDiscarded = onSessionDiscarded;
     this.attach = attach;
     this.detach = detach;
     this.initialize = initialize;
@@ -183,6 +208,28 @@ have finished. */
   ): Promise<T> {
     const generation = this._getCancellationGeneration(tabId);
     this._assertCanStartWork(tabId, generation);
+    let laneTimedOut = false;
+    const onLaneTimeout = () => {
+      laneTimedOut = true;
+    };
+    const timeoutMs = options.timeoutMs ?? this.laneTimeoutMs;
+    try {
+      return await this._runLane(tabId, generation, task, options, timeoutMs, onLaneTimeout);
+    } finally {
+      // The abandoned command still occupies the session; detaching makes
+      // Chrome reject it, and the next request attaches a fresh session.
+      if (laneTimedOut) await this.discardSession(tabId).catch(() => {});
+    }
+  }
+
+  async _runLane<T>(
+    tabId: number,
+    generation: number,
+    task: (target: DebuggerTarget) => Promise<T>,
+    options: DebuggerRunOptions,
+    timeoutMs: number,
+    onLaneTimeout: () => void
+  ): Promise<T> {
     return this.runExclusive(tabId, async () => {
       await this._waitForDialogLane(tabId);
       this._assertCancellationGeneration(tabId, generation);
@@ -200,11 +247,16 @@ have finished. */
         if (!held && !hasBurst && !alreadyAttached) {
           await this._attach(target, generation);
         }
-        result = await this._runTrackedTask(tabId, generation, () => task(target));
+        result = await this._runTrackedTask(tabId, generation, () =>
+          raceLaneTimeout(task(target), timeoutMs, onLaneTimeout)
+        );
         await this._waitForDialogLane(tabId);
         this._assertCancellationGeneration(tabId, generation);
       } catch (error) {
-        if (!this._isCancellationGenerationCurrent(tabId, generation)) {
+        if (isLaneTimeoutError(error)) {
+          taskError = error;
+          detached = true;
+        } else if (!this._isCancellationGenerationCurrent(tabId, generation)) {
           taskError = createDebuggerCanceledError();
           detached = true;
         } else if (isDebuggerDetachedError(error)) {
@@ -220,7 +272,9 @@ have finished. */
                 throw attachError;
               }
               detached = false;
-              result = await this._runTrackedTask(tabId, generation, () => task(target));
+              result = await this._runTrackedTask(tabId, generation, () =>
+                raceLaneTimeout(task(target), timeoutMs, onLaneTimeout)
+              );
               await this._waitForDialogLane(tabId);
               this._assertCancellationGeneration(tabId, generation);
             } catch (retryError) {
@@ -260,7 +314,11 @@ have finished. */
   /** Return control when a native dialog blocks an action. The original task
 stays on the normal queue until it really settles; it is never replayed.
 Dialog handling uses its separate lane to unblock that task. */
-  async runGuarded<T>(tabId: number, task: (target: DebuggerTarget) => Promise<T>): Promise<T> {
+  async runGuarded<T>(
+    tabId: number,
+    task: (target: DebuggerTarget) => Promise<T>,
+    options: DebuggerRunOptions = {}
+  ): Promise<T> {
     this.assertNoDialog(tabId);
     let started = false;
 
@@ -277,22 +335,26 @@ Dialog handling uses its separate lane to unblock that task. */
     const guards = this.dialogGuardsByTab.get(tabId) ?? new Set();
     guards.add(onDialog);
     this.dialogGuardsByTab.set(tabId, guards);
-    const operation = this.run(tabId, async (target) => {
-      const generation = this._getCancellationGeneration(tabId);
-      const assertActive = () => {
-        this._assertCancellationGeneration(tabId, generation);
-        if (interrupted) throw interrupted;
-        this.assertNoDialog(tabId);
-      };
-      assertActive();
-      this.taskGuards.set(target, assertActive);
-      started = true;
-      try {
-        return await task(target);
-      } finally {
-        this.taskGuards.delete(target);
-      }
-    });
+    const operation = this.run(
+      tabId,
+      async (target) => {
+        const generation = this._getCancellationGeneration(tabId);
+        const assertActive = () => {
+          this._assertCancellationGeneration(tabId, generation);
+          if (interrupted) throw interrupted;
+          this.assertNoDialog(tabId);
+        };
+        assertActive();
+        this.taskGuards.set(target, assertActive);
+        started = true;
+        try {
+          return await task(target);
+        } finally {
+          this.taskGuards.delete(target);
+        }
+      },
+      options
+    );
     try {
       return await Promise.race([operation, blocked]);
     } finally {
@@ -566,6 +628,36 @@ This is intentionally safe if Chrome already detached the target. */
     }
   }
 
+  /** Drop per-tab bookkeeping for a closed tab once nothing for it is still
+running. Cancellation generations must outlive in-flight tasks, which compare
+against them, so a busy tab is left alone. */
+  forgetTab(tabId: number): void {
+    if (
+      (this.inFlightTasksByTab.get(tabId)?.size ?? 0) > 0 ||
+      this.pendingByTab.has(tabId) ||
+      this.pendingDialogsByTab.has(tabId) ||
+      this.attachingByTab.has(tabId) ||
+      this.attachedTabs.has(tabId) ||
+      this.cleanupBarriersByTab.has(tabId)
+    ) {
+      return;
+    }
+    this.cancellationGenerationsByTab.delete(tabId);
+    this.inFlightTasksByTab.delete(tabId);
+    this.dialogEventsByTab.delete(tabId);
+  }
+
+  /** Discard a session the bridge abandoned (a timed-out command) and let CDP
+owners reconcile, as they would after Chrome detached the debugger. */
+  async discardSession(tabId: number): Promise<void> {
+    await this.discard(tabId);
+    try {
+      this.onSessionDiscarded(tabId);
+    } catch {
+      // Owner reconciliation is best effort; the session is already gone.
+    }
+  }
+
   /** Keep new debugger ownership out until a complete tab cleanup sequence has
 discarded the session and reconciled its domain-specific owners. */
   async beginCleanup(tabId: number): Promise<() => void> {
@@ -717,7 +809,7 @@ the usual idle window until it detaches; a read must not shorten it. */
           }
         });
       },
-      this.burstRetainedTabs.has(tabId) ? this.burstIdleMs : 0
+      this.burstRetainedTabs.has(tabId) ? this.burstIdleMs : this.releaseLingerMs
     );
     timer.unref?.();
     this.burstTimers.set(tabId, timer);
@@ -905,11 +997,53 @@ function boundDialogText(value: unknown): { value: string; truncated: boolean } 
 
 function isDebuggerDetachedError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /not attached|no target with given id/i.test(message);
+  // "Detached while handling command" arrives when a cross-process navigation
+  // swaps the renderer mid-command; reattaching to the new target is safe.
+  return /not attached|no target with given id|detached while handling command/i.test(message);
+}
+
+const LANE_TIMEOUT = Symbol('laneTimeout');
+
+function isLaneTimeoutError(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && LANE_TIMEOUT in error);
+}
+
+/** Bound one lane task. A task that never settles (a never-resolving
+awaitPromise evaluate, a hung renderer) would otherwise block every later
+debugger-backed call on the tab. */
+function raceLaneTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => void
+): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      onTimeout();
+      reject(
+        Object.assign(
+          new BridgeError(
+            ERROR_CODES.TIMEOUT,
+            `The debugger command did not finish within ${Math.round(timeoutMs)} ms. The tab's debugger session was discarded so later requests start fresh; inspect the page before retrying.`,
+            { stage: 'debugger_lane', sessionDiscarded: true, outcomeUncertain: true }
+          ),
+          { [LANE_TIMEOUT]: true }
+        )
+      );
+    }, timeoutMs);
+    (timer as { unref?: () => void }).unref?.();
+  });
+  promise.catch(() => {});
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 function createDebuggerCanceledError(): Error {
-  return new Error('Debugger operation canceled because tab access was cleared.');
+  return new BridgeError(
+    ERROR_CODES.REQUEST_CANCELED,
+    'Debugger operation canceled because tab access was cleared or its debugger session was replaced. Inspect the page before retrying.',
+    { stage: 'debugger', outcomeUncertain: true }
+  );
 }
 
 export function classifyDebuggerFailure(error: unknown): DebuggerReason | null {

@@ -43,7 +43,10 @@ export type FakeExtension = {
 
 // Start the Go daemon with isolated credentials and storage. The extension peer
 // below implements only test framing; runtime behavior stays in the Go process.
-export async function startTestDaemon(port = 0): Promise<TestDaemonContext> {
+export async function startTestDaemon(
+  port = 0,
+  extraEnv: Record<string, string> = {}
+): Promise<TestDaemonContext> {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bbx-it-daemon-'));
   fs.writeFileSync(path.join(tempRoot, 'daemon.auth'), agentToken, { mode: 0o600 });
   fs.writeFileSync(path.join(tempRoot, 'daemon.extension.auth'), extensionToken, { mode: 0o600 });
@@ -58,6 +61,9 @@ export async function startTestDaemon(port = 0): Promise<TestDaemonContext> {
     ...isolatedBridgeEnv(process.env),
     BROWSER_BRIDGE_HOME: tempRoot,
     BBX_TCP_PORT: String(address.port),
+    // Fail fast after a disconnect unless a test exercises the reconnect wait.
+    BBX_RECONNECT_WAIT_MS: '0',
+    ...extraEnv,
   };
   const child = spawn(nativeExecutable, ['--bridge-daemon'], { env, stdio: 'pipe' });
   let stderr = '';

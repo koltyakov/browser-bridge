@@ -3,7 +3,6 @@ package bridge
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -11,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -106,52 +106,64 @@ func restartMCPProcesses(c config) (object, error) {
 		return nil, err
 	}
 	registered, requested, failed, stale := 0, 0, 0, 0
+	// Each registration costs up to two one-second dials; contact them all at
+	// once so a directory of dead entries does not stall the restart.
+	var mu sync.Mutex
+	var workers sync.WaitGroup
+	count := func(counter *int) {
+		mu.Lock()
+		*counter++
+		mu.Unlock()
+	}
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
 		registered++
 		path := filepath.Join(dir, entry.Name())
-		b, e := os.ReadFile(path)
-		if e != nil {
-			failed++
-			continue
-		}
-		r, e := decodeObject(b)
-		if e != nil || r.number("protocolVersion") != 1 || r.number("pid") <= 0 || r.number("port") < 1 || r.number("port") > 65535 || r.text("token") == "" || r.text("instanceId") == "" {
-			if os.Remove(path) == nil {
-				stale++
+		workers.Go(func() {
+			b, e := os.ReadFile(path)
+			if e != nil {
+				count(&failed)
+				return
+			}
+			r, e := decodeObject(b)
+			if e != nil || r.number("protocolVersion") != 1 || r.number("pid") <= 0 || r.number("port") < 1 || r.number("port") > 65535 || r.text("token") == "" || r.text("instanceId") == "" {
+				if os.Remove(path) == nil {
+					count(&stale)
+				} else {
+					count(&failed)
+				}
+				return
+			}
+			conn, e := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.FormatInt(r.number("port"), 10)), time.Second)
+			accepted := false
+			if e == nil {
+				_ = conn.SetDeadline(time.Now().Add(time.Second))
+				w := wireWriter{out: conn}
+				if w.send(object{"action": value("restart"), "token": r["token"]}) == nil {
+					result, e := readLine(bufio.NewReaderSize(conn, 4096))
+					accepted = e == nil && result.boolean("ok")
+				}
+				_ = conn.Close()
+			}
+			if accepted {
+				count(&requested)
+				_ = os.Remove(path)
+			} else if isRefused(e) || !processRunning(int(r.number("pid"))) {
+				// A closed control endpoint is stale even when the OS has reused its
+				// recorded PID. Remove only the registration, never signal that PID.
+				if os.Remove(path) == nil {
+					count(&stale)
+				} else {
+					count(&failed)
+				}
 			} else {
-				failed++
+				count(&failed)
 			}
-			continue
-		}
-		conn, e := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.FormatInt(r.number("port"), 10)), time.Second)
-		accepted := false
-		if e == nil {
-			_ = conn.SetDeadline(time.Now().Add(time.Second))
-			w := wireWriter{out: conn}
-			if w.send(object{"action": value("restart"), "token": r["token"]}) == nil {
-				result, e := readLine(bufio.NewReaderSize(conn, 4096))
-				accepted = e == nil && result.boolean("ok")
-			}
-			_ = conn.Close()
-		}
-		if accepted {
-			requested++
-			_ = os.Remove(path)
-		} else if isRefused(e) || !processRunning(int(r.number("pid"))) {
-			// A closed control endpoint is stale even when the OS has reused its
-			// recorded PID. Remove only the registration, never signal that PID.
-			if os.Remove(path) == nil {
-				stale++
-			} else {
-				failed++
-			}
-		} else {
-			failed++
-		}
+		})
 	}
+	workers.Wait()
 	return object{"registered": value(registered), "restartRequested": value(requested), "restartFailed": value(failed), "staleRegistrationsRemoved": value(stale)}, nil
 }
 func restartCLI(ctx context.Context, c config, args []string) error {
@@ -258,21 +270,22 @@ func doctorCLI(ctx context.Context, c config, args []string) error {
 	if !validManifest {
 		issues = append(issues, "Native host manifest or launcher is missing; run bbx install")
 	}
-	if b, err := os.ReadFile(filepath.Join(c.home, "daemon-starts.json")); err == nil {
-		var starts []int64
-		if json.Unmarshal(b, &starts) == nil {
-			count := 0
-			now := time.Now().UnixMilli()
-			for _, at := range starts {
-				if at <= now && now-at <= 60000 {
-					count++
-				}
+	if starts := readDaemonStarts(c.home); starts != nil {
+		count, _ := daemonStartsInWindow(starts, time.Now())
+		loop := count >= daemonRestartLoopThreshold
+		restarts := object{"startsInWindow": value(count), "windowMs": value(daemonRestartWindow.Milliseconds()), "restartLoop": value(loop)}
+		if loop {
+			cause := daemonLogTail(c.home, 3)
+			if cause != "" {
+				restarts["lastLog"] = value(cause)
 			}
-			report["daemonRestarts"] = value(object{"startsInWindow": value(count), "windowMs": value(60000), "restartLoop": value(count >= 3)})
-			if count >= 3 {
-				issues = append(issues, "Daemon has restarted at least three times in the last minute")
+			issue := fmt.Sprintf("Daemon has restarted %d times in the last minute; check daemon.log", count)
+			if cause != "" {
+				issue += ": " + cause
 			}
+			issues = append(issues, issue)
 		}
+		report["daemonRestarts"] = value(restarts)
 	}
 	cl, err := connect(c, "agent")
 	if err != nil {

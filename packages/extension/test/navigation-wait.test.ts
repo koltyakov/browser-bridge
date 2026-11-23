@@ -280,3 +280,33 @@ test('URL waits clean up on tab close and access/window changes', async () => {
   await assert.rejects(disabled, { code: 'ACCESS_DENIED' });
   assert.equal(waits.waitersByTab.size, 0);
 });
+
+test('URL wait survives an unscriptable intermediate page and resolves on the next URL', async () => {
+  let current = tab({ id: 31, windowId: 2, status: 'complete', url: 'https://app.test/login' });
+  let getTabs = 0;
+  const waits = new NavigationWaitCoordinator({
+    getTab: async () => {
+      getTabs += 1;
+      return tab({ ...current });
+    },
+    createSignalChannel: () => 'channel',
+    installSignals: async () => {
+      if (current.url?.startsWith('https://accounts.example')) {
+        throw new Error('Cannot access contents of url "https://accounts.example/oauth".');
+      }
+    },
+  });
+  const pending = waits.wait(31, 2, params({ url: 'https://app.test/home', waitForLoad: false }));
+  await waitFor(() => waits.signalsByTab.size === 1);
+  current = tab({ ...current, status: 'loading', url: 'https://accounts.example/oauth' });
+  waits.handleTabUpdated(31, { status: 'loading', url: current.url }, current);
+  current = tab({ ...current, status: 'complete' });
+  waits.handleTabUpdated(31, { status: 'complete' }, current);
+  await new Promise((resolve) => setImmediate(resolve));
+  const readsBeforeUpdate = getTabs;
+  current = tab({ ...current, status: 'complete', url: 'https://app.test/home' });
+  waits.handleTabUpdated(31, { url: current.url }, current);
+  const result = await pending;
+  assert.equal(result.tab.url, 'https://app.test/home');
+  assert.equal(getTabs, readsBeforeUpdate, 'the updated tab from the event is used directly');
+});

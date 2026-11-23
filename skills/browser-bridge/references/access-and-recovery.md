@@ -116,6 +116,11 @@ that uncertainty with the generic guidance below.
 | `ELEMENT_NOT_ACTIONABLE`  | No       | Inspect hidden/disabled/inert state with `dom.describe`                                   |
 | `ELEMENT_OBSCURED`        | No       | Inspect bounded blocker details or use `layout.hit_test`                                  |
 | `INPUT_FOCUS_CHANGED`     | No       | Inspect focus handlers; do not replay native text automatically                           |
+| `INPUT_VALUE_REJECTED`    | No       | Read `details.actual`; fill a value in `details.expectedFormat` or inspect the field mask  |
+| `EVALUATION_FAILED` | No | Fix the expression; the page may have run part of it |
+| `REQUEST_CANCELED` | No | Inspect postconditions before retrying a mutation |
+| `BRIDGE_BUSY` | Yes | Retry after `retryAfterMs` |
+| `DAEMON_UNAVAILABLE` | Yes | Retry once; then run `bbx doctor` |
 | `DIALOG_NOT_OPEN`         | No       | Trigger or inspect the dialog again                                                       |
 | `DIALOG_ACTION_CONFLICT`  | No       | Inspect current dialog state; never auto-repeat accept/dismiss                            |
 | `TAB_MISMATCH`            | No       | For `ambiguous_browser_target`, select `extensionId` and list its tabs. For a closed working tab, select a new `tabId`. Never disable unrelated windows. |

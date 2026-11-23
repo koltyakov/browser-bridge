@@ -1767,6 +1767,7 @@
       },
       "page.get_text": {
         "textBudget": 1.25,
+        "offset": 1.25,
         "future_extension": {
           "arbitrary": [
             null,
@@ -2061,6 +2062,7 @@
           }
         },
         "textBudget": 1.25,
+        "offset": 1.25,
         "future_extension": {
           "arbitrary": [
             null,
@@ -3901,6 +3903,7 @@
     "valid": true,
     "input": {
       "textBudget": 1.25,
+      "offset": 1.25,
       "future_extension": {
         "arbitrary": [
           null,
@@ -10630,6 +10633,7 @@
     "valid": true,
     "input": {
       "textBudget": 1.25,
+      "offset": 1.25,
       "future_extension": {
         "arbitrary": [
           null,

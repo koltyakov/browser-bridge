@@ -101,6 +101,10 @@ type daemon struct {
 	timings                           requestTimingMetrics
 	started                           time.Time
 	processed, failed, responseMillis int64
+	// parked holds requests waiting for a browser to reconnect.
+	parked []*parkedRequest
+	// lastExtensionAt is when a browser last registered or disconnected.
+	lastExtensionAt time.Time
 }
 
 func success(id string, result object) object {
@@ -131,8 +135,9 @@ func (p *peer) enqueue(message object, onWrite func(bool)) bool {
 	}
 	payload := rawObject(message)
 	size := int64(len(payload) + 1)
-	if size-1 > maxMessageBytes {
-		_ = p.conn.Close()
+	if size-1 > maxWireLineBytes {
+		// One message that cannot fit fails alone; the peer's other work and
+		// its connection continue. Callers turn this into a typed failure.
 		return false
 	}
 	if p.queuedBytes.Add(size) > 4*maxMessageBytes {
@@ -153,8 +158,28 @@ func (p *peer) enqueue(message object, onWrite func(bool)) bool {
 }
 
 func (p *peer) respond(response object) {
-	p.send(object{"type": value("agent.response"), "response": rawObject(response)})
+	p.send(agentResponseEnvelope(response))
 }
+
+// agentResponseEnvelope wraps a response for an agent. A result too large for
+// the wire becomes a typed failure, so the caller is told instead of waiting
+// for a response that would close its connection.
+func agentResponseEnvelope(response object) object {
+	encoded := rawObject(response)
+	if len(encoded) <= maxMessageBytes {
+		return object{"type": value("agent.response"), "response": encoded}
+	}
+	tooLarge := failure(response.text("id"), "RESULT_TOO_LARGE", fmt.Sprintf("The browser result is %d bytes, over the 1 MiB transport limit. Request less data: a smaller maxNodes or textBudget, a narrower selector, or a screenshot artifact.", len(encoded)))
+	if meta := response["meta"]; meta != nil {
+		tooLarge["meta"] = meta
+	}
+	return object{"type": value("agent.response"), "response": rawObject(tooLarge)}
+}
+
+// peerQueueMessages bounds queued frames per peer. The byte budget in enqueue
+// is the real limit; this only has to exceed the in-flight requests, their
+// cancellations, grants, and broadcasts that can queue at once.
+const peerQueueMessages = 1024
 
 func listen(c config) (net.Listener, error) {
 	if c.network == "unix" {
@@ -170,7 +195,7 @@ func listen(c config) (net.Listener, error) {
 			conn, err := c.dial()
 			if err == nil {
 				_ = conn.Close()
-				return nil, errors.New("another daemon is already running")
+				return nil, errDaemonRunning
 			}
 			// Refuse ambiguous failures such as permission errors and timeouts.
 			if !isRefused(err) {
@@ -193,6 +218,25 @@ func listen(c config) (net.Listener, error) {
 	return listener, err
 }
 
+// errDaemonRunning reports that another daemon holds this bridge home.
+var errDaemonRunning = errors.New("another daemon is already running")
+
+// acquireDaemonLock holds daemon.lock in the bridge home for the daemon's
+// lifetime. The kernel releases it if the process dies, so it never goes stale.
+func acquireDaemonLock(home string) (func(), error) {
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		return nil, err
+	}
+	release, held, err := tryLockFile(filepath.Join(home, "daemon.lock"))
+	if err != nil {
+		return nil, fmt.Errorf("lock bridge home: %w", err)
+	}
+	if held {
+		return nil, errDaemonRunning
+	}
+	return release, nil
+}
+
 func runDaemon(ctx context.Context, c config) error {
 	agent, err := ensureToken(c.agentToken)
 	if err != nil {
@@ -208,6 +252,14 @@ func runDaemon(ctx context.Context, c config) error {
 	if err != nil {
 		return err
 	}
+	// One daemon per bridge home. Two native hosts starting after a crash
+	// would otherwise both see a refused socket, both unlink it, and leave
+	// one daemon orphaned with the extension and agents split between them.
+	releaseLock, err := acquireDaemonLock(c.home)
+	if err != nil {
+		return err
+	}
+	defer releaseLock()
 	listener, err := listen(c)
 	if err != nil {
 		return err
@@ -253,6 +305,9 @@ func runDaemon(ctx context.Context, c config) error {
 				if !d.stopping && !d.storagePruning {
 					d.storagePruning = d.store(0, false, func() func() {
 						d.artifacts.prune()
+						// Expired journals (up to 256 MiB) are removed on schedule
+						// too, not only when another journal is written or read.
+						_, _, _ = d.recordings.prune()
 						return func() { d.storagePruning = false }
 					})
 				}
@@ -303,7 +358,7 @@ func runDaemon(ctx context.Context, c config) error {
 			_ = conn.Close()
 			continue
 		}
-		p := &peer{conn: conn, accepted: time.Now(), out: make(chan queuedMessage, 32), done: make(chan struct{}), identity: object{}, owner: uniqueID(), dataTargets: make(map[*peer]bool)}
+		p := &peer{conn: conn, accepted: time.Now(), out: make(chan queuedMessage, peerQueueMessages), done: make(chan struct{}), identity: object{}, owner: uniqueID(), dataTargets: make(map[*peer]bool)}
 		d.peers[p] = true
 		d.mu.Unlock()
 		workers.Add(1)
@@ -317,6 +372,20 @@ func runDaemon(ctx context.Context, c config) error {
 func (d *daemon) serve(p *peer) {
 	defer func() { _ = p.conn.Close() }()
 	defer d.disconnect(p)
+	// A bug in one connection's handling closes that connection, not the
+	// daemon and every other agent and browser with it.
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			fmt.Fprintf(os.Stderr, "bridge connection handler panicked: %v\n", recovered)
+			// If the panic left the daemon lock held, recovering would wedge every
+			// connection. Exit instead so the native host starts a fresh daemon.
+			if !d.lockWithin(2 * time.Second) {
+				fmt.Fprintln(os.Stderr, "bridge daemon lock is stuck after a panic; exiting")
+				os.Exit(2)
+			}
+			d.mu.Unlock()
+		}
+	}()
 	writerDone := make(chan struct{})
 	defer func() {
 		p.queueMu.Lock()
@@ -342,7 +411,7 @@ func (d *daemon) serve(p *peer) {
 				}
 			}
 		}()
-		writer := wireWriter{out: p.conn}
+		writer := wireWriter{out: p.conn, lineLimit: maxWireLineBytes}
 		for {
 			select {
 			case queued := <-p.out:
@@ -365,7 +434,7 @@ func (d *daemon) serve(p *peer) {
 	}()
 	reader := bufio.NewReader(p.conn)
 	_ = p.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	message, err := readLine(reader)
+	message, err := readWireLine(reader)
 	if err != nil {
 		return
 	}
@@ -408,7 +477,7 @@ func (d *daemon) serve(p *peer) {
 	}
 	_ = p.conn.SetReadDeadline(time.Time{})
 	for {
-		message, err := readLine(reader)
+		message, err := readWireLine(reader)
 		if err != nil {
 			return
 		}
@@ -478,6 +547,9 @@ func validText(id string, limit int) bool {
 }
 
 func (d *daemon) identity(p *peer, message object) {
+	if p.role == "extension" {
+		d.lastExtensionAt = time.Now()
+	}
 	for _, key := range []string{"browserName", "profileLabel"} {
 		if s := message.text(key); validText(s, 128) {
 			p.identity[key] = value(s)
@@ -574,6 +646,13 @@ func (d *daemon) handleEnvelope(p *peer, message, body object) {
 	d.initServices()
 	kind := message.text("type")
 	if kind == "agent.cancel" && p.role == "agent" {
+		for _, entry := range d.parked {
+			if entry.peer == p && entry.request.text("id") == message.text("requestId") {
+				d.unpark(entry)
+				p.respond(failure(entry.request.text("id"), "REQUEST_CANCELED", "Request canceled while waiting for the browser to reconnect. Nothing was dispatched."))
+				return
+			}
+		}
 		for id, pending := range d.pending {
 			if pending.owner == p && pending.original == message.text("requestId") {
 				d.cancelBrowserRequest(id, pending)
@@ -604,6 +683,8 @@ func (d *daemon) handleEnvelope(p *peer, message, body object) {
 		d.identity(p, message)
 		d.windows()
 		d.checkExtensionUpdates(time.Now())
+		d.lastExtensionAt = time.Now()
+		d.retryParked()
 	case "extension.update_ready":
 		d.requestExtensionReload(p, message.text("version"))
 	case "extension.update_cancel":
@@ -627,6 +708,9 @@ func (d *daemon) handleEnvelope(p *peer, message, body object) {
 			d.baselines.clear(p)
 		}
 		d.windows()
+		if p.access {
+			d.retryParked()
+		}
 	case "extension.window_action.request", "extension.window_action.result":
 		d.windowAction(p, message)
 	case "extension.artifact.begin", "extension.artifact.chunk", "extension.artifact.commit":
@@ -692,6 +776,8 @@ func (d *daemon) health(result object, diagnostics bool) object {
 
 func (d *daemon) route(p *peer, request object) {
 	d.initServices()
+	parkedUntil := request.number(parkedUntilKey)
+	delete(request, parkedUntilKey)
 	id, method := request.text("id"), request.text("method")
 	params, err := optionalObject(request, "params")
 	if !validID(id) || method == "" || err != nil {
@@ -836,6 +922,11 @@ func (d *daemon) route(p *peer, request object) {
 			if meta.text("target_extension") == "" && meta.text("target_browser") == "" && meta.text("target_profile") == "" {
 				reason = "extension_disconnected"
 			}
+			// A browser that just disconnected usually comes back within
+			// seconds; wait for it rather than failing the agent's call.
+			if d.parkForReconnect(p, request, response, reason, parkedUntil) {
+				return
+			}
 			d.routingError(p, request, response, reason)
 		}
 		return
@@ -855,7 +946,11 @@ func (d *daemon) route(p *peer, request object) {
 		return a.id < b.id
 	})
 	if len(d.pending) >= 128 || p.pending >= 16 {
-		d.localResponse(p, request, failure(id, "INVALID_REQUEST", "Daemon pending-request limit reached."))
+		busy := failure(id, "BRIDGE_BUSY", "The daemon is at its pending-request limit. Nothing was dispatched; retry shortly.")
+		busyError := busy.object("error")
+		busyError["details"] = value(object{"retryAfterMs": value(500), "pending": value(len(d.pending)), "dispatched": value(false)})
+		busy["error"] = value(busyError)
+		d.localResponse(p, request, busy)
 		return
 	}
 	// Remap request IDs on the daemon side so two agents may choose the same
@@ -892,7 +987,7 @@ func (d *daemon) route(p *peer, request object) {
 	}
 	pending.requestedTab = request.number("tab_id")
 	if !d.scheduleMutation(routedID, pending) {
-		d.localResponse(p, request, failure(id, "INVALID_REQUEST", "Mutation scheduling capacity reached. Wait for running work to settle."))
+		d.localResponse(p, request, failure(id, "BRIDGE_BUSY", "Mutation scheduling capacity reached. Nothing was dispatched; retry after running work settles."))
 		return
 	}
 	request["meta"] = value(meta)
@@ -915,7 +1010,13 @@ func (d *daemon) route(p *peer, request object) {
 		}
 	})
 	p.dataTargets[target] = true
-	target.send(object{"type": value("extension.request"), "request": rawObject(request)})
+	if !target.enqueue(object{"type": value("extension.request"), "request": rawObject(request)}, nil) {
+		// Nothing reached the extension, so the request fails now instead of
+		// waiting for its timeout.
+		response := failure(id, "RESULT_TOO_LARGE", "The request could not be delivered to the browser: it is over the 1 MiB transport limit or the extension connection is closing. Nothing was dispatched.")
+		d.baselines.abandon(routedID, pending)
+		d.finish(routedID, response)
+	}
 }
 
 func daemonPendingTimeout(params object) time.Duration {
@@ -979,7 +1080,7 @@ func (d *daemon) finish(id string, response object) {
 				d.releaseOrphan(pending.target, result)
 			}
 		}
-		accepted := pending.owner.enqueue(object{"type": value("agent.response"), "response": rawObject(response)}, func(ok bool) {
+		accepted := pending.owner.enqueue(agentResponseEnvelope(response), func(ok bool) {
 			if !ok {
 				d.mu.Lock()
 				defer d.mu.Unlock()
@@ -1082,14 +1183,18 @@ func (d *daemon) disconnect(p *peer) {
 		d.cleanupArtifacts("", "", p.id, false)
 		d.disconnectRecordings(p.id)
 		d.baselines.clear(p)
+		d.lastExtensionAt = time.Now()
 	}
+	d.dropParked(p, "")
 	for id, action := range d.windowActions {
 		if action.source == p || action.target == p {
 			d.finishWindowAction(id, "The browser disconnected. Try again.")
 		}
 	}
+	releasedTargets := map[*peer]bool{}
 	for id, pending := range d.pending {
 		if pending.owner == p {
+			releasedTargets[pending.target] = true
 			d.cancelBrowserRequest(id, pending)
 			d.baselines.abandon(id, pending)
 			if artifactKind(pending.method) != "" {
@@ -1102,6 +1207,14 @@ func (d *daemon) disconnect(p *peer) {
 			p.pending--
 		} else if pending.target == p {
 			d.finish(id, failure(pending.original, "EXTENSION_DISCONNECTED", "The selected browser profile disconnected."))
+		}
+	}
+	// Dropping an agent's requests can leave an extension with nothing in
+	// flight. Grant a waiting reload now, as finish does, instead of leaving
+	// the extension refusing work until the update window lapses.
+	for target := range releasedTargets {
+		if target != nil {
+			d.grantExtensionReload(target)
 		}
 	}
 	for target := range p.dataTargets {
@@ -1119,6 +1232,21 @@ func (d *daemon) disconnect(p *peer) {
 			}
 		}
 		d.windows()
+	}
+}
+
+// lockWithin reports whether d.mu could be taken within the timeout. On
+// success the lock is held and the caller must release it.
+func (d *daemon) lockWithin(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if d.mu.TryLock() {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

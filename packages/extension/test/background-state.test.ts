@@ -431,7 +431,7 @@ test('background state scope.set_enabled enables and disables the requested curr
   assert.equal(state.enabledWindow?.windowId, 8);
   assert.equal(state.enabledWindow?.title, 'Current Window');
   assert.deepEqual(loaded.chrome.storage.session.snapshot().enabledWindow, state.enabledWindow);
-  assert.deepEqual(keepaliveCreates(), [{ name: 'bb-keepalive', periodInMinutes: 0.4 }]);
+  assert.deepEqual(keepaliveCreates(), [{ name: 'bb-keepalive', periodInMinutes: 0.5 }]);
   assert.equal(
     nativeMessages.some(
       (message) =>

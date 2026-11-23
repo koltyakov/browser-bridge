@@ -171,7 +171,7 @@ test('handlePageEvaluate returns INVALID_REQUEST when expression is blank', asyn
   assert.equal(response.error.message, 'expression is required.');
 });
 
-test('handlePageEvaluate maps CDP exception details into an INTERNAL_ERROR response', async () => {
+test('handlePageEvaluate maps CDP exception details into an EVALUATION_FAILED response', async () => {
   const commands: DebuggerCommand[] = [];
   const dependencies = createDependencies({
     async sendCommand(
@@ -201,7 +201,7 @@ test('handlePageEvaluate maps CDP exception details into an INTERNAL_ERROR respo
   );
 
   assert.equal(response.ok, false);
-  assert.equal(response.error.code, ERROR_CODES.INTERNAL_ERROR);
+  assert.equal(response.error.code, ERROR_CODES.EVALUATION_FAILED);
   assert.equal(response.error.message, 'ReferenceError: missingValue is not defined');
   assert.equal(commands.length, 1);
 });

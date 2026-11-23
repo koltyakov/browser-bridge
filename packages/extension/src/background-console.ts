@@ -56,6 +56,50 @@ export async function ensureConsoleInterceptor(
           ? (page[recordKey] as Record<string, unknown>)
           : (page[recordKey] = {});
       const consoleMethods = console as unknown as Record<string, (...args: unknown[]) => void>;
+      // Adopt what the document_start hook captured during page load, and
+      // unhook it first so the regular wrappers wrap the real methods.
+      const early = page.__bbx_console_early__ as
+        | {
+            buffer?: unknown;
+            dropped?: unknown;
+            adopted?: boolean;
+            release?: () => void;
+          }
+        | undefined;
+      const earlyEntries: Array<{ level: string; args: string[]; ts: number }> = [];
+      let earlyDropped = 0;
+      if (early && typeof early === 'object' && Array.isArray(early.buffer)) {
+        early.adopted = true;
+        for (const entry of early.buffer.slice(-200)) {
+          if (
+            entry &&
+            typeof entry === 'object' &&
+            typeof (entry as { level?: unknown }).level === 'string' &&
+            Array.isArray((entry as { args?: unknown }).args)
+          ) {
+            const typed = entry as { level: string; args: unknown[]; ts?: unknown };
+            earlyEntries.push({
+              level: typed.level.slice(0, 20),
+              args: typed.args.slice(0, 20).map((arg) => String(arg).slice(0, 500)),
+              ts: typeof typed.ts === 'number' ? typed.ts : Date.now(),
+            });
+          }
+        }
+        earlyDropped = typeof early.dropped === 'number' ? early.dropped : 0;
+        try {
+          early.release?.();
+        } catch {
+          // A page that tampered with the hook keeps its own state.
+        }
+      }
+      const adoptEarly = (record: ConsoleInstrumentationRecord): void => {
+        if (!earlyEntries.length && !earlyDropped) return;
+        record.buffer.unshift(...earlyEntries);
+        const excess = Math.max(0, record.buffer.length - 200);
+        if (excess) record.buffer.splice(0, excess);
+        record.dropped += earlyDropped + excess;
+        globalThis.__bb_console_dropped = record.dropped;
+      };
       const existing = root.console;
       if (existing && typeof existing === 'object') {
         const record = existing as ConsoleInstrumentationRecord;
@@ -77,6 +121,7 @@ export async function ensureConsoleInterceptor(
         globalThis.__bb_console_installed = true;
         globalThis.__bb_console_buffer = record.buffer;
         globalThis.__bb_console_dropped = record.dropped;
+        adoptEarly(record);
         return;
       }
 
@@ -190,6 +235,7 @@ huge state tree stays cheap for the page. Errors keep their message
       globalThis.addEventListener('unhandledrejection', record.onRejection);
       record.listenersAttached = true;
       record.enabled = true;
+      adoptEarly(record);
     },
     args: [instrumentationKey],
   });
@@ -363,6 +409,57 @@ export function isRecoverableInstrumentationError(error: unknown): boolean {
     /Cannot attach to this target/i.test(message) ||
     /Another debugger is already attached/i.test(message)
   );
+}
+
+const EARLY_CONSOLE_SCRIPT_ID = 'bbx-console-early';
+
+type ChromeWithContentScriptRegistration = {
+  scripting?: {
+    registerContentScripts?: (scripts: chrome.scripting.RegisteredContentScript[]) => Promise<void>;
+    unregisterContentScripts?: (filter?: { ids?: string[] }) => Promise<void>;
+    getRegisteredContentScripts?: (filter?: {
+      ids?: string[];
+    }) => Promise<chrome.scripting.RegisteredContentScript[]>;
+  };
+};
+
+/** Register the document_start console hook while access is on, so output
+from page load is not lost before the tab finishes loading; unregister it
+when access is off. Best effort: older engines keep load-time capture off. */
+export async function syncEarlyConsoleCapture(
+  enabled: boolean,
+  chromeObj: ChromeWithContentScriptRegistration
+): Promise<void> {
+  const scripting = chromeObj.scripting;
+  if (
+    typeof scripting?.registerContentScripts !== 'function' ||
+    typeof scripting.unregisterContentScripts !== 'function' ||
+    typeof scripting.getRegisteredContentScripts !== 'function'
+  ) {
+    return;
+  }
+  try {
+    const registered = await scripting.getRegisteredContentScripts({
+      ids: [EARLY_CONSOLE_SCRIPT_ID],
+    });
+    if (enabled && !registered.length) {
+      await scripting.registerContentScripts([
+        {
+          id: EARLY_CONSOLE_SCRIPT_ID,
+          js: ['src/console-early.js'],
+          matches: ['<all_urls>'],
+          runAt: 'document_start',
+          world: 'MAIN',
+          allFrames: false,
+          persistAcrossSessions: false,
+        },
+      ]);
+    } else if (!enabled && registered.length) {
+      await scripting.unregisterContentScripts({ ids: [EARLY_CONSOLE_SCRIPT_ID] });
+    }
+  } catch {
+    // Registration is an optimization; regular capture still starts on load.
+  }
 }
 
 /** Best-effort console capture installation for enabled tabs. Some URLs cannot

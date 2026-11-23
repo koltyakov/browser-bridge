@@ -14,6 +14,7 @@ import (
 	"net"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/koltyakov/browser-bridge/internal/protocol"
@@ -22,12 +23,34 @@ import (
 // Keep the limit identical to MAX_JSON_LINE_BYTES / MAX_NATIVE_MESSAGE_BYTES.
 const maxMessageBytes = protocol.MaxJSONLineBytes
 
+// wireEnvelopeSlack lets the relay wrap a maximum-size native message in its
+// daemon envelope ({"type":"agent.request","request":...}, about 43 bytes)
+// without the wrapped line exceeding the socket limit.
+const wireEnvelopeSlack = 4 << 10
+
+// maxWireLineBytes bounds one socket line: a full message plus its envelope.
+const maxWireLineBytes = maxMessageBytes + wireEnvelopeSlack
+
+// errMessageTooLarge marks a single message over its transport limit. The
+// connection stays usable; only that message fails.
+var errMessageTooLarge = errors.New("bridge message exceeds 1 MiB")
+
+// errNativeFrameTooLarge marks an inbound native frame that was discarded.
+var errNativeFrameTooLarge = errors.New("native message exceeds 1 MiB and was discarded")
+
 type object map[string]json.RawMessage
+
+// valueEncodeFailures counts values that could not be encoded (a NaN float,
+// say). daemon.metrics reports it; the value becomes null instead of crashing.
+var valueEncodeFailures atomic.Int64
 
 func value[T interface{}](v T) json.RawMessage {
 	b, err := encodeJSON(v)
 	if err != nil {
-		panic(err) // Only JSON-compatible, typed values are passed by this program.
+		// A panic here would take down the daemon and every connection. One
+		// bad field degrades to null in one message instead.
+		valueEncodeFailures.Add(1)
+		return json.RawMessage("null")
 	}
 	return b
 }
@@ -146,8 +169,18 @@ func (e *oversizedLineError) Error() string { return "bridge JSON line exceeds 1
 var spareLines = make(chan []byte, 2)
 
 func readLine(reader *bufio.Reader) (object, error) {
+	return readLineLimit(reader, maxMessageBytes)
+}
+
+// readWireLine reads a daemon-socket line, which may carry a full native
+// message plus its relay envelope.
+func readWireLine(reader *bufio.Reader) (object, error) {
+	return readLineLimit(reader, maxWireLineBytes)
+}
+
+func readLineLimit(reader *bufio.Reader, maxWireLineBytes int) (object, error) {
 	part, err := reader.ReadSlice('\n')
-	if len(part) > maxMessageBytes+1 || (len(part) > maxMessageBytes && err != nil) {
+	if len(part) > maxWireLineBytes+1 || (len(part) > maxWireLineBytes && err != nil) {
 		return nil, &oversizedLineError{terminated: err == nil}
 	}
 	if err == nil {
@@ -171,20 +204,20 @@ func readLine(reader *bufio.Reader) (object, error) {
 		}
 	}()
 	for {
-		if len(line)+len(part) > maxMessageBytes+1 {
+		if len(line)+len(part) > maxWireLineBytes+1 {
 			return nil, &oversizedLineError{terminated: err == nil}
 		}
 		if need := len(line) + len(part); need > cap(line) {
-			next := make([]byte, len(line), min(maxMessageBytes+1, max(need, 2*cap(line))))
+			next := make([]byte, len(line), min(maxWireLineBytes+1, max(need, 2*cap(line))))
 			copy(next, line)
 			line = next
 		}
 		line = append(line, part...)
-		if len(line) > maxMessageBytes && line[len(line)-1] != '\n' {
+		if len(line) > maxWireLineBytes && line[len(line)-1] != '\n' {
 			return nil, &oversizedLineError{terminated: false}
 		}
 		if errors.Is(err, bufio.ErrBufferFull) {
-			if len(line) > maxMessageBytes {
+			if len(line) > maxWireLineBytes {
 				return nil, &oversizedLineError{terminated: false}
 			}
 			part, err = reader.ReadSlice('\n')
@@ -221,8 +254,17 @@ func readNative(reader io.Reader) (object, error) {
 		return nil, err
 	}
 	size := binary.LittleEndian.Uint32(header[:])
-	if size == 0 || size > protocol.MaxNativeMessageBytes {
+	if size == 0 {
 		return nil, fmt.Errorf("invalid native message length: %d", size)
+	}
+	if size > protocol.MaxNativeMessageBytes {
+		// Skip the payload so the next frame is read from its header. Chrome
+		// caps extension-to-host frames far higher, so this is one bad message,
+		// not a broken stream.
+		if _, err := io.CopyN(io.Discard, reader, int64(size)); err != nil {
+			return nil, err
+		}
+		return nil, errNativeFrameTooLarge
 	}
 	payload := make([]byte, int(size))
 	if _, err := io.ReadFull(reader, payload); err != nil {
@@ -238,6 +280,9 @@ type wireWriter struct {
 	turn   chan struct{}
 	out    io.Writer
 	native bool
+	// lineLimit overrides the line limit; relay connections allow the
+	// envelope slack on top of a full message.
+	lineLimit int
 }
 
 func (w *wireWriter) send(message object) error {
@@ -265,11 +310,14 @@ func (w *wireWriter) sendPayloadContext(ctx context.Context, payload []byte) (bo
 		return false, err
 	}
 	limit := maxMessageBytes
+	if w.lineLimit > 0 {
+		limit = w.lineLimit
+	}
 	if w.native {
 		limit = protocol.MaxNativeMessageBytes
 	}
 	if len(payload) > limit {
-		return false, errors.New("bridge message exceeds 1 MiB")
+		return false, errMessageTooLarge
 	}
 	if w.native {
 		frame := make([]byte, 4, len(payload)+4)

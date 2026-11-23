@@ -128,8 +128,29 @@ be restored without migration or changes to the panel message format. */
       .reverse();
   }
 
-  async function persistHistory(): Promise<void> {
-    if (!historyRestored) return;
+  let persistInFlight: Promise<void> | null = null;
+  let persistAgain = false;
+
+  /** Write the history, coalescing bursts: an append during a write marks the
+  history dirty, and one more write covers every entry added meanwhile. */
+  function persistHistory(): Promise<void> {
+    if (!historyRestored) return Promise.resolve();
+    if (persistInFlight) {
+      persistAgain = true;
+      return persistInFlight;
+    }
+    persistInFlight = (async () => {
+      do {
+        persistAgain = false;
+        await writeHistory();
+      } while (persistAgain);
+    })().finally(() => {
+      persistInFlight = null;
+    });
+    return persistInFlight;
+  }
+
+  async function writeHistory(): Promise<void> {
     // Connection checks belong only to the live worker, not restored history.
     const history = state.actionLog.filter((entry) => entry.method !== 'health.ping');
     // Session storage survives worker suspension, but Chrome clears it on an

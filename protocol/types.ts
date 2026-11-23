@@ -170,6 +170,7 @@ export type ErrorCode =
   | 'INPUT_UNSUPPORTED'
   | 'INPUT_INVALID_TARGET'
   | 'INPUT_FOCUS_CHANGED'
+  | 'INPUT_VALUE_REJECTED'
   | 'DIALOG_BLOCKED'
   | 'DIALOG_NOT_OPEN'
   | 'DIALOG_ACTION_CONFLICT'
@@ -190,7 +191,11 @@ export type ErrorCode =
   | 'INVALID_REQUEST'
   | 'NATIVE_HOST_UNAVAILABLE'
   | 'EXTENSION_DISCONNECTED'
-  | 'TIMEOUT';
+  | 'TIMEOUT'
+  | 'EVALUATION_FAILED'
+  | 'REQUEST_CANCELED'
+  | 'BRIDGE_BUSY'
+  | 'DAEMON_UNAVAILABLE';
 
 export type BridgeMethod =
   | 'session.start'
@@ -2139,10 +2144,13 @@ export interface NormalizedNetworkInterceptAddParams extends BridgeParams {
 
 export interface PageTextParams {
   textBudget?: number;
+  /** Characters to skip, to continue a read whose result was truncated (pass nextOffset). */
+  offset?: number;
 }
 
 export interface NormalizedPageTextParams extends BridgeParams {
   textBudget: number;
+  offset: number;
 }
 
 export interface LogTailParams {

@@ -9,7 +9,10 @@ import {
   primeTabConsoleCapture,
   primeWindowConsoleCapture,
   readConsoleBuffer,
+  syncEarlyConsoleCapture,
 } from '../src/background-console.js';
+import { readFile } from 'node:fs/promises';
+import { extensionFile } from '../../../tests/_helpers/extensionBuild.ts';
 
 type ConsoleEntry = { level: string; args: string[]; ts: number };
 type ExecuteScriptConfig = {
@@ -444,4 +447,112 @@ test('primeWindowConsoleCapture primes numeric tab ids and settles individual fa
       { target: { tabId: 12 }, args: [true, executeScriptCalls[0].args?.[0]] },
     ]
   );
+});
+
+test('the document_start hook keeps load-time output for the interceptor to adopt', async (t) => {
+  clearInjectedConsoleState();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const originals = new Map<string, (...args: unknown[]) => void>();
+  for (const level of consoleLevels) {
+    t.mock.method(console, level, () => {});
+    originals.set(level, console[level]);
+  }
+  const listeners = new Set<string>();
+  const page = globalThis as unknown as Record<string, unknown>;
+  const savedAdd = Object.getOwnPropertyDescriptor(globalThis, 'addEventListener');
+  const savedRemove = Object.getOwnPropertyDescriptor(globalThis, 'removeEventListener');
+  Object.defineProperty(globalThis, 'addEventListener', {
+    configurable: true,
+    value: (type: string) => listeners.add(type),
+  });
+  Object.defineProperty(globalThis, 'removeEventListener', {
+    configurable: true,
+    value: (type: string) => listeners.delete(type),
+  });
+  t.after(() => {
+    clearInjectedConsoleState();
+    delete page.__bbx_console_early__;
+    for (const [name, descriptor] of [
+      ['addEventListener', savedAdd],
+      ['removeEventListener', savedRemove],
+    ] as const) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else Reflect.deleteProperty(globalThis, name);
+    }
+  });
+
+  const source = await readFile(extensionFile('src/console-early.js'), 'utf8');
+  new Function(source)();
+  assert.ok(page.__bbx_console_early__, 'hook installed');
+  console.warn('booting', { step: 1 });
+
+  await ensureConsoleInterceptor(7, createScriptExecutingChrome());
+  assert.equal(page.__bbx_console_early__, undefined, 'early hook released after adoption');
+  console.log('after load');
+  assert.deepEqual(
+    getBuffer().map((entry) => [entry.level, entry.args]),
+    [
+      ['warn', ['booting', '{"step":1}']],
+      ['log', ['after load']],
+    ]
+  );
+});
+
+test('an unadopted document_start hook removes itself', async (t) => {
+  clearInjectedConsoleState();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.method(console, 'log', () => {});
+  const before = console.log;
+  const page = globalThis as unknown as Record<string, unknown>;
+  const savedAdd = Object.getOwnPropertyDescriptor(globalThis, 'addEventListener');
+  const savedRemove = Object.getOwnPropertyDescriptor(globalThis, 'removeEventListener');
+  Object.defineProperty(globalThis, 'addEventListener', { configurable: true, value: () => {} });
+  Object.defineProperty(globalThis, 'removeEventListener', { configurable: true, value: () => {} });
+  t.after(() => {
+    delete page.__bbx_console_early__;
+    for (const [name, descriptor] of [
+      ['addEventListener', savedAdd],
+      ['removeEventListener', savedRemove],
+    ] as const) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else Reflect.deleteProperty(globalThis, name);
+    }
+  });
+  new Function(await readFile(extensionFile('src/console-early.js'), 'utf8'))();
+  assert.notEqual(console.log, before, 'console wrapped');
+  t.mock.timers.tick(15_000);
+  assert.equal(console.log, before, 'console restored');
+  assert.equal(page.__bbx_console_early__, undefined);
+});
+
+test('syncEarlyConsoleCapture registers once while enabled and unregisters when disabled', async () => {
+  const registered: string[] = [];
+  const calls: string[] = [];
+  const chromeObj = {
+    scripting: {
+      async registerContentScripts(scripts: chrome.scripting.RegisteredContentScript[]) {
+        calls.push('register');
+        for (const script of scripts) {
+          assert.equal(script.world, 'MAIN');
+          assert.equal(script.runAt, 'document_start');
+          registered.push(script.id);
+        }
+      },
+      async unregisterContentScripts(filter?: { ids?: string[] }) {
+        calls.push('unregister');
+        for (const id of filter?.ids ?? []) registered.splice(registered.indexOf(id), 1);
+      },
+      async getRegisteredContentScripts(filter?: { ids?: string[] }) {
+        return registered
+          .filter((id) => !filter?.ids || filter.ids.includes(id))
+          .map((id) => ({ id }) as chrome.scripting.RegisteredContentScript);
+      },
+    },
+  };
+  await syncEarlyConsoleCapture(true, chromeObj);
+  await syncEarlyConsoleCapture(true, chromeObj);
+  await syncEarlyConsoleCapture(false, chromeObj);
+  await syncEarlyConsoleCapture(false, chromeObj);
+  assert.deepEqual(calls, ['register', 'unregister']);
+  await syncEarlyConsoleCapture(true, {});
 });

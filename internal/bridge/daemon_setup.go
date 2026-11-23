@@ -49,7 +49,7 @@ func (d *daemon) setupRequest(p *peer, request object, work func() (object, erro
 	if !d.startSetupTask(p, request.text("id"), work, func(result object, err error) {
 		d.localResponse(p, request, serviceResponse(request.text("id"), result, err, fallback))
 	}) {
-		d.localResponse(p, request, failure(request.text("id"), "INVALID_REQUEST", "Setup request limit reached or request id is already pending."))
+		d.localResponse(p, request, failure(request.text("id"), "BRIDGE_BUSY", "Setup is already running the maximum number of tasks, or this request id is pending. Nothing was started; retry shortly."))
 	}
 }
 

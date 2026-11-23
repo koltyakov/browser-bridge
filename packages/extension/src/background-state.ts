@@ -141,6 +141,16 @@ export type ExtensionState = {
 
 export type SetupStatus = import('../../../protocol/src/types.js').SetupStatus;
 
+/** The port bridge replies and mutations go to: the stable port, or the one
+still inside its 500 ms stability window. Replies already use the pending
+port, so every sender must too, or work fails right after a reconnect. */
+export function getActiveNativePort(state: {
+  nativePort: chrome.runtime.Port | null;
+  pendingNativePort: chrome.runtime.Port | null;
+}): chrome.runtime.Port | null {
+  return state.nativePort ?? state.pendingNativePort;
+}
+
 export function isNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
@@ -166,6 +176,8 @@ export const ACCESS_DENIED_REASON_WINDOW_GONE = 'window_access_gone';
 export const ACCESS_DENIED_TAB_CLOSE = 'tabs.close only works inside the enabled window.';
 export const KEEPALIVE_ALARM_NAME = 'bb-keepalive';
 export const NATIVE_RECONNECT_BASE_MS = 2_000;
+/** First reconnect after a stable connection: almost immediate. */
+export const NATIVE_RECONNECT_IMMEDIATE_MS = 50;
 export const NATIVE_RECONNECT_MAX_MS = 30_000;
 export const NATIVE_SETUP_POLL_MS = 10_000;
 export const NATIVE_SETUP_IDLE_POLL_MS = 5 * 60_000;

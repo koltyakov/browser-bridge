@@ -44,6 +44,9 @@ func prepareNativeClientUpdate(ctx context.Context, c config, update compatibleN
 	if err != nil || policy != "compatible" {
 		return false, err
 	}
+	if updateCheckedRecently(c, time.Now()) {
+		return false, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	cl, err := connect(c, "agent")
