@@ -161,7 +161,7 @@
             "type": "boolean"
           },
           "idleTtlMs": {
-            "description": "For create: close the tab after this many ms without agent calls to it (default 900000 = 15 min; 0 keeps it until access ends; 300000 to 86400000). To drop a scratch tab right away, close it with the close action.",
+            "description": "For create: close the tab after this many ms without agent calls to it, as cleanup for scratch tabs (default 900000 = 15 min; 300000 to 86400000). Pass 0 when the user asked for the tab, so BBX never closes it. Close scratch tabs with the close action when done.",
             "type": "integer",
             "minimum": 0,
             "maximum": 86400000

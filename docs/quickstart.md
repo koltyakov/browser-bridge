@@ -190,6 +190,11 @@ Tabs with agent activity are marked with blue **AI** groups. Adjacent active tab
 separated tabs use separate groups to preserve tab order. Pinned tabs and existing groups are
 left alone. Browser Bridge removes its groups after 15 idle minutes or when access is disabled.
 
+With **Close BBX tabs when done** on (the default), agents close the scratch tabs they opened as
+soon as they finish with them. Whatever the setting, a tab an agent opened on its own and left
+behind closes after 15 minutes without agent requests; active, pinned, and busy tabs stay open.
+A tab you ask an agent to open stays until you close it, and tabs you opened are never closed.
+
 ## 5. Use it
 
 **MCP mode** - tools are auto-discovered by the client. Just ask naturally:

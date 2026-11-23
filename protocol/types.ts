@@ -1701,8 +1701,10 @@ export interface TabCreateParams {
   active?: boolean;
   /**
    * Close this agent-opened tab after this many milliseconds without agent
-   * requests to it. 0 keeps it until window access ends. Default 15 minutes;
-   * otherwise 5 minutes to 24 hours. Close the tab with tabs.close to drop it sooner.
+   * requests to it: cleanup for scratch tabs an agent leaves behind. Default 15
+   * minutes; otherwise 5 minutes to 24 hours. Pass 0 when the user asked for the
+   * tab: BBX then never closes it, including when access ends. Close scratch tabs
+   * with tabs.close as soon as the work is done.
    */
   idleTtlMs?: number;
 }

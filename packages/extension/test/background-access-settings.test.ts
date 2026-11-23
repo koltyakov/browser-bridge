@@ -61,13 +61,19 @@ test('AI tab cleanup respects its setting and never removes user or moved tabs',
   state.enabledWindow = grant;
   await controller.track(42, grant);
   await controller.track(44, grant);
+  await controller.track(45, grant, 0);
   assert.equal(isGrantedTab(state, 41, 7), true);
   assert.equal(isGrantedTab(state, 42, 7), true);
   assert.equal(isGrantedTab(state, 43, 7), false);
   assert.equal(isGrantedTab(state, 42, 8), false);
+  assert.equal(typeof state.aiCreatedTabs['42'].lastActiveAt, 'number');
+  await controller.noteActivity(42, 123_456);
+  await controller.noteActivity(99, 1);
+  assert.equal(state.aiCreatedTabs['99'], undefined, 'activity never creates ownership');
   const restarted = createExtensionState();
   await createAccessSettingsController(restarted, chromeObj).restore();
   assert.deepEqual(restarted.aiCreatedTabs, state.aiCreatedTabs);
+  assert.equal(restarted.aiCreatedTabs['42'].lastActiveAt, 123_456);
   state.enabledWindow = { ...grant, enabledAt: 101 };
   assert.equal(isGrantedTab(state, 42, 7), false, 'old AI tabs do not inherit a new tab grant');
   state.accessSettings.closeAiTabsWhenDone = false;
@@ -75,7 +81,7 @@ test('AI tab cleanup respects its setting and never removes user or moved tabs',
   assert.deepEqual(removed, []);
   state.accessSettings.closeAiTabsWhenDone = true;
   await controller.closeWhenDone(7);
-  assert.deepEqual(removed, [42]);
+  assert.deepEqual(removed, [42], 'a tab the user asked for (TTL 0) stays');
   await controller.forget(42);
   assert.equal(state.aiCreatedTabs['42'], undefined);
   assert.equal(normalizeStoredEnabledWindow({ ...grant, tabId: -1 }), null);

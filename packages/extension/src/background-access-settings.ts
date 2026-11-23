@@ -64,6 +64,11 @@ export function createAccessSettingsController(
               tab.idleTtlMs >= 0
                 ? { idleTtlMs: tab.idleTtlMs }
                 : {}),
+              ...(key === AI_TABS_STORAGE_KEY &&
+              typeof tab.lastActiveAt === 'number' &&
+              Number.isFinite(tab.lastActiveAt)
+                ? { lastActiveAt: tab.lastActiveAt }
+                : {}),
             };
           }
         }
@@ -152,7 +157,19 @@ export function createAccessSettingsController(
           windowId: grant.windowId,
           enabledAt: grant.enabledAt,
           ...(typeof idleTtlMs === 'number' ? { idleTtlMs } : {}),
+          lastActiveAt: Date.now(),
         };
+        await chrome.storage.session.set({ [AI_TABS_STORAGE_KEY]: { ...state.aiCreatedTabs } });
+      });
+    },
+    /** Persist the idle clock of an agent-opened tab across worker restarts.
+     * The record updates at once so later touches see it; storage follows. */
+    noteActivity(tabId: number, at: number): Promise<void> {
+      const record = state.aiCreatedTabs[String(tabId)];
+      if (!record) return tail;
+      record.lastActiveAt = at;
+      return enqueue(async () => {
+        if (!state.aiCreatedTabs[String(tabId)]) return;
         await chrome.storage.session.set({ [AI_TABS_STORAGE_KEY]: { ...state.aiCreatedTabs } });
       });
     },
@@ -207,7 +224,8 @@ export function createAccessSettingsController(
       if (!state.accessSettings.closeAiTabsWhenDone) return;
       const errors: unknown[] = [];
       for (const [id, owner] of Object.entries(state.aiCreatedTabs)) {
-        if (owner.windowId !== windowId) continue;
+        // TTL 0 marks a tab the user asked for; it stays after access ends.
+        if (owner.windowId !== windowId || owner.idleTtlMs === 0) continue;
         let tab: chrome.tabs.Tab;
         try {
           tab = await chrome.tabs.get(Number(id));

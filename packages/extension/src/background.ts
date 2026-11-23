@@ -139,7 +139,7 @@ import {
 import { createDomBaselineController } from './background-dom-baselines.js';
 import { createDomBaselineRequestHandler } from './background-dom-baseline-requests.js';
 import { createAgentTabLeaseStore, normalizeAgentSession } from './background-agent-tabs.js';
-import { createIdleTabSweeper } from './background-idle-tabs.js';
+import { createIdleTabSweeper, idleCloseLogEntry } from './background-idle-tabs.js';
 import { createAgentTabGroupController } from './background-agent-groups.js';
 import { createWebMcpController } from './background-webmcp.js';
 import { createEmulationController } from './background-emulation.js';
@@ -667,6 +667,12 @@ async function resolveRequestTarget(
 /** Requests by tab, so idle cleanup never closes a tab with work in flight. */
 const requestTabs = new Map<string, number>();
 
+/** Drop a finished request and its sub-requests (`id#n`) from requestTabs. */
+function forgetRequestTabs(requestId: string): void {
+  for (const id of requestTabs.keys())
+    if (id === requestId || id.startsWith(`${requestId}#`)) requestTabs.delete(id);
+}
+
 function isTabBusy(tabId: number): boolean {
   let busy = false;
   for (const [requestId, requestTab] of requestTabs) {
@@ -679,17 +685,14 @@ function isTabBusy(tabId: number): boolean {
 const idleTabs = createIdleTabSweeper({
   getOwnedTabs: () => state.aiCreatedTabs,
   getEnabledWindowId: () => state.enabledWindow?.windowId ?? null,
-  closingAllowed: () => state.accessSettings.closeAiTabsWhenDone,
   isBusy: isTabBusy,
   getTab: (tabId) => chrome.tabs.get(tabId).catch(() => null),
   closeTab: (tabId) => chrome.tabs.remove(tabId),
   onClosed: (tabId, idleMs) => {
-    void appendActionLogEntry({
-      method: 'tabs.idle_close',
-      tabId,
-      ok: true,
-      summary: `Closed BBX tab ${tabId} after ${Math.round(idleMs / 60_000)} min without agent activity.`,
-    }).catch(reportAsyncError);
+    void appendActionLogEntry(idleCloseLogEntry(tabId, idleMs)).catch(reportAsyncError);
+  },
+  persistActivity: (tabId, at) => {
+    void accessSettings.noteActivity(tabId, at).catch(reportAsyncError);
   },
   defaultTtlMs: DEFAULT_AGENT_TAB_IDLE_TTL_MS,
 });
@@ -1416,6 +1419,7 @@ async function handleActiveBridgeRequest(request: BridgeRequest): Promise<void> 
       .catch(reportAsyncError);
   } finally {
     finish();
+    forgetRequestTabs(request.id);
     mutationGate.release(request.id);
     dataRequestOwners.delete(request.id);
     disconnectedDataRequests.delete(request.id);

@@ -88,7 +88,7 @@ Uses CDP device emulation - the page re-renders at the new size immediately.
 
 Always start with `tabs.list` to find an appropriate existing tab before considering `tabs.create`.
 
-Reads, input, navigation, and screenshots can target background tabs by `tabId`. New tabs open in the background by default. A tab you open closes on its own after 15 minutes without your calls to it; pass `idleTtlMs` to `tabs.create` to choose (at least `300000`, 5 minutes; `0` keeps it until access ends). The result echoes `idleTtlMs`. When you are done with a tab you opened, close it yourself with `tabs.close` instead of waiting. Tabs the user opened are never closed, even ones you worked in; they leave the BBX tab group after 15 idle minutes. Closing BBX tabs follows the user's "close AI tabs when done" setting, and a tab with a running request or that the user is viewing is left open. You may switch to tabs you opened for this task without asking while the active tab is also one you are using for this task. Check `tabs.list` active state before switching, and track opened tabs from your own `tabs.create` results. `working:true` identifies routing, not ownership or foreground focus.
+Reads, input, navigation, and screenshots can target background tabs by `tabId`. New tabs open in the background by default. A tab you open for your own work is a scratch tab: when the user's "Close BBX tabs when done" setting is on (`closeAiTabsWhenDone` in `health.ping` `accessSettings.settings`, on by default), close it with `tabs.close` as soon as you finish the work it was for. Whatever the setting, BBX closes a tab you opened after 15 minutes without your calls to it, as cleanup for tabs left behind; pass `idleTtlMs` to `tabs.create` for another timeout (`300000` to `86400000`). When the user asks you to open a tab, they mean to keep it: pass `idleTtlMs: 0`, which BBX never closes, and do not close it yourself. The result echoes `idleTtlMs`. Idle cleanup leaves open a tab with a running request, that the user is viewing, or that the user pinned. Tabs the user opened are never closed, even ones you worked in; they leave the BBX tab group after 15 idle minutes. You may switch to tabs you opened for this task without asking while the active tab is also one you are using for this task. Check `tabs.list` active state before switching, and track opened tabs from your own `tabs.create` results. `working:true` identifies routing, not ownership or foreground focus.
 
 If the user switches to their own tab, continue in the background. Activate only at their request or with their permission. If an operation cannot work while the tab is inactive, explain why and ask whether activation is allowed. A timeout or a different `active_tab_id` alone does not justify activation. Permission for one activation does not allow repeatedly taking focus back after the user switches away. Apply these rules to `tabs.activate`, `active:true`, and equivalent focus APIs.
 
@@ -106,7 +106,7 @@ Typical workflow - compare two pages (only when comparison is required):
 1. `tabs.list` to see current tabs
 2. `tabs.create` with second URL
 3. Inspect both tabs (`--tab <id>` or MCP `tabId` only when you need the non-active tab)
-4. `tabs.close` when done
+4. `tabs.close` each tab you opened once you are done, when `closeAiTabsWhenDone` is on
 
 ## Accessibility Outline
 

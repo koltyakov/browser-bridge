@@ -1871,7 +1871,7 @@ export function normalizeTabCreateParams(params: TabCreateParams = {}): Normaliz
   if (ttl !== undefined && (!Number.isFinite(ttl) || ttl < 0)) {
     throw new BridgeError(
       ERROR_CODES.INVALID_REQUEST,
-      'idleTtlMs must be 0 (keep until access ends) or 30000 to 86400000 milliseconds.'
+      `idleTtlMs must be 0 (never close) or a positive number of milliseconds, clamped to ${MIN_AGENT_TAB_IDLE_TTL_MS} to ${MAX_AGENT_TAB_IDLE_TTL_MS}.`
     );
   }
   return {

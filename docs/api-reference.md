@@ -185,7 +185,7 @@ grouped here by domain.
 | Method          | Description                                       |
 | --------------- | ------------------------------------------------- |
 | `tabs.list`     | List tabs in the enabled window; optional `limit` and `offset` |
-| `tabs.create`   | Create a background tab in the enabled window; `active` defaults to `false` |
+| `tabs.create`   | Create a background tab in the enabled window; `active` defaults to `false`. Closes after `idleTtlMs` (default 15 minutes) without agent requests; `0`, for tabs the user asked for, never closes |
 | `tabs.close`    | Close a tab in the enabled window                 |
 | `tabs.activate` | Bring a tab to the foreground in the enabled window |
 

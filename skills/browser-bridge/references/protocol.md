@@ -413,7 +413,7 @@ bbx call input.scroll_into_view '{"target":{"selector":"[data-testid=\\"checkout
 
 Open a new browser tab. Optional `url` (defaults to `about:blank`) and `active` flag (defaults to `false`; new tabs open in the background). Does not require a session.
 
-`idleTtlMs` sets how long the tab may go without agent calls before BBX closes it: default `900000` (15 minutes), `0` keeps it until window access ends, otherwise 5 minutes to 24 hours (shorter values are raised to 5 minutes). To drop a scratch tab sooner, close it with `tabs.close` as soon as you are done. Requests to the tab reset the clock; a tab with a running request or that the user is viewing stays open. User-opened tabs are never closed this way.
+`idleTtlMs` sets how long the tab may go without agent calls before BBX closes it, as cleanup for scratch tabs an agent leaves behind: default `900000` (15 minutes), otherwise 5 minutes to 24 hours (shorter values are raised to 5 minutes). Pass `0` when the user asked for the tab: BBX then never closes it, including when access ends. Close scratch tabs with `tabs.close` as soon as you are done. Requests to the tab reset the clock; a tab with a running request, that the user is viewing, or that the user pinned stays open. User-opened tabs are never closed this way.
 
 ```bash
 bbx tab-create https://example.com

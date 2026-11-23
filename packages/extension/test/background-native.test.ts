@@ -1811,7 +1811,10 @@ test('background native enable flow injects content scripts after ping timeouts 
     await waitForCondition(() => timers.scheduled.length === 1);
 
     assert.equal(timers.scheduled.length, 1);
-    assert.equal(timers.scheduled[0]?.delay, 5000);
+    // The timer covers the time left until a deadline, so a clock tick between
+    // computing the deadline and arming the timer shortens it slightly.
+    const pingDelay = timers.scheduled[0]?.delay ?? Number.NaN;
+    assert.ok(pingDelay > 4900 && pingDelay <= 5000, `unexpected ping timeout ${pingDelay}`);
 
     timers.scheduled[0].callback();
     await flushAsyncWork();

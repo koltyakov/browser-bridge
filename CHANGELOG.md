@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [2.5.0] - 2026-11-23
+## [2.5.x] - 2026-11
 
 ### Added
 
@@ -19,10 +19,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Agent-created tabs close after 15 minutes without agent requests.
+- Tabs an agent opens on its own close after 15 minutes without agent
+  requests, cleaning up scratch tabs the agent did not close.
   `tabs.create.idleTtlMs` accepts a custom timeout from 5 minutes to 24 hours,
-  or `0` to keep the tab until access ends. Cleanup respects the user's
-  closing setting and leaves active tabs, busy tabs, and user-opened tabs alone.
+  or `0` for a tab the user asked for, which is never closed automatically,
+  including when access ends. Cleanup keeps its idle clock across
+  service-worker restarts and leaves active, pinned, busy, and user-opened tabs
+  alone. The side panel activity log records each idle close.
 - DOM keyboard input handles control activation, form submission, Tab focus
   order, caret movement, select and radio navigation, and number/range stepping.
   Contenteditable edits preserve markup, and `input.type` fires `change` when
@@ -60,7 +63,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - MCP HTTP streams send keep-alives during long calls, and dead MCP process
   registrations are cleaned up.
 
-## [2.4.0] - 2026-11-21
+## [2.4.x] - 2026-11
 
 ### Changed
 
@@ -101,7 +104,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `browser_status` for a remote destination reports readiness facts and is not
   an error when only the routed tab is a restricted page.
 
-## [2.3.0] - 2026-11-20
+## [2.3.x] - 2026-11
 
 ### Added
 
@@ -130,7 +133,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Delayed reload callbacks reject expired grants, and unreadable cooldown storage
   cannot trigger repeated update checks.
 
-## [2.2.0] - 2026-11-17
+## [2.2.x] - 2026-11
 
 ### Added
 
@@ -174,7 +177,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed tab-group colors, reduced-motion connection spinners, and Windows ZIP
   entry handling.
 
-## [2.1.0] - 2026-11-08
+## [2.1.x] - 2026-11
 
 ### Added
 
@@ -206,7 +209,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Daemons started during npm installation no longer retain npm's staging
   directory as their working directory.
 
-## [2.0.0] - 2026-11-08
+## [2.0.x] - 2026-11
 
 ### Added
 
@@ -341,7 +344,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Node entrypoint, so existing agent clients keep starting Browser Bridge.
   `bbx doctor` warns about other MCP entries that launch a missing file.
 
-## [1.15.0] - 2026-11-04
+## [1.15.x] - 2026-11
 
 ### Changed
 
@@ -368,7 +371,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   named pipes so they can connect to the authenticated Go v2 daemon. Legacy
   local daemons remain usable without credential files.
 
-## [1.12.x] - 2026-10-15
+## [1.12.x] - 2026-10
 
 ### Added
 
@@ -431,7 +434,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   inspection and input. CDP input for iframe targets remains unsupported.
 - Generated profile labels persist across browser restarts.
 
-## [1.11.x] - 2026-10-06
+## [1.11.x] - 2026-10
 
 ### Added
 
@@ -482,7 +485,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   connections, and native-host installation allows only the specified extension
   ID. Pending requests are limited.
 
-## [1.10.0] - 2026-07-24
+## [1.10.x] - 2026-07
 
 ### Added
 
@@ -534,7 +537,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the npm self-update refusal and failure branches, including the case where npm
   reports success without replacing the install.
 
-## [1.9.0] - 2026-07-23
+## [1.9.x] - 2026-07
 
 ### Added
 
@@ -587,7 +590,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   byte limits remove complete oldest entries instead of truncating fields, and
   artifact files use private daemon storage with a five-minute lifetime.
 
-## [1.8.0] - 2026-07-22
+## [1.8.x] - 2026-07
 
 ### Added
 
@@ -682,7 +685,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `data:` and `blob:` URLs, and excludes bodies, cookies, authorization values,
   and complete headers.
 
-## [1.7.x] - 2026-07-18
+## [1.7.x] - 2026-07
 
 ### Added
 
@@ -714,7 +717,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   circular objects safely, and fetch interception avoids unnecessary request
   cloning while preserving request bodies.
 
-## [1.6.0] - 2026-06-09
+## [1.6.x] - 2026-06
 
 ### Added
 
@@ -745,7 +748,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Input and interception validation:** Hardened `input.fill` and network
   interception parameter handling, cleanup, and protocol capability metadata.
 
-## [1.5.0] - 2026-05-13
+## [1.5.x] - 2026-05
 
 ### Changed
 
@@ -773,7 +776,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **CLI error typing:** CLI daemon connection errors now extract error codes
   without untyped casts.
 
-## [1.4.0] - 2026-05-12
+## [1.4.x] - 2026-05
 
 ### Added
 
@@ -814,7 +817,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   invalid requests, duplicate in-flight request ids, unauthenticated messages,
   and response-write failures without leaving pending request timers behind.
 
-## [1.3.0] - 2026-05-11
+## [1.3.x] - 2026-05
 
 ### Added
 
@@ -834,7 +837,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   extension background, page evaluation, access request, and content-script test
   coverage around the bridge paths updated in this release.
 
-## [1.2.0] - 2026-05-07
+## [1.2.x] - 2026-05
 
 ### Added
 
@@ -854,7 +857,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   element and capturing the screenshot, instead of misparsing `--tab` as a
   positional argument.
 
-## [1.1.0] - 2026-05-02
+## [1.1.x] - 2026-05
 
 ### Added
 
@@ -885,7 +888,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `code`, and `modifiers` input and consistently sends the expected key press
   pair through `Input.dispatchKeyEvent`.
 
-## [1.0.0] - 2026-04-03
+## [1.0.x] - 2026-04
 
 ### Added
 
