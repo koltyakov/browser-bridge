@@ -97,6 +97,10 @@ export function createRequestLifetimes(maxPending = 128, reapGraceMs = REQUEST_S
     };
   }
 
+  function isActive(id: string): boolean {
+    const lifetime = active.get(key(id));
+    return Boolean(lifetime && !lifetime.controller.signal.aborted);
+  }
   function cancel(id: string) {
     active.get(key(id))?.controller.abort(error());
   }
@@ -120,6 +124,7 @@ export function createRequestLifetimes(maxPending = 128, reapGraceMs = REQUEST_S
     begin,
     guard,
     track,
+    isActive,
     cancel,
     cancelOwner,
     disconnect,

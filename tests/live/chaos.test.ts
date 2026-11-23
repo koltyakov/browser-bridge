@@ -98,6 +98,72 @@ test('disposable headed-Chrome fault recovery', { timeout: 1_800_000 }, async (t
       return { fault: 'daemon-kill', oldPid: pid, recoveryTimeMs };
     });
 
+    await scenario(`round ${round}: native-host SIGKILL`, async () => {
+      const daemon = await harness.daemonPid();
+      const faultAt = performance.now();
+      const killed = await harness.killNativeHosts();
+      // Chrome reports the dead port to the worker, which reconnects by
+      // spawning a fresh relay; the daemon itself must survive.
+      const recoveryTimeMs = await recoveredSince(faultAt);
+      const replacements = await harness.nativeHostPids();
+      assert(replacements.length > 0, 'A replacement native host must be running');
+      assert(!replacements.some((pid) => killed.includes(pid)), 'Killed relay still listed');
+      assert.equal(await harness.daemonPid(), daemon, 'Relay loss must not replace the daemon');
+      return { fault: 'native-host-kill', killed: killed.length, recoveryTimeMs };
+    });
+
+    await scenario(`round ${round}: daemon SIGSTOP with abandoned request`, async () => {
+      const daemon = await harness.daemonPid();
+      const before = await harness.state();
+      const caller = await harness.connect();
+      const faultAt = performance.now();
+      process.kill(daemon, 'SIGSTOP');
+      let resumed = false;
+      try {
+        // Written while the daemon is frozen: the caller gives up and leaves
+        // before the daemon can read it. A frozen daemon must not later run
+        // work whose caller has already disconnected.
+        const outcome = await harness
+          .call(
+            caller,
+            'input.click',
+            { target: { selector: '#late' }, executionMode: 'dom', observe: false },
+            1500
+          )
+          .then(
+            () => 'completed',
+            () => 'abandoned'
+          );
+        assert.equal(outcome, 'abandoned', 'A frozen daemon cannot answer');
+        await caller.close();
+        harness.clients.delete(caller);
+        await delay(1500);
+      } finally {
+        process.kill(daemon, 'SIGCONT');
+        resumed = true;
+      }
+      assert(resumed);
+      const recoveryTimeMs = await recoveredSince(faultAt);
+      await delay(1000);
+      const after = await harness.state();
+      assert.equal(after.late, before.late, 'Abandoned request ran after the daemon resumed');
+      assert.equal(await harness.daemonPid(), daemon, 'A paused daemon must not be replaced');
+      return { fault: 'daemon-sigstop', recoveryTimeMs, abandonedSuppressed: true };
+    });
+
+    await scenario(`round ${round}: extension reload`, async () => {
+      const daemon = await harness.daemonPid();
+      const faultAt = performance.now();
+      const killed = await harness.reloadExtension();
+      const recoveryTimeMs = await recoveredSince(faultAt);
+      assert.equal(
+        await harness.daemonPid(),
+        daemon,
+        'Extension reload must not replace the daemon'
+      );
+      return { fault: 'extension-reload', oldRelays: killed.length, recoveryTimeMs };
+    });
+
     await scenario(`round ${round}: MV3 worker termination`, async () => {
       const faultAt = performance.now();
       const workerId = await harness.stopWorker();

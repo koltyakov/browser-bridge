@@ -24,6 +24,9 @@ import {
   DEFAULT_NETWORK_INTERCEPT_ACTION,
   DEFAULT_NETWORK_LIMIT,
   DEFAULT_PAGE_TEXT_BUDGET,
+  DEFAULT_AGENT_TAB_IDLE_TTL_MS,
+  MIN_AGENT_TAB_IDLE_TTL_MS,
+  MAX_AGENT_TAB_IDLE_TTL_MS,
   DEFAULT_PERFORM_TIMEOUT_MS,
   DEFAULT_TEXT_BUDGET,
   DEFAULT_TOUCH_HOLD_MS,
@@ -1863,9 +1866,26 @@ export function normalizeTabCreateParams(params: TabCreateParams = {}): Normaliz
       throw new BridgeError(ERROR_CODES.INVALID_REQUEST, `Invalid tab create URL: ${url}`);
     }
   }
+  optionalParamType(params.idleTtlMs, 'idleTtlMs', 'number');
+  const ttl = params.idleTtlMs;
+  if (ttl !== undefined && (!Number.isFinite(ttl) || ttl < 0)) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'idleTtlMs must be 0 (keep until access ends) or 30000 to 86400000 milliseconds.'
+    );
+  }
   return {
     url,
     active: params.active === true,
+    idleTtlMs:
+      ttl === undefined
+        ? DEFAULT_AGENT_TAB_IDLE_TTL_MS
+        : ttl === 0
+          ? 0
+          : Math.min(
+              MAX_AGENT_TAB_IDLE_TTL_MS,
+              Math.max(MIN_AGENT_TAB_IDLE_TTL_MS, Math.trunc(ttl))
+            ),
   };
 }
 

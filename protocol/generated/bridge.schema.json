@@ -2566,6 +2566,9 @@
         },
         "active": {
           "type": "boolean"
+        },
+        "idleTtlMs": {
+          "type": "number"
         }
       },
       "required": [],
@@ -7545,11 +7548,15 @@
         },
         "active": {
           "type": "boolean"
+        },
+        "idleTtlMs": {
+          "type": "number"
         }
       },
       "required": [
         "url",
-        "active"
+        "active",
+        "idleTtlMs"
       ],
       "additionalProperties": true
     },

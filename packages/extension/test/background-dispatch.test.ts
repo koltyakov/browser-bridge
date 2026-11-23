@@ -432,6 +432,7 @@ test('background dispatch creates a tab in the enabled window', async () => {
     title: 'New tab',
     status: 'complete',
     working: true,
+    idleTtlMs: 900000,
   });
 });
 

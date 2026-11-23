@@ -103,7 +103,7 @@ export interface BrowserMethodParams {
 "styles.get_matched_rules": { "elementRef"?: string; "target"?: { "elementRef"?: string; "selector"?: string; "role"?: string; "name"?: string; "text"?: string; "label"?: string; "placeholder"?: string; "testId"?: string; "exact"?: boolean; "nth"?: number; [key: string]: unknown } };
 "tabs.activate": { "tabId"?: number };
 "tabs.close": { "tabId"?: number };
-"tabs.create": { "url"?: string; "active"?: boolean };
+"tabs.create": { "url"?: string; "active"?: boolean; "idleTtlMs"?: number };
 "tabs.list": { "limit"?: number; "offset"?: number };
 "viewport.resize": { "width"?: number; "height"?: number; "deviceScaleFactor"?: number; "reset"?: boolean };
 "viewport.scroll": { "target"?: { "elementRef"?: string; "selector"?: string; "role"?: string; "name"?: string; "text"?: string; "label"?: string; "placeholder"?: string; "testId"?: string; "exact"?: boolean; "nth"?: number; [key: string]: unknown }; "top"?: number; "left"?: number; "behavior"?: "auto" | "smooth" | "instant"; "relative"?: boolean };

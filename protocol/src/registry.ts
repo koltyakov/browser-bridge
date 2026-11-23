@@ -364,7 +364,7 @@ export const BRIDGE_METHOD_REGISTRY: Readonly<
     'tabs.create',
     'tabs',
     false,
-    ['url', 'active'],
+    ['url', 'active', 'idleTtlMs'],
     'trivial',
     METHOD_POLICIES.tabsManage
   ),

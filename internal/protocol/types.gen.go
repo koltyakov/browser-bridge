@@ -1972,18 +1972,20 @@ type TabCreateParams struct {
 
 	Active Optional[bool] `json:"active,omitzero"`
 
+	IdleTtlMs Optional[float64] `json:"idleTtlMs,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v TabCreateParams) MarshalJSON() ([]byte, error) {
 	type alias TabCreateParams
-	return marshalOpen(alias(v), v.Extra, []string{"url", "active"})
+	return marshalOpen(alias(v), v.Extra, []string{"url", "active", "idleTtlMs"})
 }
 
 func (v *TabCreateParams) UnmarshalJSON(data []byte) error {
 	type alias TabCreateParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"url", "active"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"url", "active", "idleTtlMs"})
 	if err != nil {
 		return err
 	}
@@ -5870,18 +5872,20 @@ type NormalizedTabCreateParams struct {
 
 	Active bool `json:"active"`
 
+	IdleTtlMs float64 `json:"idleTtlMs"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v NormalizedTabCreateParams) MarshalJSON() ([]byte, error) {
 	type alias NormalizedTabCreateParams
-	return marshalOpen(alias(v), v.Extra, []string{"url", "active"})
+	return marshalOpen(alias(v), v.Extra, []string{"url", "active", "idleTtlMs"})
 }
 
 func (v *NormalizedTabCreateParams) UnmarshalJSON(data []byte) error {
 	type alias NormalizedTabCreateParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"url", "active"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"url", "active", "idleTtlMs"})
 	if err != nil {
 		return err
 	}

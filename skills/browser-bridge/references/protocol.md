@@ -52,7 +52,7 @@ actions still use frame-owned refs or ordinary locator routing.
 | `protocol.describe`                | No   | -          | system      | `-`                  | Bounded literal RPC search; exact method loads schema and generated signature |
 | `protocol.capabilities`            | No   | -          | system      | `-`                  | Advisory eligibility for 1..32 calls under the selected tab, mode, frame and grant |
 | `tabs.list`                        | No   | -          | tabs        | `-`                  | Discover tabs in the enabled window                                                        |
-| `tabs.create`                      | No   | -          | tabs        | `tabs.manage`        | Open a new tab; optional `url` and `active`                                                |
+| `tabs.create`                      | No   | -          | tabs        | `tabs.manage`        | Open a new tab; optional `url`, `active`, and `idleTtlMs` (idle auto-close)                |
 | `tabs.close`                       | No   | -          | tabs        | `tabs.manage`        | Close a tab by `tabId`                                                                     |
 | `tabs.activate`                    | No   | -          | tabs        | `tabs.manage`        | Bring a tab to the foreground in the enabled window                                        |
 | `skill.get_runtime_context`        | No   | -          | system      | `-`                  | Live budget presets and method groups                                                      |
@@ -411,11 +411,14 @@ bbx call input.scroll_into_view '{"target":{"selector":"[data-testid=\\"checkout
 
 ### tabs.create
 
-Open a new browser tab. Optional `url` (defaults to `about:blank`) and `active` flag (defaults to `true`). Does not require a session.
+Open a new browser tab. Optional `url` (defaults to `about:blank`) and `active` flag (defaults to `false`; new tabs open in the background). Does not require a session.
+
+`idleTtlMs` sets how long the tab may go without agent calls before BBX closes it: default `900000` (15 minutes), `0` keeps it until window access ends, otherwise 5 minutes to 24 hours (shorter values are raised to 5 minutes). To drop a scratch tab sooner, close it with `tabs.close` as soon as you are done. Requests to the tab reset the clock; a tab with a running request or that the user is viewing stays open. User-opened tabs are never closed this way.
 
 ```bash
 bbx tab-create https://example.com
 bbx call tabs.create '{"url":"https://example.com","active":false}'
+bbx call tabs.create '{"url":"https://example.com","idleTtlMs":300000}'
 ```
 
 The `bbx tab-create` shortcut intentionally covers the common case. Use `bbx call tabs.create ...` when you need advanced fields such as `active:false`.

@@ -115,7 +115,8 @@ export type ExtensionState = {
   enabledWindow: EnabledWindowState | null;
   accessSettings: import('./access-settings.js').AccessSettings;
   accessSettingsRevision: string;
-  aiCreatedTabs: Record<string, { windowId: number; enabledAt: number }>;
+  /** Tabs created through tabs.create, with their idle TTL (0 keeps them until access ends). */
+  aiCreatedTabs: Record<string, { windowId: number; enabledAt: number; idleTtlMs?: number }>;
   inheritedTabs: Record<string, { windowId: number; enabledAt: number }>;
   otherEnabledWindows?: import('../../../protocol/src/window-access.js').BrowserWindowAccess[];
   requestedAccessWindowId: number | null;

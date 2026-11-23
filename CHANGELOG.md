@@ -4,6 +4,62 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.0] - 2026-11-23
+
+### Added
+
+- `page.get_text` and `dom.get_text` accept `offset` to continue truncated
+  reads using the result's `nextOffset`, including through MCP.
+- Console capture starts at document load while access is enabled, preserving
+  early console output for later reads.
+- Input effects report newly opened popups and tabs in `effects.newTabs`,
+  including their tab IDs and URLs.
+- Live chaos tests cover native-host loss, abandoned requests during daemon
+  pauses, and extension reloads.
+
+### Changed
+
+- Agent-created tabs close after 15 minutes without agent requests.
+  `tabs.create.idleTtlMs` accepts a custom timeout from 5 minutes to 24 hours,
+  or `0` to keep the tab until access ends. Cleanup respects the user's
+  closing setting and leaves active tabs, busy tabs, and user-opened tabs alone.
+- DOM keyboard input handles control activation, form submission, Tab focus
+  order, caret movement, select and radio navigation, and number/range stepping.
+  Contenteditable edits preserve markup, and `input.type` fires `change` when
+  the value changes.
+- `input.fill` normalizes unambiguous date, time, number, and color values and
+  verifies that the field kept the value. Masked fields may reformat it;
+  rejected values return `INPUT_VALUE_REJECTED` with the actual value.
+- Automatic native update checks skip repeated profile scans and do not wait
+  behind another updater. Verified payload caching reduces startup work.
+- Content scripts load into background tabs on demand rather than injecting
+  into every tab when access is enabled. Element refs no longer keep removed
+  DOM subtrees alive.
+
+### Fixed
+
+- Daemon startup uses per-home locking, backs off restart loops, rotates logs,
+  and detects unrelated programs on the local TCP port. Native-host reconnects
+  recover faster, and requests briefly wait for a recently disconnected browser.
+- Hung script injection, frame discovery, and page evaluation have bounded
+  waits. Abandoned debugger sessions release their queues instead of blocking
+  later requests; oversized messages no longer tear down the native relay.
+- Safe reads interrupted by navigation retry on the new document. URL waits
+  survive restricted-page redirects, and frame routing handles late-loading
+  iframes and refs beyond the fan-out read limit.
+- Text reads include open shadow roots and slotted content. `dom.query`
+  traverses shadow trees and reports accessible names that locators can reuse.
+  Modal scoping and stale-ref recovery work on larger documents.
+- Clicks find reachable points on wrapped inline elements and dispatch to the
+  descendant under the pointer. Controls inside disabled fieldsets are not
+  actionable.
+- Overlapping patches must roll back newest first, and rollback on a detached
+  element no longer claims to have restored the page.
+- Errors distinguish page exceptions, canceled requests, bridge capacity, and
+  an unreachable daemon, with recovery advice based on dispatch state.
+- MCP HTTP streams send keep-alives during long calls, and dead MCP process
+  registrations are cleaned up.
+
 ## [2.4.0] - 2026-11-21
 
 ### Changed

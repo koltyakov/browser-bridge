@@ -9,6 +9,10 @@ export const DEFAULT_MAX_NODES = 25;
 export const DEFAULT_MAX_DEPTH = 4;
 export const DEFAULT_TEXT_BUDGET = 600;
 export const DEFAULT_PAGE_TEXT_BUDGET = 8000;
+/** Idle time after which an agent-opened tab is closed (tabs.create idleTtlMs). */
+export const DEFAULT_AGENT_TAB_IDLE_TTL_MS = 15 * 60_000;
+export const MIN_AGENT_TAB_IDLE_TTL_MS = 5 * 60_000;
+export const MAX_AGENT_TAB_IDLE_TTL_MS = 24 * 60 * 60_000;
 export const DEFAULT_EXTRACT_SETTLE_TIMEOUT_MS = 2000;
 export const MAX_EXTRACT_SETTLE_TIMEOUT_MS = 10_000;
 export const DEFAULT_WAIT_TIMEOUT_MS = 5000;

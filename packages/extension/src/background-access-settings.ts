@@ -55,7 +55,16 @@ export function createAccessSettingsController(
             continue;
           const tab = value as Record<string, unknown>;
           if (typeof tab.windowId === 'number' && typeof tab.enabledAt === 'number') {
-            target[id] = { windowId: tab.windowId, enabledAt: tab.enabledAt };
+            target[id] = {
+              windowId: tab.windowId,
+              enabledAt: tab.enabledAt,
+              ...(key === AI_TABS_STORAGE_KEY &&
+              typeof tab.idleTtlMs === 'number' &&
+              Number.isFinite(tab.idleTtlMs) &&
+              tab.idleTtlMs >= 0
+                ? { idleTtlMs: tab.idleTtlMs }
+                : {}),
+            };
           }
         }
       }
@@ -133,11 +142,16 @@ export function createAccessSettingsController(
         if (settled) untrack();
       });
     },
-    track(tabId: number, grant: { windowId: number; enabledAt: number }): Promise<void> {
+    track(
+      tabId: number,
+      grant: { windowId: number; enabledAt: number },
+      idleTtlMs?: number
+    ): Promise<void> {
       return enqueue(async () => {
         state.aiCreatedTabs[String(tabId)] = {
           windowId: grant.windowId,
           enabledAt: grant.enabledAt,
+          ...(typeof idleTtlMs === 'number' ? { idleTtlMs } : {}),
         };
         await chrome.storage.session.set({ [AI_TABS_STORAGE_KEY]: { ...state.aiCreatedTabs } });
       });

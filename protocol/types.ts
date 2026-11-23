@@ -1699,11 +1699,18 @@ export interface NormalizedWaitForLoadStateParams extends BridgeParams {
 export interface TabCreateParams {
   url?: string;
   active?: boolean;
+  /**
+   * Close this agent-opened tab after this many milliseconds without agent
+   * requests to it. 0 keeps it until window access ends. Default 15 minutes;
+   * otherwise 5 minutes to 24 hours. Close the tab with tabs.close to drop it sooner.
+   */
+  idleTtlMs?: number;
 }
 
 export interface NormalizedTabCreateParams extends BridgeParams {
   url: string;
   active: boolean;
+  idleTtlMs: number;
 }
 
 export interface TabCloseParams {

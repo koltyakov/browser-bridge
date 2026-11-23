@@ -1644,6 +1644,7 @@
       "tabs.create": {
         "url": "wire-✓",
         "active": false,
+        "idleTtlMs": 1.25,
         "future_extension": {
           "arbitrary": [
             null,
@@ -3759,6 +3760,7 @@
     "input": {
       "url": "wire-✓",
       "active": false,
+      "idleTtlMs": 1.25,
       "future_extension": {
         "arbitrary": [
           null,
@@ -8249,6 +8251,7 @@
     "input": {
       "url": "wire-✓",
       "active": false,
+      "idleTtlMs": 1.25,
       "future_extension": {
         "arbitrary": [
           null,

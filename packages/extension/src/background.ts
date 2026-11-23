@@ -10,6 +10,8 @@ import {
   normalizeNetworkInterceptAddParams,
   normalizeAccessWaitForChangeParams,
   normalizeTabCloseParams,
+  normalizeTabCreateParams,
+  DEFAULT_AGENT_TAB_IDLE_TTL_MS,
   RecoveryTelemetryCollector,
 } from '../../../protocol/src/index.js';
 import {
@@ -137,6 +139,7 @@ import {
 import { createDomBaselineController } from './background-dom-baselines.js';
 import { createDomBaselineRequestHandler } from './background-dom-baseline-requests.js';
 import { createAgentTabLeaseStore, normalizeAgentSession } from './background-agent-tabs.js';
+import { createIdleTabSweeper } from './background-idle-tabs.js';
 import { createAgentTabGroupController } from './background-agent-groups.js';
 import { createWebMcpController } from './background-webmcp.js';
 import { createEmulationController } from './background-emulation.js';
@@ -655,8 +658,41 @@ async function resolveRequestTarget(
   assertActive();
   const target = await resolvePageRequestTarget(request, options);
   assertActive();
+  // Any request that reaches a tab counts as agent activity on it.
+  idleTabs.touch(target.tabId);
+  requestTabs.set(request.id, target.tabId);
   return target;
 }
+
+/** Requests by tab, so idle cleanup never closes a tab with work in flight. */
+const requestTabs = new Map<string, number>();
+
+function isTabBusy(tabId: number): boolean {
+  let busy = false;
+  for (const [requestId, requestTab] of requestTabs) {
+    if (!requestLifetimes.isActive(requestId)) requestTabs.delete(requestId);
+    else if (requestTab === tabId) busy = true;
+  }
+  return busy;
+}
+
+const idleTabs = createIdleTabSweeper({
+  getOwnedTabs: () => state.aiCreatedTabs,
+  getEnabledWindowId: () => state.enabledWindow?.windowId ?? null,
+  closingAllowed: () => state.accessSettings.closeAiTabsWhenDone,
+  isBusy: isTabBusy,
+  getTab: (tabId) => chrome.tabs.get(tabId).catch(() => null),
+  closeTab: (tabId) => chrome.tabs.remove(tabId),
+  onClosed: (tabId, idleMs) => {
+    void appendActionLogEntry({
+      method: 'tabs.idle_close',
+      tabId,
+      ok: true,
+      summary: `Closed BBX tab ${tabId} after ${Math.round(idleMs / 60_000)} min without agent activity.`,
+    }).catch(reportAsyncError);
+  },
+  defaultTtlMs: DEFAULT_AGENT_TAB_IDLE_TTL_MS,
+});
 
 const mutationGate = createMutationGate({
   // Peek: the dispatched handler resolves the pinned tab again and binds it.
@@ -1222,7 +1258,12 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
   if (alarm.name === KEEPALIVE_ALARM_NAME) {
     domBaselines.pruneExpired();
-    void syncWorkingTabIndicators().catch(reportAsyncError);
+    // Close agent-opened tabs past their idle TTL, then regroup: user tabs
+    // leave the BBX group once agent activity on them goes idle.
+    void idleTabs
+      .sweep()
+      .then(() => syncWorkingTabIndicators())
+      .catch(reportAsyncError);
     if (!state.enabledWindow) {
       void chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
     }
@@ -1777,6 +1818,7 @@ async function handlePageEvaluate(request: BridgeRequest): Promise<BridgeRespons
 async function handleCreateTab(request: BridgeRequest): Promise<BridgeResponse> {
   const grant = state.enabledWindow;
   const assertGrant = captureWindowGrant(state);
+  const { idleTtlMs } = normalizeTabCreateParams(request.params);
   const response = await executeCreateTab(
     request,
     state,
@@ -1786,7 +1828,10 @@ async function handleCreateTab(request: BridgeRequest): Promise<BridgeResponse> 
         const tab = await chrome.tabs.create(properties);
         try {
           assertGrant();
-          if (grant && typeof tab.id === 'number') await accessSettings.track(tab.id, grant);
+          if (grant && typeof tab.id === 'number') {
+            await accessSettings.track(tab.id, grant, idleTtlMs);
+            idleTabs.touch(tab.id);
+          }
           assertGrant();
           return tab;
         } catch (error) {
@@ -1801,7 +1846,9 @@ async function handleCreateTab(request: BridgeRequest): Promise<BridgeResponse> 
   const created = response.result as { tabId?: unknown };
   if (typeof created.tabId === 'number' && state.enabledWindow) {
     await bindWorkingTab(request, created.tabId, state.enabledWindow.windowId);
-    return { ...response, result: { ...created, working: true } };
+    // Tell the agent when the tab closes on its own, so it can pick a
+    // different TTL or close the tab itself.
+    return { ...response, result: { ...created, working: true, idleTtlMs } };
   }
   return response;
 }

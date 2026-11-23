@@ -125,6 +125,7 @@ export class ChaosHarness {
   private extension = '';
   private token = '';
   private executable = '';
+  private extensionPath = '';
   private baselineTargets: string[] = [];
   private baselineFds = 0;
   private baselinePid = 0;
@@ -297,31 +298,11 @@ export class ChaosHarness {
         10000
       );
       assert.equal(loaded.id, this.extension, 'The private extension was not loaded');
+      this.extensionPath = extensionPath;
     }
     // Cold extension startup may outlast the ordinary 3s command budget. These
     // setup mutations get one bounded attempt, never an automatic replay.
-    const opened = await this.cdp.command(
-      'Target.createTarget',
-      { url: `chrome-extension://${this.extension}/ui/sidepanel.html` },
-      undefined,
-      10000
-    );
-    const attached = await this.cdp.command(
-      'Target.attachToTarget',
-      { targetId: opened.targetId, flatten: true },
-      undefined,
-      10000
-    );
-    this.ui = String(attached.sessionId);
-    await eventually('extension UI context', 10000, async (remaining) => {
-      const context = object(
-        await this.uiEvaluate(
-          '({url:location.href,ready:document.readyState,tabs:typeof chrome.tabs?.query})',
-          remaining
-        )
-      );
-      assert.equal(context.tabs, 'function', JSON.stringify(context));
-    });
+    await this.openUi();
     if (this.options.portable) {
       // Headless Chrome on macOS may ignore its positional startup URL.
       // Create the synthetic fixture explicitly inside this private profile.
@@ -350,6 +331,99 @@ export class ChaosHarness {
     this.baselineTargets = await this.pageTargets();
     this.baselinePid = await this.daemonPid();
     this.baselineFds = (await readdir(`/proc/${this.baselinePid}/fd`)).length;
+  }
+
+  /** Open and attach the extension side panel used for UI-port access and inspection. */
+  private async openUi() {
+    const opened = await this.cdp.command(
+      'Target.createTarget',
+      { url: `chrome-extension://${this.extension}/ui/sidepanel.html` },
+      undefined,
+      10000
+    );
+    const attached = await this.cdp.command(
+      'Target.attachToTarget',
+      { targetId: opened.targetId, flatten: true },
+      undefined,
+      10000
+    );
+    this.ui = String(attached.sessionId);
+    await eventually('extension UI context', 10000, async (remaining) => {
+      const context = object(
+        await this.uiEvaluate(
+          '({url:location.href,ready:document.readyState,tabs:typeof chrome.tabs?.query})',
+          remaining
+        )
+      );
+      assert.equal(context.tabs, 'function', JSON.stringify(context));
+    });
+  }
+
+  /**
+   * Reload the extension the way a developer or an update would. Session
+   * access does not survive the reload, so the user grants the window again
+   * through the UI, then the bridge must reconnect on its own.
+   */
+  async reloadExtension() {
+    const before = await this.nativeHostPids();
+    if (this.extensionPath) {
+      // An extension loaded over CDP does not come back from
+      // chrome.runtime.reload(); loading the same path again reloads it, as
+      // chrome://extensions does for an unpacked extension.
+      const loaded = await this.cdp.command(
+        'Extensions.loadUnpacked',
+        { path: this.extensionPath },
+        undefined,
+        10000
+      );
+      assert.equal(loaded.id, this.extension, 'Reload changed the extension ID');
+    } else {
+      await this.cdp
+        .command(
+          'Runtime.evaluate',
+          {
+            expression: 'setTimeout(() => chrome.runtime.reload(), 50); true',
+            returnByValue: true,
+          },
+          this.ui,
+          3000
+        )
+        .catch(() => undefined);
+    }
+    if (this.control) {
+      await this.control.close();
+      this.clients.delete(this.control);
+      this.control = undefined;
+    }
+    await eventually('extension reload', 15_000, async () => {
+      const pids = await this.nativeHostPids();
+      const workers = object(
+        await this.cdp.command('Target.getTargets', {}, undefined, 2000)
+      ).targetInfos;
+      const extensionTargets = (Array.isArray(workers) ? workers : [])
+        .map(object)
+        .filter((entry) => String(entry.url).startsWith(`chrome-extension://${this.extension}/`))
+        .map((entry) => `${entry.type}:${String(entry.targetId).slice(0, 8)}`);
+      assert(
+        pids.length > 0 && !pids.some((pid) => before.includes(pid)),
+        `Relay not replaced: before=${before} now=${pids} extension targets=${extensionTargets}`
+      );
+    });
+    await this.openUi();
+    await this.uiEvaluate(fixtureAccessExpression(this.tabId), 16000);
+    // The reopened side panel took focus; native input needs the fixture active.
+    await this.uiEvaluate(`chrome.tabs.update(${this.tabId}, {active:true})`);
+    // The side panel target is new; every other page target must be unchanged.
+    if (this.baselineTargets.length) {
+      const pages = await this.pageTargets();
+      assert.equal(
+        pages.length,
+        this.baselineTargets.length,
+        'Extension reload lost or leaked a tab'
+      );
+      this.baselineTargets = pages;
+    }
+    return before;
   }
 
   private launch(
@@ -474,6 +548,19 @@ export class ChaosHarness {
         .includes(`BROWSER_BRIDGE_HOME=${this.home}`)
     );
     return pid;
+  }
+
+  /** Native-host relays Chrome spawned for this profile (every bridge process but the daemon). */
+  async nativeHostPids() {
+    const daemon = await this.daemonPid();
+    return (await this.nativeProcesses()).filter((pid) => pid !== daemon);
+  }
+
+  async killNativeHosts() {
+    const pids = await this.nativeHostPids();
+    assert(pids.length > 0, 'No native-host relay is running');
+    for (const pid of pids) process.kill(pid, 'SIGKILL');
+    return pids;
   }
 
   async killDaemon() {

@@ -160,6 +160,12 @@
             "description": "Focus the new tab when the active tab is in use for this task, or with user permission (default: false)",
             "type": "boolean"
           },
+          "idleTtlMs": {
+            "description": "For create: close the tab after this many ms without agent calls to it (default 900000 = 15 min; 0 keeps it until access ends; 300000 to 86400000). To drop a scratch tab right away, close it with the close action.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 86400000
+          },
           "limit": {
             "description": "Requested tab page size (default: 30). Follow pagination.nextOffset until null to discover remaining tabs.",
             "type": "integer",

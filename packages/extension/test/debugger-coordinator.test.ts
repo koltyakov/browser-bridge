@@ -823,7 +823,8 @@ test('TabDebuggerCoordinator does not replay detached work unless explicitly opt
   assert.equal(attachCalls, 1);
 });
 
-test('a lane task that never settles times out, discards the session, and frees the lane', async () => {
+test('a lane task that never settles times out, discards the session, and frees the lane', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const events: string[] = [];
   const discarded: number[] = [];
   const coordinator = new TabDebuggerCoordinator({
@@ -835,11 +836,18 @@ test('a lane task that never settles times out, discards the session, and frees 
     },
     onSessionDiscarded: (tabId) => discarded.push(tabId),
   });
-  await assert.rejects(
+  const timedOut = assert.rejects(
     coordinator.run(9, () => new Promise<never>(() => {}), { timeoutMs: 20 }),
     (error: { code?: string; details?: { sessionDiscarded?: boolean } }) =>
       error.code === 'TIMEOUT' && error.details?.sessionDiscarded === true
   );
+  // Let attachment and task dispatch finish before advancing the lane timer.
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  t.mock.timers.tick(19);
+  assert.deepEqual(discarded, []);
+  assert.equal(coordinator.pendingByTab.has(9), true);
+  t.mock.timers.tick(1);
+  await timedOut;
   assert.deepEqual(discarded, [9], 'owners reconciled after the bridge detached');
   assert.equal(coordinator.attachedTabs.has(9), false);
   const value = await coordinator.run(9, async () => 'next', { releaseAfterRun: true });
