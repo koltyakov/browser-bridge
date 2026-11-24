@@ -169,6 +169,10 @@ export const ACCESS_REQUEST_BADGE_TEXT = '!';
 export const RESTRICTED_BADGE_TEXT = '!';
 export const WORKING_BADGE_TEXT = 'AI';
 export const DEBUGGER_PROTOCOL_VERSION = '1.3';
+/** Idle time before a tab's debugger session detaches. Chrome shows or hides its
+debugging infobar in every window on each attach and detach, which resizes the
+viewports of unrelated pages, so sessions outlive the pauses between agent steps. */
+export const DEBUGGER_IDLE_DETACH_MS = 60_000;
 export const SETUP_STATUS_STALE_MS = 30_000;
 export const SETUP_STATUS_TIMEOUT_MS = 5_000;
 export const ACCESS_DENIED_WINDOW_OFF = 'Browser Bridge is off for this window.';

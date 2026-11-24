@@ -82,6 +82,7 @@ import {
   setExtensionState,
   CONTENT_SCRIPT_TIMEOUT_MS,
   SIDEPANEL_PATH,
+  DEBUGGER_IDLE_DETACH_MS,
   DEBUGGER_PROTOCOL_VERSION,
   ACCESS_DENIED_WINDOW_OFF,
   ACCESS_DENIED_TAB_CLOSE,
@@ -289,9 +290,11 @@ const tabDebugger = new TabDebuggerCoordinator({
   recordReattach: (outcome) => recoveryTelemetry.record('debugger_reattach', outcome),
   // Chrome sends no onDetach for a detach the bridge requests itself.
   onSessionDiscarded: (tabId) => reconcileDebuggerOwnersAfterDetach(tabId),
-  // One-shot reads (screenshots, AX trees) often come in bursts; keep the
-  // session briefly so the next one skips attach and Page.enable.
-  releaseLingerMs: 300,
+  // Every attach and detach toggles Chrome's debugging infobar in all windows,
+  // resizing unrelated pages. One-shot reads (screenshots, AX trees) keep the
+  // session as long as other work, so agent pauses do not toggle it.
+  burstIdleMs: DEBUGGER_IDLE_DETACH_MS,
+  releaseLingerMs: DEBUGGER_IDLE_DETACH_MS,
 });
 
 const cdpNetworkCapture = createCdpNetworkCapture({

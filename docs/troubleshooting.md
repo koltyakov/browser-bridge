@@ -104,10 +104,17 @@ For the full upgrade sequence, see [Migrate from v1 to v2](./migration-v1-to-v2.
 ## Chrome shows the debugging banner in disabled windows
 
 - Chrome owns this security banner and shows it globally when an extension uses `chrome.debugger`. Extensions cannot limit it to enabled windows. The banner does not mean Browser Bridge is controlling disabled windows.
-- Standalone screenshots, accessibility trees, and performance metric reads release the debugger promptly after their CDP work. Screenshot artifact uploads do not keep the debugger busy.
-- Reads that share an existing burst session preserve its five-second idle window. All input modes use the debugger to observe native dialogs, even when events are dispatched through the DOM. Input, evaluation, raw CDP node reads, viewport changes, and dialog operations retain normal session reuse. Open dialogs retain observation until closed. Explicit CDP capture and request interception keep the debugger attached until stopped or cleared.
+- A tab's debugger session stays attached until the tab has had no debugger work for 60 seconds, so the banner stays up while an agent works instead of appearing and disappearing between steps. Screenshot artifact uploads do not keep the debugger busy.
+- All input modes use the debugger to observe native dialogs, even when events are dispatched through the DOM: Chrome reports a dialog only to a debugger that was attached when it opened. Open dialogs retain observation until closed. Explicit CDP capture and request interception keep the debugger attached until stopped or cleared.
 - Chrome can keep the banner visible briefly after the last debugger detaches. Avoid debugger-backed operations when ordinary DOM, style, console, or default fetch/XHR reads answer the question.
 - To isolate the banner from normal browsing, use a separate Chrome instance with its own user-data directory. Another window or profile in the same Chrome instance is not sufficient.
+
+## Pages in other windows scroll or jump while an agent works
+
+- When the debugging banner appears or disappears, every window in the Chrome instance, in every profile, loses or regains the banner's height. Pages that respond to a viewport resize can react. For example, YouTube Shorts snaps to the next or previous video, so it looks as if someone pressed the arrow keys.
+- Browser Bridge keeps debugger sessions attached through pauses between agent steps, so the banner usually changes only when an agent starts and some time after it stops.
+- To remove the banner entirely, quit Chrome completely and start it with `--silent-debugger-extension-api`. On macOS, run `open -a "Google Chrome" --args --silent-debugger-extension-api` while Chrome is not running. On Windows, add the flag to the end of the Chrome shortcut's Target. The flag applies to the whole Chrome instance and hides the banner for every extension that uses `chrome.debugger`, so you no longer get Chrome's warning that an extension is debugging your pages.
+- Alternatively, keep resize-sensitive pages, such as video feeds, in a separate Chrome instance with its own user-data directory, or in another browser.
 
 ## Screenshots of background tabs are slow or time out
 

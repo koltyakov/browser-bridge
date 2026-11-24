@@ -41,6 +41,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Debugger sessions stay attached for 60 seconds after a tab's last debugger
+  work, up from 5 seconds (300 ms for screenshots and accessibility reads).
+  Chrome shows or hides its debugging banner in every window on each attach and
+  detach, and the resize made pages in other windows and profiles, such as
+  YouTube Shorts, scroll on their own while an agent worked. Troubleshooting
+  documents `--silent-debugger-extension-api` for removing the banner.
 - Daemon startup uses per-home locking, backs off restart loops, rotates logs,
   and detects unrelated programs on the local TCP port. Native-host reconnects
   recover faster, and requests briefly wait for a recently disconnected browser.
