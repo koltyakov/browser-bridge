@@ -30,11 +30,13 @@ Use the daemon connection's `extensionId`, not `browserExtensionId`, which ident
 { "method": "page.get_state", "extensionId": "<connection ID from discovery>", "tabId": 123 }
 ```
 
-CLI calls accept the same connection selector:
+CLI calls accept the same connection selector. `--browser` and `--profile` map to `targetBrowser` and `targetProfile` when those names uniquely identify a connection:
 
 ```bash
 bbx call --extension '<connection ID from health.ping>' --tab 123 page.get_state '{}'
 ```
+
+An explicit `tabId` must be inside the selected profile's enabled window.
 
 When multiple connections match, calls fail with `TAB_MISMATCH` and `reason: ambiguous_browser_target` before reading or changing any page. Choose a connection from the error's `connectedExtensions`, list its tabs, and retry with the exact target. Connection IDs change on reconnect; rediscover a missing connection rather than falling back to another profile. Ask the user to enable access only for the selected profile if it is disabled.
 
@@ -69,7 +71,7 @@ After access is enabled:
 
 ### Tab focus
 
-You may switch to tabs you opened for the current task without asking while the currently active tab is also one you are using for that task. Check `tabs.list` active state before switching. Track tabs you opened from your own `tabs.create` results; `working:true` identifies the routed tab, not ownership or foreground focus.
+Switching to a tab you opened for the current task needs no new permission while the currently active tab is also one you are using for that task. Check `tabs.list` active state before switching. Track tabs you opened from your own `tabs.create` results; `working:true` identifies the routed tab, not ownership or foreground focus.
 
 If the user has switched to their own tab, continue in the background. Activate only at their request or with their permission. If something cannot work while the target tab is inactive, explain why and ask whether you may activate it. A timeout alone does not establish that activation is needed. Permission for one activation does not allow repeatedly taking focus back after the user switches away.
 

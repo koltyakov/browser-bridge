@@ -88,7 +88,7 @@ Uses CDP device emulation - the page re-renders at the new size immediately.
 
 Always start with `tabs.list` to find an appropriate existing tab before considering `tabs.create`.
 
-Reads, input, navigation, and screenshots can target background tabs by `tabId`. New tabs open in the background by default. A tab you open for your own work is a scratch tab: when the user's "Close BBX tabs when done" setting is on (`closeAiTabsWhenDone` in `health.ping` `accessSettings.settings`, on by default), close it with `tabs.close` as soon as you finish the work it was for. Whatever the setting, BBX closes a tab you opened after 15 minutes without your calls to it, as cleanup for tabs left behind; pass `idleTtlMs` to `tabs.create` for another timeout (`300000` to `86400000`). When the user asks you to open a tab, they mean to keep it: pass `idleTtlMs: 0`, which BBX never closes, and do not close it yourself. The result echoes `idleTtlMs`. Idle cleanup leaves open a tab with a running request, that the user is viewing, or that the user pinned. Tabs the user opened are never closed, even ones you worked in; they leave the BBX tab group after 15 idle minutes. You may switch to tabs you opened for this task without asking while the active tab is also one you are using for this task. Check `tabs.list` active state before switching, and track opened tabs from your own `tabs.create` results. `working:true` identifies routing, not ownership or foreground focus.
+Reads, input, navigation, and screenshots can target background tabs by `tabId`. New tabs open in the background by default. A tab you open for your own work is a scratch tab: when the user's "Close BBX tabs when done" setting is on (`closeAiTabsWhenDone` in `health.ping` `accessSettings.settings`, on by default), close it with `tabs.close` as soon as you finish the work it was for. Whatever the setting, BBX closes a tab you opened after 15 minutes without your calls to it, as cleanup for tabs left behind; pass `idleTtlMs` to `tabs.create` for another timeout (`300000` to `86400000`). When the user asks you to open a tab, they mean to keep it: pass `idleTtlMs: 0`, which BBX never closes, and do not close it yourself. The result echoes `idleTtlMs`. Idle cleanup leaves open a tab with a running request, that the user is viewing, or that the user pinned. Tabs the user opened are never closed, even ones you worked in; they leave the BBX tab group after 15 idle minutes. Switching to a tab you opened for this task needs no new permission while the active tab is also one you are using for this task. Check `tabs.list` active state before switching, and track opened tabs from your own `tabs.create` results. `working:true` identifies routing, not ownership or foreground focus.
 
 If the user switches to their own tab, continue in the background. Activate only at their request or with their permission. If an operation cannot work while the tab is inactive, explain why and ask whether activation is allowed. A timeout or a different `active_tab_id` alone does not justify activation. Permission for one activation does not allow repeatedly taking focus back after the user switches away. Apply these rules to `tabs.activate`, `active:true`, and equivalent focus APIs.
 
@@ -235,7 +235,7 @@ This holds debugger ownership and is more expensive than default instrumentation
 Block, stub, or modify matching requests via CDP (debugger-backed). Patterns are globs: `*` matches any characters, `?` matches one character.
 
 ```bash
-bbx intercept add 'https://api.example.com/users*' --respond '{"users":[]}' --status 200
+bbx intercept add '*/api/users*' --respond '{"users":[]}' --status 200
 bbx intercept add '*analytics*' --block      # fail matching requests
 bbx intercept list                           # active rules
 bbx intercept remove intercept_1
@@ -332,7 +332,7 @@ dispatch state or completed-step counts. Inspect confirmed partial progress when
 available, then read current state. A sequence with `completed: 0` may still have
 partially executed its first step. Only explicit evidence that the whole operation
 was undispatched permits a deliberate retry after resolving the blocker and
-revalidating access and target. See the [retry rules](../SKILL.md#error-recovery).
+revalidating access and target. See the [retry rules](../SKILL.md#troubleshooting).
 
 If a debugger guard interrupts observation after native input returned, the action stays successful with interrupted observation. Its `interruption` reports an error code and, for a dialog, its opaque `dialogId`, never dialog text. Inspect the dialog explicitly with `page.handle_dialog`; do not replay the acknowledged action.
 
@@ -344,7 +344,7 @@ Use `input.perform` when the next authorized steps are known. Form filling, open
 bbx call input.perform '{
   "returnLastResult": true,
   "steps": [
-    {"method":"input.fill","params":{"target":{"label":"Email"},"value":"a@b.co"}},
+    {"method":"input.fill","params":{"target":{"label":"Email"},"value":"user@example.com"}},
     {"method":"input.click","params":{"target":{"role":"button","name":"Save"}}},
     {"method":"dom.wait_for","params":{"selector":"[role=status]","text":"Saved","state":"visible"}},
     {"method":"dom.get_text","params":{"target":{"selector":"[role=status]"},"textBudget":200}}

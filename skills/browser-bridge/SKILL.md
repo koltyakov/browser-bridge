@@ -7,6 +7,17 @@ description: 'Inspect and control the user''s real Chrome tabs through Browser B
 
 Browser Bridge reads and drives the tabs the user already has open in Chrome through a local extension. Use the MCP tools when they are connected (`browser_call` reaches every method, `browser_batch` runs independent reads in parallel). Use the `bbx` CLI for setup, diagnostics, or hosts without MCP; `bbx call <method> '{...}'` reaches the same methods. Permission prompts come from the host agent; in permission-ask hosts, prefer the single `browser_call` tool so the user approves one tool.
 
+## Prerequisites
+
+- Chrome or another Chromium browser with the Browser Bridge extension installed and access enabled for the window that holds the page.
+- The `bbx` native host registered (`bbx install`); MCP clients configured with `bbx install-mcp` expose `browser_call` and `browser_batch`.
+
+## Limitations
+
+- Restricted pages (`chrome://`, extension pages, and similar) return `CONTENT_SCRIPT_UNAVAILABLE`; use a normal web page.
+- Debugger-backed methods (`page.evaluate`, `cdp.*`, captures, CDP accessibility trees) can show Chrome's "started debugging this browser" banner.
+- Element refs and tab IDs are local to one browser profile and go stale after navigation or reconnect.
+
 ## Start and route
 
 1. Check readiness: MCP `browser_call` method `health.ping`; CLI `bbx status`. Stop if no extension is connected (`bbx doctor` explains why).
@@ -68,7 +79,7 @@ Run known steps in one `input.perform`; it stays inside the browser and needs no
 - Pages that require a real user gesture (audio, popups, clipboard, fullscreen) need `executionMode: "auto"` or `"cdp"`.
 - Never send input as parallel tool calls, keep `continueOnError` false, and stop at decisions that need new evidence or user approval.
 
-## Recover
+## Troubleshooting
 
 Decide from the response's `recovery`, the method, and its params, not the code alone. Never replay a failed, uncertain, or partial mutation or `input.perform`: inspect the page first. Retry only with evidence the action never ran (`aftermath.dispatch: "not_started"` or `details.dispatched: false`).
 
@@ -113,7 +124,8 @@ Wrap refs as `target: {elementRef}`, never a top-level `ref`. Shortcut output is
 - [Workflows](references/workflows.md): CSS debugging, text fixes, API verification, HMR, user flows
 - [Access and recovery](references/access-and-recovery.md): access settings, profiles, working-tab rules, errors
 - [Protocol](references/protocol.md): every method and error code
+- [Method details](references/method-details.md): per-method parameters, limits, and examples
 - [WebMCP](references/webmcp.md): website-provided tools; execution needs user approval in an extension window that must never be automated
-- [Files](references/files.md), [emulation](references/emulation.md), [recording](references/recording.md), [playbooks](references/playbooks.md), [capture context](references/capture-context.md), [UI workflows](references/ui-workflows.md), [Tailwind](references/tailwind.md) (load when `page.get_state` reports `hints.tailwind: true`)
+- [Files](references/files.md), [emulation](references/emulation.md), [recording](references/recording.md), [playbooks](references/playbooks.md), [screenshot metadata and build identity](references/capture-context.md), [UI workflows](references/ui-workflows.md), [Tailwind](references/tailwind.md) (load when `page.get_state` reports `hints.tailwind: true`)
 
 Return findings as a verdict, the tab and origin, and the minimal evidence; no raw HTML or base64 images.

@@ -137,7 +137,7 @@ make daemon                    # start daemon locally
 ## Skill Structure
 
 - `skills/browser-bridge/SKILL.md` - core rules, quick reference, access flow (always loaded)
-- `skills/browser-bridge/references/protocol.md` - full method table, error codes (load when exploring methods)
+- `skills/browser-bridge/references/protocol.md` - full method table, error codes (load when exploring methods); per-method parameters and examples live in `references/method-details.md`
 - `skills/browser-bridge/references/token-efficiency.md` - budget presets, anti-patterns (load when optimizing)
 - `skills/browser-bridge/references/patch-workflow.md` - style/DOM patch loops (load when patching)
 - `skills/browser-bridge/references/interaction.md` - input, navigation, form controls (load when interacting)

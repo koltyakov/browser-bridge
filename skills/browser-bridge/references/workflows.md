@@ -71,7 +71,7 @@ Once the next actions and expected outcome are known, run them in one call rathe
 bbx call input.perform '{
   "returnLastResult": true,
   "steps": [
-    {"method":"input.fill","params":{"target":{"label":"Email"},"value":"a@b.co"}},
+    {"method":"input.fill","params":{"target":{"label":"Email"},"value":"user@example.com"}},
     {"method":"input.click","params":{"target":{"role":"button","name":"Save"}}},
     {"method":"dom.wait_for","params":{"selector":"[role=status]","text":"Saved","state":"visible"}},
     {"method":"dom.get_text","params":{"target":{"selector":"[role=status]"},"textBudget":200}}

@@ -12,7 +12,7 @@ Files can be at most 16 MiB each and 32 MiB combined. The protocol equivalents a
 For files already on the browser machine, use Chrome's native file-input operation without transferring bytes. It accepts a unique top-document selector and browser-local absolute paths, including files larger than the staging limit:
 
 ```bash
-bbx call --tab 123 input.set_files '{"target":{"selector":"input[type=file]"},"paths":["/Users/me/Downloads/report.pdf"]}'
+bbx call --tab 123 input.set_files '{"target":{"selector":"input[type=file]"},"paths":["/path/to/report.pdf"]}'
 ```
 
 Staged assignment also accepts BBX element refs, including refs obtained inside frames. Empty `files:[]` clears the selection. `assigned:true` means the input accepted the files; wait for the application's upload-complete result before proceeding.
