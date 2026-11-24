@@ -1030,6 +1030,20 @@ summary {
   overflow-wrap: anywhere;
 }
 
+.version-mismatch-commands {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.version-mismatch-commands[hidden] {
+  display: none;
+}
+
+.version-mismatch-cmd {
+  white-space: pre-wrap;
+}
+
 .version-mismatch-banner button {
   position: absolute;
   top: 3px;

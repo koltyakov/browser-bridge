@@ -207,6 +207,9 @@ const versionMismatchBanner = document.getElementById('version-mismatch-banner')
 const versionMismatchMessage = document.getElementById(
   'version-mismatch-message'
 ) as HTMLParagraphElement;
+const versionMismatchCommands = document.getElementById(
+  'version-mismatch-commands'
+) as HTMLDivElement;
 const versionMismatchDismiss = document.getElementById(
   'version-mismatch-dismiss'
 ) as HTMLButtonElement;
@@ -1104,10 +1107,24 @@ function renderVersionMismatch(cliVersion: string | null): void {
   if (!view || view.key === dismissedVersionMismatchKey) {
     versionMismatchBanner.hidden = true;
     versionMismatchMessage.textContent = '';
+    versionMismatchCommands.replaceChildren();
+    versionMismatchCommands.hidden = true;
     return;
   }
 
   versionMismatchMessage.textContent = view.message;
+  const commands = view.commands ?? [];
+  versionMismatchCommands.replaceChildren(
+    ...commands.map((text) => {
+      const command = document.createElement('code');
+      command.className = 'setup-cmd version-mismatch-cmd';
+      command.title = 'Click to copy';
+      command.textContent = text;
+      command.addEventListener('click', () => copySetupText(command, text));
+      return command;
+    })
+  );
+  versionMismatchCommands.hidden = commands.length === 0;
   versionMismatchBanner.setAttribute('role', view.advisory ? 'status' : 'alert');
   versionMismatchBanner.hidden = false;
 }

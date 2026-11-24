@@ -1437,7 +1437,14 @@ test('sidepanel UI shows the global host CLI and harness version', async (t) => 
     portPair.left.dispatchMessage(
       createSidepanelStateSync(true, null, '1.1.9', [], { nativeUpdateSupported: true })
     );
-    assert.match(mismatchMessage.textContent ?? '', /bbx update.*bbx restart/);
+    const mismatchCommands = document.getElementById('version-mismatch-commands');
+    assert.ok(mismatchCommands instanceof HTMLElement);
+    assert.equal(mismatchCommands.hidden, false);
+    assert.deepEqual(
+      [...mismatchCommands.querySelectorAll('code.setup-cmd')].map((node) => node.textContent),
+      ['bbx update', 'bbx restart']
+    );
+    assert.doesNotMatch(mismatchMessage.textContent ?? '', /bbx update/);
     dismissMismatch.click();
     portPair.left.dispatchMessage(
       createSidepanelStateSync(true, null, '1.1.9', [], { nativeUpdateSupported: true })
@@ -1446,6 +1453,7 @@ test('sidepanel UI shows the global host CLI and harness version', async (t) => 
     portPair.left.dispatchMessage(createSidepanelStateSync(true, null, '2.0.0'));
     assert.equal(mismatchBanner.hidden, false);
     assert.equal(mismatchBanner.getAttribute('role'), 'alert');
+    assert.equal(mismatchCommands.hidden, true);
     assert.equal(
       mismatchMessage.textContent,
       'CLI v2.0.0 and extension v1.2.9 use different protocol versions. Update the CLI and extension to compatible releases.'

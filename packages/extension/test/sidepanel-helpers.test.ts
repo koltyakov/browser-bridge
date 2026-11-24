@@ -144,7 +144,9 @@ test('older native minors get a non-blocking recommendation based on explicit up
   assert.doesNotMatch(getVersionMismatchView('2.9.0', '2.8.0')?.message ?? '', /bbx update/);
   const supported = getVersionMismatchView('2.3.0', '2.2.1', { nativeUpdateSupported: true });
   assert.equal(supported?.advisory, true);
-  assert.match(supported?.message ?? '', /bbx update.*bbx restart/);
+  assert.deepEqual(supported?.commands, ['bbx update', 'bbx restart']);
+  assert.doesNotMatch(supported?.message ?? '', /bbx update/);
+  assert.equal(legacy?.commands, undefined);
   assert.notEqual(supported?.key, legacy?.key);
   for (const os of ['mac', 'linux', 'win']) {
     const script = getStandaloneInstallView(
@@ -154,8 +156,9 @@ test('older native minors get a non-blocking recommendation based on explicit up
     );
     assert.ok(script);
     const view = getVersionMismatchView('2.3.0', '2.2.1', { installCommand: script.command });
-    assert.ok(view?.message.includes(script.command));
-    assert.doesNotMatch(view?.message ?? '', /bbx update/);
+    assert.deepEqual(view?.commands, [script.command]);
+    assert.ok(!view?.message.includes(script.command), 'commands stay out of the prose');
+    assert.match(view?.message ?? '', /native installer script:$/);
   }
 });
 

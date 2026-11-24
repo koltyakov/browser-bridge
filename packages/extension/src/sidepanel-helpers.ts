@@ -1,6 +1,12 @@
 import { normalizeBridgeCaller } from '../../../protocol/src/caller.js';
 
-export type VersionMismatchView = { key: string; message: string; advisory?: true };
+export type VersionMismatchView = {
+  key: string;
+  message: string;
+  /** Shell commands shown apart from the prose so they read as copyable code. */
+  commands?: string[];
+  advisory?: true;
+};
 
 export function getAgentTabsInlineHeight(
   availableHeight: number,
@@ -208,15 +214,16 @@ export function getVersionMismatchView(
     const cliMinor = Number(cliVersion?.split('.')[1]);
     // Patch differences and a newer native host require no binary upgrade.
     if (extensionMinor <= cliMinor) return null;
-    const recommendation = update.nativeUpdateSupported
-      ? 'Run `bbx update`, then `bbx restart`.'
+    const [recommendation, commands] = update.nativeUpdateSupported
+      ? ['Update and restart BBX:', ['bbx update', 'bbx restart']]
       : update.installCommand
-        ? `Run the native installer script: ${update.installCommand}`
-        : 'Run the native installer script shown in Host Setup.';
+        ? ['Run the native installer script:', [update.installCommand]]
+        : ['Run the native installer script shown in Host Setup.', []];
     return {
       key: `${extensionVersion}:${cliVersion}:${update.nativeUpdateSupported ? 'update' : 'installer'}`,
       advisory: true,
       message: `BBX v${cliVersion} is older than extension v${extensionVersion}. The major versions match, so Browser Bridge can keep working. Updating the BBX binary is recommended. ${recommendation}`,
+      ...(commands.length ? { commands } : {}),
     };
   }
 
