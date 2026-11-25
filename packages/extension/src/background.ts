@@ -1108,6 +1108,10 @@ function tabsOpenedBy(tabId: number, sinceMs: number): Array<{ tabId: number; ur
 const sensitiveReads = createSensitiveReadController({
   state,
   resolveRequestTarget: (request) => resolveRequestTarget(request),
+  isTargetStillGranted: async ({ tabId, windowId }) => {
+    const current = await chrome.tabs.get(tabId).catch(() => null);
+    return current?.windowId === windowId && isGrantedTab(state, tabId, windowId);
+  },
   captureAccess: () => captureWindowGrant(state),
   readers: {
     response_body: async (target, params) =>

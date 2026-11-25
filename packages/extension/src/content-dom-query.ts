@@ -66,7 +66,6 @@
       __BBX_CONTENT_REGISTRY__?: {
         consumePruned: () => boolean;
         getPruneEpoch?: () => number;
-        isRevisionTracked?: () => boolean;
         getDocumentRevision: () => number;
         getRegistrySize: () => number;
         getRequiredElement: (ref: string) => Element;
@@ -113,7 +112,6 @@
     getRequiredElement,
     normalizeDomQuery,
     rememberElement,
-    isRevisionTracked,
   } = registry;
   const readPruneEpoch = () => registry.getPruneEpoch?.() ?? 0;
 
@@ -1526,21 +1524,12 @@ one step. Hidden elements are skipped. */
       import('../../../protocol/src/types.js').DomOutlineCompleteness['reasons'][number]
     >();
     if (scope?.fallbackReason === 'scope_scan_limit') reasons.add('scopeScanLimit');
-    // The mutation counter cannot see into shadow roots, and a custom element
-    // can attach one later without a light-DOM mutation. Landmark scope
-    // discovery also searches shadow roots outside the walked subtree.
-    let lightDomOnly =
-      forSnapshot &&
-      (!scope || scope.requested === 'document' || scope.resolved === 'selector') &&
-      (!root || isInLightDom(root));
     for (const element of walkOutlineCandidates(root)) {
       if (scanned >= OUTLINE_SCAN_LIMIT) {
         reasons.add('scanLimit');
         break;
       }
       scanned += 1;
-      if (lightDomOnly && (element.tagName.includes('-') || getShadowRoot(element)))
-        lightDomOnly = false;
       if (NON_RENDERED_TAGS.has(element.tagName)) continue;
       const roles = getElementRoles(element);
       let role = roles[0] ?? '';
@@ -1688,7 +1677,6 @@ one step. Hidden elements are skipped. */
       elements: selected.map((entry) => entry.element),
       // Positional cuts make a later diff report lines crossing the cut.
       cut: reasons.has('maxNodes') || reasons.has('scanLimit'),
-      lightDomOnly,
       scopeKey: !forSnapshot
         ? ''
         : root
@@ -1711,22 +1699,11 @@ one step. Hidden elements are skipped. */
     nodes: OutlineNode[];
     elements: Element[];
     cut: boolean;
-    lightDomOnly: boolean;
     scopeKey: string;
   };
 
   function formatOutlineLine(entry: OutlineNode): string {
     return `${'  '.repeat(Math.min(entry.depth, 12))}- ${entry.role}${entry.name ? ` ${JSON.stringify(entry.name)}` : ''} [${entry.ref}]${entry.states.length ? ` ${entry.states.join(' ')}` : ''}${entry.matched ? ' [match]' : ''}`;
-  }
-
-  /** Whether an element is in the document tree rather than a shadow tree. */
-  function isInLightDom(element: Element): boolean {
-    let current: Node | null = element;
-    for (let hops = 0; current && hops < 10_000; hops += 1) {
-      if (current.nodeType === 11) return false;
-      current = current.parentNode;
-    }
-    return true;
   }
 
   // Outline snapshots are retained per document, so navigation discards them.
@@ -1735,69 +1712,20 @@ one step. Hidden elements are skipped. */
   /** Slightly longer than the background record, which expires first. */
   const OUTLINE_SNAPSHOT_TTL_MS = 330_000;
   const OUTLINE_TOMBSTONE_LIMIT = 16;
-  /** Property-driven lines rechecked by the no-walk path; more means walk. */
-  const OUTLINE_VOLATILE_LIMIT = 200;
   /** A delta costing more than this share of the full outline is replaced by it. */
   const OUTLINE_DELTA_MAX_SHARE = 0.6;
-  const OUTLINE_VALUE_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton', 'slider']);
-  /** Interactions that can change rendering without a DOM mutation: CSS
-  :hover, :focus and :checked, popovers, transitions. Capture phase sees
-  events that do not bubble. */
-  const OUTLINE_INTERACTION_EVENTS = [
-    'pointerover',
-    'pointerout',
-    'pointerdown',
-    'pointerup',
-    'mousedown',
-    'mouseup',
-    'click',
-    'focusin',
-    'focusout',
-    'input',
-    'change',
-    'keydown',
-    'keyup',
-    'toggle',
-    'transitionend',
-    'animationstart',
-    'animationend',
-  ];
-
   type OutlineSnapshot = {
     createdAt: number;
     signature: string;
     scopeKey: string;
-    revision: number;
     pruneEpoch: number;
-    interactionEpoch: number;
-    viewport: string;
     cut: boolean;
-    /** Whether a later read may trust the counters above instead of walking. */
-    walkFree: boolean;
-    count: number;
     order: string[];
     lines: Map<string, { hash: number; parent: string }>;
-    volatile: Array<{ ref: string; role: string; states: number }>;
   };
 
   const outlineSnapshots = new Map<string, OutlineSnapshot>();
   const outlineTombstones = new Map<string, 'expired' | 'evicted'>();
-  let interactionEpoch = 0;
-  let interactionTracked = false;
-
-  function ensureInteractionTracking(): void {
-    if (interactionTracked || typeof document.addEventListener !== 'function') return;
-    const bump = () => {
-      interactionEpoch += 1;
-    };
-    for (const type of OUTLINE_INTERACTION_EVENTS)
-      document.addEventListener(type, bump, { capture: true, passive: true });
-    interactionTracked = true;
-  }
-
-  function viewportKey(): string {
-    return `${globalThis.innerWidth ?? 0}x${globalThis.innerHeight ?? 0}`;
-  }
 
   /** cyrb53: two 32-bit lanes folded into a 53-bit integer. */
   function hashOutlineText(value: string): number {
@@ -1851,7 +1779,6 @@ one step. Hidden elements are skipped. */
   function createOutlineSnapshot(built: BuiltOutline, signature: string): OutlineSnapshot {
     const parents = outlineParentRefs(built);
     const lines = new Map<string, { hash: number; parent: string }>();
-    const volatile: OutlineSnapshot['volatile'] = [];
     built.nodes.forEach((node, index) => {
       const parent = parents[index];
       lines.set(node.ref, {
@@ -1867,52 +1794,16 @@ one step. Hidden elements are skipped. */
         ),
         parent,
       });
-      if (OUTLINE_VALUE_ROLES.has(node.role) || built.elements[index].tagName === 'INPUT')
-        volatile.push({
-          ref: node.ref,
-          role: node.role,
-          states: hashOutlineText(node.states.join(' ')),
-        });
     });
     return {
       createdAt: Date.now(),
       signature,
       scopeKey: built.scopeKey,
-      revision: getDocumentRevision(),
       pruneEpoch: readPruneEpoch(),
-      interactionEpoch,
-      viewport: viewportKey(),
       cut: built.cut,
-      walkFree:
-        built.lightDomOnly &&
-        interactionTracked &&
-        isRevisionTracked?.() === true &&
-        volatile.length <= OUTLINE_VOLATILE_LIMIT,
-      count: built.nodes.length,
       order: built.nodes.map((node) => node.ref),
       lines,
-      volatile,
     };
-  }
-
-  /** Unchanged without a DOM walk: no light-DOM mutation, ref prune,
-  interaction, viewport change or property-driven state change since the base. */
-  function outlineUnchangedSince(base: OutlineSnapshot): boolean {
-    if (!base.walkFree) return false;
-    if (getDocumentRevision() !== base.revision) return false;
-    if (readPruneEpoch() !== base.pruneEpoch) return false;
-    if (interactionEpoch !== base.interactionEpoch || viewportKey() !== base.viewport) return false;
-    for (const entry of base.volatile) {
-      let element: Element;
-      try {
-        element = getRequiredElement(entry.ref);
-      } catch {
-        return false;
-      }
-      if (hashOutlineText(getOutlineStates(element, entry.role).join(' ')) !== entry.states)
-        return false;
-    }
-    return true;
   }
 
   function tombstoneOutlineSnapshot(id: string, reason: 'expired' | 'evicted'): void {
@@ -2036,7 +1927,6 @@ one step. Hidden elements are skipped. */
     const snapshotId =
       typeof params.snapshotId === 'string' && params.snapshotId ? params.snapshotId : null;
     if (!since && !snapshotId) return buildAccessibilityOutline(params).result;
-    ensureInteractionTracking();
     expireOutlineSnapshots(Date.now());
     const signature = outlineSignature(params);
     const format = params.format === 'tree' ? 'tree' : 'outline';
@@ -2046,18 +1936,7 @@ one step. Hidden elements are skipped. */
     else if (base && base.signature !== signature) unavailable = 'scope_changed';
     else if (base?.cut) unavailable = 'base_truncated';
     const withId = snapshotId ? { snapshotId } : {};
-    if (base && !unavailable && outlineUnchangedSince(base)) {
-      if (snapshotId) storeOutlineSnapshot(snapshotId, { ...base, createdAt: Date.now() });
-      return {
-        source: 'dom',
-        format,
-        count: base.count,
-        scanned: 0,
-        truncated: false,
-        unchanged: true,
-        ...withId,
-      };
-    }
+    // Stylesheet and property changes can change the outline without a DOM mutation.
     const built = buildAccessibilityOutline(params, true);
     const snapshot = createOutlineSnapshot(built, signature);
     if (snapshotId) storeOutlineSnapshot(snapshotId, snapshot);

@@ -33,6 +33,33 @@ func TestPerformRecoveryNeverSuggestsReplayingDispatchedSequences(t *testing.T) 
 	}
 }
 
+func TestSensitiveReadRecoveryWarningIsIdempotent(t *testing.T) {
+	const warning = "Sensitive reads are never retried automatically."
+	const guidance = "Ask the user to enable response body reads."
+	for _, hint := range []string{guidance, warning + " " + guidance, warning + " " + warning + " " + guidance, "", warning} {
+		response := object{"ok": value(false), "error": value(object{
+			"code": value("ACCESS_DENIED"),
+			"recovery": value(object{
+				"retry": value(true), "retryAfterMs": value(100),
+				"hint": value(hint), "alternativeMethod": value("access.wait_for_change"),
+			}),
+		})}
+		for i := 0; i < 2; i++ {
+			protectResponseRecovery(response, "sensitive.read")
+			recovery := response.object("error").object("recovery")
+			if strings.Count(recovery.text("hint"), warning) != 1 || recovery.boolean("retry") || recovery["retryAfterMs"] != nil {
+				t.Fatalf("repeated or unsafe sensitive recovery: %s", value(recovery))
+			}
+			if recovery.text("alternativeMethod") != "access.wait_for_change" {
+				t.Fatal("sensitive recovery lost its policy-change alternative")
+			}
+			if strings.Contains(hint, guidance) && recovery.text("hint") != warning+" "+guidance {
+				t.Fatalf("sensitive recovery lost guidance: %s", value(recovery))
+			}
+		}
+	}
+}
+
 func TestRecoveryTelemetryWindowLoopsAndSaturation(t *testing.T) {
 	now := time.UnixMilli(1000000)
 	telemetry := recoveryTelemetry{now: func() time.Time { return now }}

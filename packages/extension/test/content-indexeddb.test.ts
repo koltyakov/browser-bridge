@@ -524,6 +524,35 @@ test('one record is returned as JSON; non-JSON values are described, wherever ne
   );
 });
 
+test('an exact IndexedDB read preserves own __proto__ fields including their encoded size', async (t) => {
+  const factory = new FakeIndexedDb();
+  const jsonRecords = [
+    '{"__proto__":"ordinary field","name":"fixture"}',
+    '{"__proto__":null,"constructor":"stored","prototype":"stored"}',
+    '{"nested":{"__proto__":{"label":"stored"}},"items":[{"__proto__":42}]}',
+  ];
+  factory.databasesByName.set('app', {
+    version: 1,
+    stores: new Map([
+      [
+        'items',
+        store(jsonRecords.map((json, key) => ({ key, value: JSON.parse(json) as unknown }))),
+      ],
+    ]),
+  });
+  await withContentScript(t, factory, async (call) => {
+    for (const [key, json] of jsonRecords.entries()) {
+      const read = await call('indexeddb.read_record', { database: 'app', store: 'items', key });
+      assert.equal(read.exact, true);
+      assert.equal(read.described, 0);
+      assert.deepEqual(read.value, JSON.parse(json) as unknown);
+      assert.equal(Object.getPrototypeOf(read.value), Object.prototype);
+      assert.equal(JSON.stringify(read.value), json);
+      assert.equal(read.bytes, Buffer.byteLength(json));
+    }
+  });
+});
+
 test('a document without IndexedDB reports it unavailable; other types never fall back', async (t) => {
   await withContentScript(t, null, async (call) => {
     const result = await call('page.get_storage', { type: 'indexeddb' });

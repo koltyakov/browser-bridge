@@ -30,7 +30,7 @@ ifeq ($(OS),Windows_NT)
 EXE = .exe
 endif
 
-.PHONY: help deps clean build build-extension build-native lint lint-js lint-go typecheck format format-js \
+.PHONY: help tidy deps deps-update clean build build-extension build-native lint lint-js lint-go typecheck format format-js \
 	format-go check-go-format format-check test test-js test-runtime test-go test-native \
 	vet-go coverage coverage-review coverage-check coverage-go coverage-go-check generate-protocol check-protocol \
 	generate-readability check-readability \
@@ -42,8 +42,17 @@ endif
 help: ## Show available tasks; the default when running make
 	@"$(NODE)" -e "const fs = require('node:fs'); for (const m of fs.readFileSync('Makefile', 'utf8').matchAll(/^([a-z][a-z-]+):.*?## (.+)$$/gm)) console.log(m[1].padEnd(24) + m[2]);"
 
-deps: sync-version ## Install the locked npm development dependencies
+tidy: ## Tidy Go module dependencies
+	$(GO) mod tidy
+
+deps: sync-version ## Install locked npm dependencies and download and tidy Go modules
+	$(GO) mod download
+	$(GO) mod tidy
 	$(NPM) ci
+
+deps-update: ## Update Go dependencies, including test dependencies, and tidy modules
+	$(GO) get -u -t ./...
+	$(GO) mod tidy
 
 clean: ## Remove build output, coverage, and generated npm hashes
 	"$(NODE)" -e "const fs = require('node:fs'); for (const file of ['dist', 'coverage', 'bbx', 'bbx.exe', 'packages/npm/native-manifest.json']) fs.rmSync(file, {recursive: true, force: true});"

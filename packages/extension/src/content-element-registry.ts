@@ -762,7 +762,6 @@ registry at once. */
   globalState.__BBX_CONTENT_REGISTRY__ = Object.freeze({
     consumePruned,
     getPruneEpoch: () => pruneEpoch,
-    isRevisionTracked: () => revisionObserver !== null,
     getDocumentRevision,
     createContentId,
     refDocumentTag: REF_DOCUMENT_TAG,

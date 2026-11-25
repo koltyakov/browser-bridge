@@ -280,6 +280,27 @@ test('clear drops cached maps so the next read fetches again', async () => {
   assert.equal(network.calls.length, 4);
 });
 
+test('a same-length rebuild without a validator reads the new map', async () => {
+  const script = `${ASSETS}/app.js`;
+  const routes: Record<string, Route> = {
+    [script]: { body: '//# sourceMappingURL=a.map', headers: { 'content-length': '26' } },
+  };
+  for (const name of ['a', 'b'])
+    routes[`${ASSETS}/${name}.map`] = {
+      body: JSON.stringify({ version: 3, names: [], sources: [`${name}.ts`], mappings: 'AAAA' }),
+    };
+  const network = createNetwork(routes);
+  const { resolver } = createResolver(network, loaded(script), {
+    limits: { freshMs: 0 },
+  });
+  const read = async () =>
+    firstFrame(await resolver.resolve(7, [entryWith(frame(script, 1, 1))])).source?.path;
+  assert.equal(await read(), 'assets/a.ts');
+  routes[script].body = '//# sourceMappingURL=b.map';
+  assert.equal(await read(), 'assets/b.ts');
+  assert.deepEqual(network.urls(), [script, `${ASSETS}/a.map`, script, `${ASSETS}/b.map`]);
+});
+
 test('refuses a frame URL the tab did not load without any request', async () => {
   const network = createNetwork(await externalRoutes());
   const { resolver } = createResolver(network, loaded(`${ASSETS}/external.js`));
@@ -298,8 +319,7 @@ test('refuses a frame URL the tab did not load without any request', async () =>
 });
 
 test('a public page cannot point resolution at the local network', async () => {
-  // The page lists these as <script src>, so they pass the loaded-script
-  // check even when the browser refused to load them.
+  // Even a browser-observed script load does not waive the network check.
   const targets = [
     'http://192.168.1.1/admin.js',
     'http://127.0.0.1:8080/app.js',
@@ -647,6 +667,7 @@ test('reports malformed maps without failing the read', async () => {
     '{"version":2,"sources":[],"mappings":""}',
     '{"version":3,"sources":["a.ts"]}',
     '{"version":3,"sources":["a.ts"],"mappings":"!!!!"}',
+    '{"version":3,"sections":{},"sources":[],"mappings":""}',
     '{"version":3,"sections":[{"offset":{"line":0,"column":0},"url":"https://app.test/x.map"}]}',
     '[]',
   ];
@@ -676,6 +697,30 @@ test('reports malformed maps without failing the read', async () => {
   const { resolver } = createResolver(inline, loaded(`${ASSETS}/inline.js`));
   const entries = await resolver.resolve(7, [entryWith(frame(`${ASSETS}/inline.js`, 1, 1))]);
   assert.equal(firstFrame(entries).sourceUnavailable, 'malformed_map');
+});
+
+test('index maps bound cumulative offsets and decoded line counts before flattening', async () => {
+  const script = `${ASSETS}/index.js`;
+  const leaf = { version: 3, mappings: 'AAAA', names: [], sources: ['index.ts'] };
+  const section = (line: number, map: unknown) => ({
+    version: 3,
+    sections: [{ offset: { line, column: 0 }, map }],
+  });
+  for (const [map, reason] of [
+    [section(60_000, section(41_000, leaf)), 'map_too_large'],
+    [section(99_999, { ...leaf, mappings: 'AAAA;AAAA' }), 'map_too_large'],
+    [section(-1, leaf), 'malformed_map'],
+  ] as const) {
+    const network = createNetwork({
+      [script]: { body: '//# sourceMappingURL=index.map' },
+      [`${ASSETS}/index.map`]: { body: JSON.stringify(map) },
+    });
+    const { resolver } = createResolver(network, loaded(script));
+    assert.equal(
+      firstFrame(await resolver.resolve(7, [entryWith(frame(script, 1, 1))])).sourceUnavailable,
+      reason
+    );
+  }
 });
 
 test('reports a script without a map, failed requests, and unmapped positions', async () => {
@@ -839,7 +884,7 @@ test('sourcePathFromFile strips schemes, bundler namespaces, and leading ./', ()
   for (const [file, expected] of cases) assert.equal(sourcePathFromFile(file), expected, file);
 });
 
-test('readTabLoadedScripts runs in the isolated top frame and keeps executable scripts only', async (t) => {
+test('only successful browser-observed script loads authorize a fetch, never DOM-only src values', async (t) => {
   const page = globalThis as Record<string, unknown>;
   const savedDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
   t.after(() => {
@@ -868,9 +913,10 @@ test('readTabLoadedScripts runs in the isolated top frame and keeps executable s
   t.mock.method(performance, 'getEntriesByType', (type: string) =>
     type === 'resource'
       ? [
-          { name: `${ASSETS}/chunk.js`, initiatorType: 'script' },
-          { name: `${ASSETS}/style.css`, initiatorType: 'link' },
-          { name: `${ORIGIN}/api/data`, initiatorType: 'fetch' },
+          { name: `${ASSETS}/chunk.js`, initiatorType: 'script', responseStatus: 200 },
+          { name: `${ASSETS}/blocked.js`, initiatorType: 'script', responseStatus: 0 },
+          { name: `${ASSETS}/style.css`, initiatorType: 'link', responseStatus: 200 },
+          { name: `${ORIGIN}/api/data`, initiatorType: 'fetch', responseStatus: 200 },
         ]
       : []
   );
@@ -887,7 +933,7 @@ test('readTabLoadedScripts runs in the isolated top frame and keeps executable s
   };
   assert.deepEqual(await readTabLoadedScripts(9, chromeObj), {
     documentUrl: `${ORIGIN}/page`,
-    scripts: [`${ASSETS}/app.js`, `${ASSETS}/mod.js`, `${ASSETS}/classic.js`, `${ASSETS}/chunk.js`],
+    scripts: [`${ASSETS}/chunk.js`],
   });
   assert.deepEqual(calls, [{ target: { tabId: 9, frameIds: [0] }, world: 'ISOLATED' }]);
 

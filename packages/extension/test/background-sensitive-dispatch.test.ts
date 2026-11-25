@@ -10,7 +10,7 @@ import type { ExtensionState } from '../src/background-state.js';
 // A value that must only ever reach the agent through the sensitive.read reply.
 const CANARY = 'BBX_BODY_CANARY_7f3c9e1d';
 
-async function loadCaptureBackground() {
+async function loadCaptureBackground(moveDuringRead = false) {
   const activeTab = {
     id: 81,
     windowId: 7,
@@ -41,8 +41,10 @@ async function loadCaptureBackground() {
         params?: Record<string, unknown>
       ) {
         commands.push({ method, params });
-        if (method === 'Network.getResponseBody')
+        if (method === 'Network.getResponseBody') {
+          if (moveDuringRead) activeTab.windowId = 8;
           return { body: `{"user":"${CANARY}"}`, base64Encoded: false };
+        }
         return {};
       },
     },
@@ -88,6 +90,30 @@ function failure(response: BridgeResponse) {
   if (response.ok) throw new Error('unreachable');
   return response.error as { code: string; details: Record<string, unknown> };
 }
+
+test('a tab moving out of the granted window during a sensitive read discards the result', async () => {
+  const { loaded, state, finishRequest } = await loadCaptureBackground(true);
+  state.accessSettings.allowResponseBodyReads = true;
+  const start = await loaded.dispatch(
+    createRequest({
+      id: 'arm',
+      method: 'page.get_network',
+      params: { source: 'cdp', capture: 'start', bodies: {} },
+    })
+  );
+  assert.equal(start.ok, true);
+  finishRequest('moving', 'https://example.com/api');
+  const response = await loaded.dispatch(
+    createRequest({
+      id: 'read-moving',
+      method: 'sensitive.read',
+      params: { source: 'response_body', requestId: 'moving' },
+    })
+  );
+  assert.equal(state.enabledWindow?.windowId, 7);
+  assert.equal(failure(response).details.reason, 'tab_outside_access_scope');
+  assert.equal(JSON.stringify(response).includes(CANARY), false);
+});
 
 test('response body capture and reads are gated, scoped and keep the body out of every other sink', async () => {
   const { loaded, state, commands, finishRequest, chromeObj } = await loadCaptureBackground();

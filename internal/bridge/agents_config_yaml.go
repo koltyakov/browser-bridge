@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // Edit nodes rather than decoding to a map so comments and policy fields survive.

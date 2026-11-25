@@ -39,6 +39,7 @@ async function checkIndexedDb(): Promise<void> {
     const users = db.createObjectStore('users', { keyPath: 'id' });
     users.createIndex('byName', 'name');
     users.put({ id: 1, name: 'Ada', avatar: new Blob(['pixels'], { type: 'image/png' }) });
+    users.put(JSON.parse('{"id":2,"__proto__":null,"nested":{"__proto__":"stored"}}'));
     db.createObjectStore('events').put({ kind: 'compound' }, ['team', 7]);
   });
   seeded.close();
@@ -51,7 +52,7 @@ async function checkIndexedDb(): Promise<void> {
     (app.stores as Array<Record<string, unknown>>).map((store) => [store.name, store.count]),
     [
       ['events', 1],
-      ['users', 1],
+      ['users', 2],
     ],
     'stores and counts'
   );
@@ -67,6 +68,16 @@ async function checkIndexedDb(): Promise<void> {
     { id: 1, name: 'Ada', avatar: { $bbxType: 'Blob', mimeType: 'image/png', size: 6 } },
     'record with a described Blob'
   );
+  const prototypeJson = '{"id":2,"__proto__":null,"nested":{"__proto__":"stored"}}';
+  const prototypeRecord = await call('indexeddb.read_record', {
+    database: 'app',
+    store: 'users',
+    key: 2,
+    maxBytes: 262_144,
+  });
+  equal(JSON.stringify(prototypeRecord.value), prototypeJson, 'own prototype fields preserved');
+  equal(prototypeRecord.described, 0, 'ordinary JSON stays exact');
+  equal(prototypeRecord.bytes, new TextEncoder().encode(prototypeJson).length, 'exact JSON bytes');
   const compound = await call('indexeddb.read_record', {
     database: 'app',
     store: 'events',

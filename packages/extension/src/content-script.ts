@@ -858,7 +858,12 @@ Lightweight - only checks a few DOM/stylesheet signals. */
         }
         const out: Record<string, unknown> = {};
         for (const key of Object.keys(item))
-          out[key] = walk((item as Record<string, unknown>)[key], depth + 1);
+          Object.defineProperty(out, key, {
+            value: walk((item as Record<string, unknown>)[key], depth + 1),
+            enumerable: true,
+            configurable: true,
+            writable: true,
+          });
         return out;
       } finally {
         ancestors.pop();

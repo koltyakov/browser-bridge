@@ -71,7 +71,19 @@ func protectResponseRecovery(response object, method string) {
 		}
 		recovery = result
 	} else if method == "sensitive.read" && recovery != nil {
-		result := object{"retry": value(false), "hint": value("Sensitive reads are never retried automatically. " + recovery.text("hint"))}
+		const warning = "Sensitive reads are never retried automatically."
+		hint := strings.TrimSpace(recovery.text("hint"))
+		// The extension already applies this protection. Keep daemon handling
+		// idempotent while still protecting replies from older extensions.
+		for strings.HasPrefix(hint, warning) {
+			hint = strings.TrimSpace(strings.TrimPrefix(hint, warning))
+		}
+		if hint != "" {
+			hint = warning + " " + hint
+		} else {
+			hint = warning
+		}
+		result := object{"retry": value(false), "hint": value(hint)}
 		if v := recovery["alternativeMethod"]; v != nil {
 			result["alternativeMethod"] = v
 		}

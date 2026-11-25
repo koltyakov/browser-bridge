@@ -39,6 +39,26 @@ test('a JSON body is returned whole with its MIME type and decoded size', () => 
   );
 });
 
+test('UTF-8 BOMs survive both CDP representations and requested encodings', () => {
+  for (const body of ['\uFEFF', '\uFEFFX', '\uFEFFcafé', 'X\uFEFF']) {
+    const bytes = Buffer.from(body, 'utf8');
+    for (const mimeType of ['text/plain', 'application/json']) {
+      for (const encoding of ['text', 'base64'] as const) {
+        const plain = decodeResponseBody(raw(body, false, mimeType), encoding, 1024);
+        const encoded = decodeResponseBody(
+          raw(bytes.toString('base64'), true, mimeType),
+          encoding,
+          1024
+        );
+        assert.deepEqual(encoded, plain);
+        assert.equal(encoded.body, encoding === 'text' ? body : bytes.toString('base64'));
+        assert.equal(encoded.bytes, bytes.byteLength);
+        assert.equal(encoded.exact, true);
+      }
+    }
+  }
+});
+
 test('an oversize body rejects whole, in either encoding and before decoding', () => {
   const text = 'x'.repeat(MAX_SENSITIVE_VALUE_BYTES + 1);
   for (const [input, encoding] of [
@@ -124,6 +144,7 @@ function controllerHarness(settings: Partial<AccessSettings> = {}) {
   const controller = createSensitiveReadController({
     state,
     resolveRequestTarget: async () => target,
+    isTargetStillGranted: async () => true,
     readers: {
       response_body: async (resolved, params) => {
         reads.push(`${resolved.tabId}:${params.requestId}:${params.encoding}`);

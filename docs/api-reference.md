@@ -339,10 +339,8 @@ outline.
 Snapshots stay in the page's content script, one store per frame document, as
 refs and line hashes; no page text is retained. Navigation discards them, and
 ending window access clears them. A `since` from another tab never reaches a
-content script. When nothing changed in the light DOM, no interaction event
-fired, and no checkbox, value or focus state moved, the extension answers
-`unchanged` without walking the DOM. Pages with shadow roots or custom elements
-are always walked, because the mutation counter cannot see inside shadow trees.
+content script. Comparisons walk the current outline so changes to computed
+visibility and control state are included even without a DOM mutation.
 
 `input.perform` accepts `dom.get_accessibility_tree` as a step (always
 `source: "dom"`), so an action and the resulting delta take one call:
@@ -651,8 +649,9 @@ fetches the script and then its map, found through the `SourceMap` (or
 `X-SourceMap`) response header or the last `sourceMappingURL` comment. Limits:
 
 - Only frames whose URL exactly matches a script the tab's top document
-  loaded are resolved. The list comes from executable `document.scripts` and
-  `script` resource timing entries, read in the extension's isolated world.
+  loaded are resolved. A `script` resource timing entry must have a visible
+  successful response status in the extension's isolated world. Missing
+  entries and cross-origin loads with a hidden status do not qualify.
   Any other URL gets `not_a_loaded_script` and no request is made.
 - A page on the public web cannot point resolution at the user's machine or
   network. A cross-origin script on a loopback, private, link-local, or
@@ -664,12 +663,14 @@ fetches the script and then its map, found through the `SourceMap` (or
   script, or an inline `data:` URL, which is decoded without a request.
 - `GET` only, no redirects, no referrer, a 5-second timeout per request, and
   10 MiB per script and 20 MiB per map, enforced while the body streams.
+  Maps are limited to 100,000 decoded lines, including gaps from section offsets.
 - Credentials are sent only when the script is same-origin with the tab's
   document; otherwise they are omitted.
 - At most eight distinct scripts and eight seconds per read. Frames beyond
   that get `budget_exhausted`.
 - Decoded maps are cached in service-worker memory by script URL and response
-  validator (`ETag`, `Last-Modified`, or length). An entry is reused without a
+  validator (`ETag` or `Last-Modified`). Without either, the script and map
+  are read again after the entry expires. An entry is reused without a
   request for 60 seconds, then revalidated. The cache holds at most 16 maps,
   is lost whenever the worker stops, and is cleared when window access ends.
 

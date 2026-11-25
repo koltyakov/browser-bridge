@@ -32,6 +32,7 @@ export type GatedSensitiveReaders = {
 export type SensitiveReadDependencies = {
   state: SettingsState;
   resolveRequestTarget: (request: BridgeRequest) => Promise<ResolvedTabTarget>;
+  isTargetStillGranted: (target: ResolvedTabTarget) => Promise<boolean>;
   /** Returns a check that throws once the window grant changes. */
   captureAccess?: () => () => void;
   readers: GatedSensitiveReaders;
@@ -76,6 +77,10 @@ export function createSensitiveReadController(deps: SensitiveReadDependencies) {
     assertGrant();
     assertSensitiveDataReadsAllowed(deps.state, gated.source);
     const result = await readGated(target, gated);
+    if (!(await deps.isTargetStillGranted(target)))
+      throw new BridgeError(ERROR_CODES.ACCESS_DENIED, 'The tab is no longer in scope.', {
+        reason: 'tab_outside_access_scope',
+      });
     assertGrant();
     assertSensitiveDataReadsAllowed(deps.state, gated.source);
     return createSuccess(request.id, result, { method: request.method });
@@ -127,7 +132,8 @@ export function decodeResponseBody(
     let text: string | null = null;
     if (isTextualMimeType(mimeType)) {
       try {
-        text = new TextDecoder('utf-8', { fatal: true }).decode(decoded);
+        // Keep a leading BOM as U+FEFF, just as Chrome's raw-string path does.
+        text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(decoded);
       } catch {
         text = null;
       }

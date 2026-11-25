@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { nativeExecutable, repoRoot } from '../_helpers/runCli.ts';
+import { withLiveIndexedDbFixture } from '../fixtures/live-indexeddb/fixture.ts';
 import type { BridgeMethod } from '../../protocol/src/types.js';
 
 function record(value: unknown): Record<string, unknown> {
@@ -390,40 +391,25 @@ test(
           return;
         }
         const marker = `bbx-live-${Date.now()}`;
-        try {
-          await call(
-            formClient,
-            'page.evaluate',
-            {
-              expression: `new Promise((resolve, reject) => { const r = indexedDB.open('bbx-live', 1); r.onupgradeneeded = () => r.result.createObjectStore('items', { keyPath: 'id' }); r.onerror = () => reject(r.error); r.onsuccess = () => { const db = r.result; const tx = db.transaction('items', 'readwrite'); tx.objectStore('items').put({ id: 1, marker: '${marker}' }); tx.oncomplete = () => { db.close(); resolve(true); }; }; })`,
-              awaitPromise: true,
-            },
-            form
-          );
-          const databases = JSON.stringify(
-            (await call(formClient, 'page.get_storage', { type: 'indexeddb' }, form)).evidence
-          );
-          assert.match(databases, /"name":"bbx-live"/);
-          assert.equal(databases.includes(marker), false, 'IndexedDB metadata carries no record');
-          const item = await call(
-            formClient,
-            'sensitive.read',
-            { source: 'indexeddb', database: 'bbx-live', store: 'items', key: 1 },
-            form
-          );
-          assert.deepEqual(item.value, { id: 1, marker });
-        } finally {
-          await call(
-            formClient,
-            'page.evaluate',
-            {
-              expression:
-                "new Promise((resolve) => { const r = indexedDB.deleteDatabase('bbx-live'); r.onsuccess = r.onerror = r.onblocked = () => resolve(true); })",
-              awaitPromise: true,
-            },
-            form
-          );
-        }
+        await withLiveIndexedDbFixture(
+          (expression) =>
+            call(formClient, 'page.evaluate', { expression, awaitPromise: true }, form),
+          marker,
+          async (database) => {
+            const databases = JSON.stringify(
+              (await call(formClient, 'page.get_storage', { type: 'indexeddb' }, form)).evidence
+            );
+            assert.ok(databases.includes(`"name":${JSON.stringify(database)}`));
+            assert.equal(databases.includes(marker), false, 'IndexedDB metadata carries no record');
+            const item = await call(
+              formClient,
+              'sensitive.read',
+              { source: 'indexeddb', database, store: 'items', key: 1 },
+              form
+            );
+            assert.deepEqual(item.value, { id: 1, marker });
+          }
+        );
       });
 
       await t.test('partial failure preserves state and never recommends replay', async () => {

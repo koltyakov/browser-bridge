@@ -91,7 +91,7 @@ test('reads without a snapshotId keep the existing shape', async () => {
   });
 });
 
-test('an unchanged page answers unchanged without walking the DOM', async () => {
+test('an unchanged page returns a chainable snapshot without repeating the outline', async () => {
   await withOutline(TODOS, ({ read }) => {
     const base = read({ snapshotId: 's1' });
     assert.equal(base.snapshotId, 's1');
@@ -101,13 +101,54 @@ test('an unchanged page answers unchanged without walking the DOM', async () => 
       source: 'dom',
       format: 'outline',
       count: 8,
-      scanned: 0,
+      scanned: base.scanned,
       truncated: false,
       unchanged: true,
       snapshotId: 's2',
     });
     // The new snapshot stands for the same state.
     assert.equal(read({ since: 's2', snapshotId: 's3' }).unchanged, true);
+  });
+});
+
+test('computed visibility alone adds and removes outline lines', async () => {
+  await withOutline(TODOS, ({ read }) => {
+    const original = globalThis.getComputedStyle;
+    let visible = false;
+    Reflect.set(globalThis, 'getComputedStyle', (element: Element) =>
+      element.id === 'clear' && !visible
+        ? { display: 'none', visibility: 'visible' }
+        : original(element)
+    );
+    const base = read({ snapshotId: 's1' });
+    assert.doesNotMatch(base.outline ?? '', /button "Clear"/);
+    // Model CSSOM updates, which do not change any DOM attribute.
+    visible = true;
+    const shown = read({ since: 's1', snapshotId: 's2' });
+    assert.equal(shown.unchanged, undefined);
+    assert.match(lines(shown, 'added').join('\n'), /button "Clear"/);
+    assert.equal(shown.count, base.count + 1);
+    const clear = refOf({ ...shown, outline: lines(shown, 'added').join('\n') }, /button "Clear"/);
+    visible = false;
+    const hidden = read({ since: 's2', snapshotId: 's3' });
+    assert.deepEqual(hidden.delta?.removed, [clear]);
+    assert.equal(hidden.count, base.count);
+  });
+});
+
+test('an unchanged scoped outline preserves the depth limit and its completeness reason', async () => {
+  await withOutline('<main><nav><a href="/">Home</a></nav></main>', ({ read }) => {
+    const params = { scope: 'document', maxDepth: 1 };
+    const base = read({ ...params, snapshotId: 's1' });
+    assert.deepEqual(base.completeness, { complete: false, reasons: ['maxDepth'] });
+    const same = read({ ...params, since: 's1', snapshotId: 's2' });
+    assert.equal(same.unchanged, true);
+    assert.equal(same.truncated, true);
+    assert.deepEqual(same.completeness, base.completeness);
+    assert.deepEqual(same.scope, base.scope);
+    const next = read({ ...params, since: 's2', snapshotId: 's3' });
+    assert.equal(next.truncated, true);
+    assert.deepEqual(next.completeness, base.completeness);
   });
 });
 
@@ -149,7 +190,7 @@ test('a rename and a property-only checkbox toggle are changed lines', async () 
       `  - button "Clear completed" [${refOf(read(), /Clear completed/)}]`,
     ]);
     // A script setting .checked changes no attribute, so no mutation is
-    // recorded. The no-walk path must still notice.
+    // recorded. The comparison must still notice.
     const box = document.getElementById('milk-box');
     assert.ok(box);
     Object.defineProperty(box, 'checked', { value: true, configurable: true });

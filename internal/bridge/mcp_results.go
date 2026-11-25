@@ -788,7 +788,7 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 			}
 			bounded, extra := mcpBound(value(entries), nodeBudget, 20000, 4000)
 			if method == "page.get_network" {
-				out := mcpPick(r, "count total filteredTotal dropped abandoned source capture armed armedDuringCapture captureState startedAt inflight ownershipHeld truncated truncation")
+				out := mcpPick(r, "count total filteredTotal dropped abandoned source capture armed armedDuringCapture captureState startedAt inflight ownershipHeld bodyCapture truncated truncation")
 				mcpOmitEmpty(out, "capture", "startedAt")
 				if string(r["truncated"]) == "false" {
 					delete(out, "truncation")

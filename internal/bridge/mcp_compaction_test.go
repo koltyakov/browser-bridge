@@ -116,6 +116,30 @@ func TestMCPEvidenceOmitsEmptyAndRepeatedFields(t *testing.T) {
 	}
 }
 
+func TestMCPNetworkEvidencePreservesBodyCapture(t *testing.T) {
+	result := compactionFixture(t, `{
+		"source":"cdp","capture":"read","armed":true,
+		"bodyCapture":{"urlPattern":"https://app.test/api/*","maxResourceBytes":65536},
+		"entries":[{"requestId":"r-1","url":"https://app.test/api/data","resourceType":"Fetch","bodyAvailable":true,"status":200}],
+		"count":1,"total":1,"dropped":0,"truncated":false
+	}`)
+	raw := mcpDataResult(success("capture", result), "page.get_network").object("structuredContent").object("data")
+	for _, structured := range []object{
+		mcpResponse(success("capture", result), "page.get_network", object{}).object("structuredContent"),
+		mcpBatchResult(success("capture", result), "page.get_network", object{}, nil, 0),
+	} {
+		evidence := structured.object("evidence")
+		assertJSONEqual(t, evidence["bodyCapture"], raw["bodyCapture"])
+		assertJSONEqual(t, evidence["entries"], result["entries"])
+	}
+
+	delete(result, "bodyCapture")
+	evidence := mcpResponse(success("unbuffered", result), "page.get_network", object{}).object("structuredContent").object("evidence")
+	if evidence["bodyCapture"] != nil {
+		t.Fatal("unbuffered capture acquired bodyCapture metadata")
+	}
+}
+
 func TestMCPEvidenceKeepsValuesOfUnrecognizedResults(t *testing.T) {
 	result := compactionFixture(t, `{"elementRef":"el_1","classes":["nav","active"],"inlineStyle":"color: red"}`)
 	structured := mcpResponse(success("rules", result), "styles.get_matched_rules", object{}).object("structuredContent")

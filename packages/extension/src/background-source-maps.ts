@@ -61,6 +61,8 @@ const MAX_SOURCE_FILE_CHARS = 512;
 const MAX_SOURCE_NAME_CHARS = 200;
 const MAX_MAP_SECTIONS = 1_000;
 const MAX_MAP_DEPTH = 4;
+// FlattenMap materializes empty lines before each section's generated offset.
+const MAX_DECODED_LINES = 100_000;
 // Rough decoded size per map text character, so a few large maps fill the cache.
 const DECODED_COST_PER_CHAR = 8;
 
@@ -201,8 +203,7 @@ function responseValidator(response: Response): string | null {
   if (etag) return `etag:${etag}`;
   const modified = response.headers.get('last-modified');
   if (modified) return `modified:${modified}`;
-  const length = response.headers.get('content-length');
-  return length ? `length:${length}` : null;
+  return null;
 }
 
 async function cancelBody(response: Response): Promise<void> {
@@ -305,20 +306,42 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** Validate the map shape and drop sourcesContent before decoding, so source
 text is neither retained nor returned. Sections may nest a few levels deep. */
-function prepareMap(value: unknown, depth: number = 0): Record<string, unknown> {
+function prepareMap(
+  value: unknown,
+  depth = 0,
+  lineOffset = 0,
+  columnOffset = 0,
+  budget = { remainingLines: MAX_DECODED_LINES }
+): Record<string, unknown> {
   if (!isRecord(value) || value.version !== 3 || depth > MAX_MAP_DEPTH) {
     throw new ResolutionFailure('malformed_map');
   }
   const prepared: Record<string, unknown> = { ...value };
   delete prepared.sourcesContent;
-  if (Array.isArray(value.sections)) {
-    if (value.sections.length > MAX_MAP_SECTIONS) throw new ResolutionFailure('malformed_map');
+  if ('sections' in value) {
+    if (!Array.isArray(value.sections) || value.sections.length > MAX_MAP_SECTIONS)
+      throw new ResolutionFailure('malformed_map');
     prepared.sections = value.sections.map((section: unknown) => {
       if (!isRecord(section) || !isRecord(section.offset) || !isRecord(section.map)) {
         // Sections that point at a url would need another fetch; refuse them.
         throw new ResolutionFailure('malformed_map');
       }
-      return { offset: section.offset, map: prepareMap(section.map, depth + 1) };
+      const { line, column } = section.offset;
+      if (
+        typeof line !== 'number' ||
+        !Number.isSafeInteger(line) ||
+        line < 0 ||
+        typeof column !== 'number' ||
+        !Number.isSafeInteger(column) ||
+        column < 0 ||
+        !Number.isSafeInteger(columnOffset + column)
+      )
+        throw new ResolutionFailure('malformed_map');
+      if (lineOffset + line >= MAX_DECODED_LINES) throw new ResolutionFailure('map_too_large');
+      return {
+        offset: { line, column },
+        map: prepareMap(section.map, depth + 1, lineOffset + line, columnOffset + column, budget),
+      };
     });
     return prepared;
   }
@@ -330,6 +353,14 @@ function prepareMap(value: unknown, depth: number = 0): Record<string, unknown> 
   ) {
     throw new ResolutionFailure('malformed_map');
   }
+  let lines = 1;
+  for (let i = value.mappings.indexOf(';'); i !== -1; i = value.mappings.indexOf(';', i + 1)) {
+    lines++;
+    if (lines > budget.remainingLines || lineOffset + lines > MAX_DECODED_LINES)
+      throw new ResolutionFailure('map_too_large');
+  }
+  if (lines > budget.remainingLines) throw new ResolutionFailure('map_too_large');
+  budget.remainingLines -= lines;
   return prepared;
 }
 
@@ -626,10 +657,8 @@ resolution problem; frames always keep their generated position. */
         if (script === null) return { frame, reason: 'ambiguous_script' };
         const scriptUrl = new URL(script);
         const sameOrigin = documentUrl !== null && scriptUrl.origin === documentUrl.origin;
-        // The page chooses its own <script src> values, and the browser may
-        // have refused to load one that this worker could still reach. A page
-        // on the public web must not steer a request at the user's machine or
-        // network; a local page may name its local dev server.
+        // Even an observed load on a public page must not steer the worker
+        // at the user's machine or network.
         if (
           !sameOrigin &&
           isLocalNetworkHost(scriptUrl.hostname) &&
@@ -694,9 +723,8 @@ type ChromeWithIsolatedScripting = {
   };
 };
 
-/** Read the scripts the top frame loaded from the isolated world, where page
-code cannot replace document.scripts or the performance timeline. Resolves
-null when the list cannot be read, so callers fail closed. */
+/** Use browser-recorded script responses. DOM src attributes can change after
+load, and blocked scripts can still appear in document.scripts. */
 export async function readTabLoadedScripts(
   tabId: number,
   chromeObj: ChromeWithIsolatedScripting
@@ -707,37 +735,17 @@ export async function readTabLoadedScripts(
       world: 'ISOLATED',
       func: () => {
         const scripts: string[] = [];
-        const add = (value: unknown): void => {
-          if (typeof value === 'string' && value && scripts.length < 2_000) {
-            scripts.push(value.slice(0, 4_096));
+        for (const entry of performance.getEntriesByType('resource')) {
+          const { initiatorType, responseStatus, name } = entry as PerformanceResourceTiming;
+          if (
+            initiatorType === 'script' &&
+            ((responseStatus >= 200 && responseStatus < 300) || responseStatus === 304) &&
+            name &&
+            name.length <= 4_096
+          ) {
+            scripts.push(name);
+            if (scripts.length === 2_000) break;
           }
-        };
-        // Only types the browser executes, so an inert <script type="text/x">
-        // cannot nominate a URL the tab never requested.
-        const executable = new Set([
-          '',
-          'module',
-          'text/javascript',
-          'application/javascript',
-          'text/ecmascript',
-          'application/ecmascript',
-          'application/x-javascript',
-          'text/x-javascript',
-        ]);
-        try {
-          for (const script of Array.from(document.scripts).slice(0, 1_000)) {
-            const type = (script.getAttribute('type') ?? '').trim().toLowerCase();
-            if (script.src && !script.noModule && executable.has(type)) add(script.src);
-          }
-        } catch {
-          // A detached or unusual document leaves the timeline as the source.
-        }
-        try {
-          for (const entry of performance.getEntriesByType('resource').slice(0, 1_000)) {
-            if ((entry as PerformanceResourceTiming).initiatorType === 'script') add(entry.name);
-          }
-        } catch {
-          // Resource timing can be unavailable; the DOM list still applies.
         }
         return { documentUrl: String(document.URL), scripts };
       },
