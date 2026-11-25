@@ -1,0 +1,8 @@
+{
+  "version": 3,
+  "sources": ["../src/alpha.ts"],
+  "sourcesContent": ["// SOURCES_CONTENT_CANARY_alpha: this comment survives only in sourcesContent.\ntype Order = { id: string; total: number };\n\nexport function validateOrder(order: Order): number {\n  if (order.total < 0) {\n    throw new Error(`alpha: negative total for ${order.id}`);\n  }\n  return order.total;\n}\n\nexport function submitOrder(id: string, total: number): number {\n  return validateOrder({ id, total });\n}\n\n(globalThis as Record<string, unknown>).alphaSubmit = submitOrder;\n"],
+  "mappings": "mBAGO,SAASA,EAAcC,EAAsB,CAClD,GAAIA,EAAM,MAAQ,EAChB,MAAM,IAAI,MAAM,6BAA6BA,EAAM,EAAE,EAAE,EAEzD,OAAOA,EAAM,KACf,CAEO,SAASC,EAAYC,EAAYC,EAAuB,CAC7D,OAAOJ,EAAc,CAAE,GAAAG,EAAI,MAAAC,CAAM,CAAC,CACpC,CAEC,WAAuC,YAAcF",
+  "names": ["validateOrder", "order", "submitOrder", "id", "total"]
+}
+

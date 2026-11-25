@@ -38,6 +38,8 @@ export const DEFAULT_ACCESS_SETTINGS: Readonly<AccessSettings> = Object.freeze({
   allowClosingUserTabs: false,
   closeAiTabsWhenDone: true,
   allowOffDomainNavigation: false,
+  allowResponseBodyReads: false,
+  allowIndexedDBReads: false,
 });
 
 export function normalizeAccessSettings(value: unknown): AccessSettings {
@@ -48,4 +50,12 @@ export function normalizeAccessSettings(value: unknown): AccessSettings {
     if (typeof setting === 'boolean') result[key] = setting;
   }
   return result;
+}
+
+export function sensitiveReadSetting(
+  source: import('../../../protocol/src/types.js').SensitiveGatedSource
+) {
+  return ({ response_body: 'allowResponseBodyReads', indexeddb: 'allowIndexedDBReads' } as const)[
+    source
+  ];
 }

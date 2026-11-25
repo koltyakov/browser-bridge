@@ -63,8 +63,8 @@ export type ActionLogEntryInput = {
   continuationHint?: string | null;
   severity?: 'info' | 'warning';
   sensitiveAccess?: {
-    source: 'local_storage' | 'session_storage';
-    category: 'storage_value';
+    source: 'local_storage' | 'session_storage' | 'response_body' | 'indexeddb';
+    category: 'storage_value' | 'response_body' | 'indexeddb_record';
     keyLength: number;
   } | null;
 };
@@ -391,7 +391,7 @@ Late responses are rejected by the tab-existence check in append. */
         ok: response.ok,
         summary: sensitiveActivity
           ? sensitiveRead
-            ? `Sensitive ${request.params.source === 'session_storage' ? 'session' : 'local'} storage read ${response.ok ? 'succeeded' : `failed: ${response.error.code}`}.`
+            ? `Sensitive ${describeSensitiveSource(request.params.source)} read ${response.ok ? 'succeeded' : `failed: ${response.error.code}`}.`
             : webMcpActivity
               ? `WebMCP ${request.method.split('.')[1]} ${response.ok ? 'completed' : `failed: ${response.error.code}`}. Website metadata, arguments, and results are not retained.`
               : `Page evaluation with sensitive-data access capability ${response.ok ? 'succeeded' : `failed: ${response.error.code}`}.`
@@ -421,14 +421,7 @@ Late responses are rejected by the tab-existence check in append. */
             ? response.meta.continuation_hint
             : null,
         severity: sensitiveActivity ? 'warning' : 'info',
-        sensitiveAccess: sensitiveRead
-          ? {
-              source:
-                request.params.source === 'session_storage' ? 'session_storage' : 'local_storage',
-              category: 'storage_value',
-              keyLength: typeof request.params.key === 'string' ? request.params.key.length : 0,
-            }
-          : null,
+        sensitiveAccess: sensitiveRead ? describeSensitiveAccess(request.params) : null,
       });
     } catch {
       // Action persistence must never affect bridge response delivery.
@@ -608,11 +601,16 @@ export function enforceTransportPayloadLimit(
 
   if (request.method === 'sensitive.read') {
     const result = responsePayload as Record<string, unknown>;
-    const value = typeof result.value === 'string' ? result.value : '';
+    const value =
+      typeof result.value === 'string'
+        ? result.value
+        : typeof result.body === 'string'
+          ? result.body
+          : '';
     return createFailure(
       request.id,
       ERROR_CODES.RESULT_TOO_LARGE,
-      `The exact storage value is too large to return atomically after encoding (${payloadBytes} bytes).`,
+      `The exact ${result.source === 'response_body' ? 'response body' : 'storage value'} is too large to return atomically after encoding (${payloadBytes} bytes).`,
       {
         source: result.source,
         characters: value.length,
@@ -655,4 +653,29 @@ export function enforceTransportPayloadLimit(
       continuation_hint: `Retry ${request.method} with a tighter scope or smaller capture region.`,
     }
   );
+}
+
+/** Name the sensitive source for the operator log. Never includes a locator. */
+function describeSensitiveSource(source: unknown): string {
+  if (source === 'session_storage') return 'session storage';
+  if (source === 'response_body') return 'response body';
+  if (source === 'indexeddb') return 'IndexedDB record';
+  return 'local storage';
+}
+
+/** Record that a sensitive value was accessed, without the key, requestId,
+IndexedDB database, store or key, or value. Unknown
+sources are recorded as local storage, as before. */
+function describeSensitiveAccess(
+  params: Record<string, unknown>
+): NonNullable<ActionLogEntryInput['sensitiveAccess']> {
+  if (params.source === 'response_body')
+    return { source: 'response_body', category: 'response_body', keyLength: 0 };
+  if (params.source === 'indexeddb')
+    return { source: 'indexeddb', category: 'indexeddb_record', keyLength: 0 };
+  return {
+    source: params.source === 'session_storage' ? 'session_storage' : 'local_storage',
+    category: 'storage_value',
+    keyLength: typeof params.key === 'string' ? params.key.length : 0,
+  };
 }

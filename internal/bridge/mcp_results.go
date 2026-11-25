@@ -13,6 +13,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/koltyakov/browser-bridge/internal/protocol"
 )
 
 func mcpCost(tokens int) string {
@@ -223,12 +225,7 @@ func mcpResponse(response object, method string, params object) object {
 		case strings.HasPrefix(method, "screenshot."):
 			return mcpScreenshot(response.object("result"), method)
 		case method == "sensitive.read":
-			r := response.object("result")
-			var exact string
-			if (r.text("source") != "local_storage" && r.text("source") != "session_storage") || !r.boolean("exact") || json.Unmarshal(r["value"], &exact) != nil || string(r["value"]) == "null" {
-				return mcpErrorResult("INVALID_REQUEST", "sensitive.read returned an invalid exact-value response.")
-			}
-			return object{"content": value([]object{{"type": value("text"), "text": value("Sensitive storage read succeeded. The exact value is available in structuredContent.value.")}}), "structuredContent": value(mcpPick(r, "source value exact"))}
+			return mcpSensitiveRead(response.object("result"))
 		case method == "artifact.read":
 			return mcpArtifactRead(response.object("result"))
 		case method == "network.export_har":
@@ -380,10 +377,12 @@ func mcpStructuredResponse(response object, method string, params object) object
 		evidence, truncated, limit := mcpEvidence(response["result"], method, params, structured["evidence"])
 		structured["evidence"] = evidence
 		if method == "dom.get_accessibility_tree" && response.object("result")["nodes"] != nil {
-			structured["evidenceMeta"] = value(mcpPick(response.object("result"), "rootIds count total rawTotal source format scanned compact interactiveOnly truncated truncation continuationHint"))
+			structured["evidenceMeta"] = value(mcpPick(response.object("result"), "rootIds count total rawTotal source format scanned compact interactiveOnly truncated truncation continuationHint snapshotId deltaUnavailable"))
 		}
 		if method == "dom.get_accessibility_tree" {
-			if meta := cliOutlineEvidenceMeta(response.object("result"), evidence); meta != nil {
+			// Unscoped trees already carry their metadata, snapshot included.
+			result := response.object("result")
+			if meta := cliOutlineEvidenceMeta(result, evidence); meta != nil && (result["nodes"] == nil || result["scope"] != nil) {
 				structured["evidenceMeta"] = value(meta)
 			}
 		}
@@ -781,7 +780,13 @@ func mcpEvidence(raw json.RawMessage, method string, params object, fallback jso
 			} else {
 				entries = entries[:min(len(entries), limit)]
 			}
-			bounded, extra := mcpBound(value(entries), 500, 20000, 4000)
+			// Console stacks add about a dozen JSON nodes per frame, so let the
+			// character budget, not the node count, bound console entries.
+			nodeBudget := 500
+			if method == "page.get_console" {
+				nodeBudget = 2000
+			}
+			bounded, extra := mcpBound(value(entries), nodeBudget, 20000, 4000)
 			if method == "page.get_network" {
 				out := mcpPick(r, "count total filteredTotal dropped abandoned source capture armed armedDuringCapture captureState startedAt inflight ownershipHeld truncated truncation")
 				mcpOmitEmpty(out, "capture", "startedAt")
@@ -927,6 +932,45 @@ func mcpFloat(raw json.RawMessage) float64 {
 func mcpIsString(raw json.RawMessage) bool {
 	var s string
 	return len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &s) == nil
+}
+
+// mcpSensitiveRead returns the exact value only in structuredContent. A result
+// that does not match its source's exact shape is rejected whole.
+func mcpSensitiveRead(r object) object {
+	invalid := mcpErrorResult("INVALID_REQUEST", "sensitive.read returned an invalid exact-value response.")
+	var exact string
+	if !r.boolean("exact") {
+		return invalid
+	}
+	switch r.text("source") {
+	case "local_storage", "session_storage":
+		if json.Unmarshal(r["value"], &exact) != nil || string(r["value"]) == "null" {
+			return invalid
+		}
+		return object{"content": value([]object{{"type": value("text"), "text": value("Sensitive storage read succeeded. The exact value is available in structuredContent.value.")}}), "structuredContent": value(mcpPick(r, "source value exact"))}
+	case "response_body":
+		bytesN, ok := serviceInteger(r, "bytes")
+		if json.Unmarshal(r["body"], &exact) != nil || string(r["body"]) == "null" || !cliString(r["requestId"]) || !cliString(r["mimeType"]) ||
+			(r.text("encoding") != "text" && r.text("encoding") != "base64") || !ok || bytesN < 0 || bytesN > protocol.MaxSensitiveValueBytes {
+			return invalid
+		}
+		return object{"content": value([]object{{"type": value("text"), "text": value("Sensitive response body read succeeded. The exact body is available in structuredContent.body.")}}), "structuredContent": value(mcpPick(r, "source requestId body encoding mimeType bytes exact"))}
+	case "indexeddb":
+		frameID, frameOK := serviceInteger(r, "frameId")
+		described, describedOK := serviceInteger(r, "described")
+		// A stored record may itself be JSON null, so only absence is invalid.
+		if len(bytes.TrimSpace(r["value"])) == 0 || !cliString(r["database"]) || !cliString(r["store"]) || !frameOK || frameID < 0 || !describedOK || described < 0 || !mcpSensitiveBytes(r) {
+			return invalid
+		}
+		return object{"content": value([]object{{"type": value("text"), "text": value("Sensitive IndexedDB read succeeded. The exact record is available in structuredContent.value.")}}), "structuredContent": value(mcpPick(r, "source frameId database store value described bytes exact"))}
+	}
+	return invalid
+}
+
+// mcpSensitiveBytes accepts a byte count within the atomic sensitive limit.
+func mcpSensitiveBytes(r object) bool {
+	n, ok := serviceInteger(r, "bytes")
+	return ok && n >= 0 && n <= protocol.MaxSensitiveValueBytes
 }
 
 func mcpArtifactRead(r object) object {

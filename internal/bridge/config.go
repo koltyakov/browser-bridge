@@ -27,6 +27,11 @@ type config struct {
 	agentToken string
 	token      string // Explicit destination credential; never inherited by another client.
 	remote     bool
+	// proxyTransport marks a daemon that serves agents through proxy mode, so a
+	// TCP agent may be on another machine. remoteSensitiveReads is the browser
+	// machine's explicit opt-in for gated sensitive sources over that transport.
+	proxyTransport       bool
+	remoteSensitiveReads bool
 }
 
 func loadConfig() (config, error) {
@@ -64,6 +69,7 @@ func loadConfig() (config, error) {
 		c.network = "tcp"
 		c.address = net.JoinHostPort("127.0.0.1", strconv.Itoa(proxy.Port))
 		c.bind = net.JoinHostPort(proxy.BindHost, strconv.Itoa(proxy.Port))
+		c.proxyTransport, c.remoteSensitiveReads = true, proxy.RemoteSensitiveReads
 		return c, nil
 	}
 	if port == "" && runtime.GOOS == "windows" {

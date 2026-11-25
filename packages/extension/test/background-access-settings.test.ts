@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createChromeFake, type FakeChromeEvent } from '../../../tests/_helpers/chromeFake.ts';
+import {
+  createChromeEvent,
+  createChromeFake,
+  type FakeChromeEvent,
+} from '../../../tests/_helpers/chromeFake.ts';
 import { loadBackground } from '../../../tests/_helpers/loadBackground.ts';
 import { createRequest } from '../../../protocol/src/index.js';
 import { DEFAULT_ACCESS_SETTINGS, normalizeAccessSettings } from '../src/access-settings.js';
@@ -27,6 +31,8 @@ test('access settings persist with safe defaults and ignore invalid values', asy
     allowClosingUserTabs: true,
     closeAiTabsWhenDone: false,
     allowOffDomainNavigation: false,
+    allowResponseBodyReads: false,
+    allowIndexedDBReads: false,
   };
   await controller.update(settings);
   assert.deepEqual(
@@ -305,4 +311,116 @@ test('linked-tab inheritance rejects revoked grants, closed tabs, and moved open
     await controller.inherit(child);
     assert.deepEqual(state.inheritedTabs, {}, scenario);
   }
+});
+
+test('sensitive data reads default off, persist, bump the revision, and wake waits', async () => {
+  assert.equal(DEFAULT_ACCESS_SETTINGS.allowResponseBodyReads, false);
+  assert.equal(normalizeAccessSettings({}).allowResponseBodyReads, false);
+  assert.equal(
+    normalizeAccessSettings({ allowResponseBodyReads: 'true' }).allowResponseBodyReads,
+    false,
+    'only a real boolean opts in'
+  );
+  // The retired combined preference must not silently enable either new permission.
+  const chromeObj = createChromeFake() as unknown as typeof chrome;
+  await chromeObj.storage.local.set({
+    [ACCESS_SETTINGS_STORAGE_KEY]: {
+      allowSensitiveDataReads: true,
+      allowCreatingTabs: true,
+      allowClosingUserTabs: false,
+      closeAiTabsWhenDone: true,
+      allowOffDomainNavigation: false,
+    },
+  });
+  const state = createExtensionState();
+  const changes: string[] = [];
+  const controller = createAccessSettingsController(state, chromeObj, {
+    onChanged: () => changes.push(state.accessSettingsRevision),
+  });
+  await controller.restore();
+  assert.equal(state.accessSettings.allowResponseBodyReads, false);
+  assert.equal(state.accessSettings.allowIndexedDBReads, false);
+  const before = state.accessSettingsRevision;
+  const waiting = controller.waitForChange(before, 25_000);
+  await controller.update({ ...state.accessSettings, allowResponseBodyReads: true });
+  const woke = await waiting;
+  assert.equal(woke.changed, true);
+  assert.equal(woke.settings.allowResponseBodyReads, true);
+  assert.notEqual(woke.settingsRevision, before);
+  assert.deepEqual(changes, [woke.settingsRevision]);
+  assert.equal(
+    (
+      (await chromeObj.storage.local.get(ACCESS_SETTINGS_STORAGE_KEY))[
+        ACCESS_SETTINGS_STORAGE_KEY
+      ] as { allowResponseBodyReads: boolean }
+    ).allowResponseBodyReads,
+    true
+  );
+  // An unchanged update keeps the revision, so waits do not wake spuriously.
+  await controller.update({ ...state.accessSettings });
+  assert.equal(state.accessSettingsRevision, woke.settingsRevision);
+  await controller.update({ ...state.accessSettings, allowResponseBodyReads: false });
+  assert.notEqual(state.accessSettingsRevision, woke.settingsRevision);
+});
+
+test('a policy-denied body read is woken by the side panel toggle and then passes the gate', async () => {
+  const chromeObj = createChromeFake({
+    tabs: {
+      async query() {
+        return [{ id: 41, windowId: 7, url: 'https://example.com/', title: 'Example' }];
+      },
+      async get(id: number) {
+        return { id, windowId: 7, url: 'https://example.com/', title: 'Example' };
+      },
+    },
+  });
+  const loaded = await loadBackground({ chrome: chromeObj });
+  const state = loaded.module.getStateForTest() as ReturnType<typeof createExtensionState>;
+  state.enabledWindow = { windowId: 7, title: 'Example', enabledAt: 100 };
+  const read = () =>
+    loaded.dispatch(
+      createRequest({
+        id: crypto.randomUUID(),
+        method: 'sensitive.read',
+        params: { source: 'response_body', requestId: 'r-1' },
+      })
+    );
+  const denied = await read();
+  assert.equal(denied.ok, false);
+  if (denied.ok) return;
+  const details = denied.error.details as { reason: string; settingsRevision: string };
+  assert.equal(denied.error.code, 'ACCESS_DENIED');
+  assert.equal(details.reason, 'policy_setting_disabled');
+  assert.equal(denied.error.recovery?.alternativeMethod, 'access.wait_for_change');
+  const wait = loaded.dispatch(
+    createRequest({
+      id: 'wait-sensitive',
+      method: 'access.wait_for_change',
+      params: { revision: details.settingsRevision, timeoutMs: 25_000 },
+    })
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  const onMessage = createChromeEvent();
+  (chromeObj.runtime.onConnect as FakeChromeEvent).dispatch({
+    name: 'ui-sidepanel',
+    onMessage,
+    onDisconnect: createChromeEvent(),
+    postMessage() {},
+  });
+  onMessage.dispatch({
+    type: 'access.settings.update',
+    settings: { ...DEFAULT_ACCESS_SETTINGS, allowResponseBodyReads: true },
+  });
+  const changed = await wait;
+  assert.equal(changed.ok, true);
+  assert.equal(
+    (changed.result as { settings: { allowResponseBodyReads: boolean } }).settings
+      .allowResponseBodyReads,
+    true
+  );
+  const next = await read();
+  assert.equal(next.ok, false);
+  if (next.ok) return;
+  assert.equal(next.error.code, 'SENSITIVE_TARGET_NOT_FOUND');
+  assert.equal((next.error.details as { reason: string }).reason, 'capture_not_armed');
 });

@@ -37,7 +37,7 @@ endif
 	check-release-version check check-extension-zip package-extension package-native \
 	package-native-all package-npm pack pack-dry-run release-check prepublish-check \
 	publish-native publish-release publish-npm fixture-browser fixture-interaction bench-interaction bench-comparative bench-iframe-wait \
-	run status daemon install-manifest install sync-version bench-runtime bench-npm-launch test-visual-live test-inspection-live test-mcp-live test-workflows-live test-chaos-live test-arc-live test-input-live test-full-chain-live
+	run status daemon install-manifest install sync-version bench-runtime bench-npm-launch test-visual-live test-inspection-live test-mcp-live test-workflows-live test-chaos-live test-arc-live test-input-live test-full-chain-live test-sourcemaps-live
 
 help: ## Show available tasks; the default when running make
 	@"$(NODE)" -e "const fs = require('node:fs'); for (const m of fs.readFileSync('Makefile', 'utf8').matchAll(/^([a-z][a-z-]+):.*?## (.+)$$/gm)) console.log(m[1].padEnd(24) + m[2]);"
@@ -106,6 +106,9 @@ test-mcp-live: build-native ## Read-only conversation routing; set BBX_LIVE_EXTE
 test-workflows-live: build-extension build-native ## Public demo forms and multi-tab mutations; set BBX_LIVE_PROFILE_LABEL or BBX_LIVE_EXTENSION_ID
 	"$(NODE)" --import tsx --test --test-concurrency=1 tests/live/workflows.test.ts
 
+test-sourcemaps-live: build-extension build-native ## Resolve a fixture bundle's error through its source map in real Chrome; set BBX_LIVE_EXTENSION_ID
+	"$(NODE)" --import tsx --test tests/live/source-maps.test.ts
+
 test-input-live: build-extension ## Disposable headless native-input/observer faults and genuine legacy responses; set BBX_INPUT_CHROME
 	"$(NODE)" --import tsx --test tests/live/input-aftermath.test.ts
 
@@ -141,8 +144,10 @@ coverage-review: ## List the lowest-covered files
 	$(C8) report --reporter=json-summary
 	"$(NODE)" scripts/review-coverage.mjs
 
+# .c8rc.json excludes third-party sources reached through bundled source maps.
+# c8 check-coverage ignores that option, so check through report instead.
 coverage-check: ## Enforce the existing line and branch coverage thresholds
-	$(C8) check-coverage --lines 92 --branches 83
+	$(C8) report --check-coverage --reporter=text-summary --lines 92 --branches 83
 
 sync-version: ## Mirror manifest.json locally or the pipeline Git tag into package metadata
 	"$(NODE)" scripts/version.mjs --sync

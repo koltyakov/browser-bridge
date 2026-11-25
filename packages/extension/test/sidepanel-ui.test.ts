@@ -792,6 +792,7 @@ test('access options show defaults, update settings and enable only this tab', a
     const close = document.getElementById('allow-closing-user-tabs') as HTMLInputElement;
     const cleanup = document.getElementById('close-ai-tabs-when-done') as HTMLInputElement;
     const offDomain = document.getElementById('allow-off-domain-navigation') as HTMLInputElement;
+    const sensitive = document.getElementById('allow-response-body-reads') as HTMLInputElement;
     assert.equal(options.previousElementSibling?.id, 'bridge-toggle');
     assert.equal(
       document.getElementById('enable-tab-access')?.textContent,
@@ -802,6 +803,11 @@ test('access options show defaults, update settings and enable only this tab', a
     assert.equal(close.checked, false);
     assert.equal(cleanup.checked, true);
     assert.equal(offDomain.checked, false);
+    assert.equal(sensitive.checked, false, 'sensitive data reads default off');
+    const indexedDB = document.getElementById('allow-indexeddb-reads') as HTMLInputElement;
+    assert.equal(indexedDB.checked, false);
+    assert.equal(sensitive.parentElement?.textContent?.trim(), 'Allow reading response bodies');
+    assert.match(sensitive.parentElement?.getAttribute('title') ?? '', /response bodies/);
     options.open = true;
     close.checked = true;
     close.dispatchEvent(new window.Event('change', { bubbles: true }));
@@ -813,6 +819,21 @@ test('access options show defaults, update settings and enable only this tab', a
         allowClosingUserTabs: true,
         closeAiTabsWhenDone: true,
         allowOffDomainNavigation: false,
+        allowResponseBodyReads: false,
+        allowIndexedDBReads: false,
+      },
+    });
+    sensitive.checked = true;
+    sensitive.dispatchEvent(new window.Event('change', { bubbles: true }));
+    assert.deepEqual(pair.left.postedMessages.at(-1), {
+      type: 'access.settings.update',
+      settings: {
+        allowCreatingTabs: true,
+        allowClosingUserTabs: true,
+        closeAiTabsWhenDone: true,
+        allowOffDomainNavigation: false,
+        allowIndexedDBReads: false,
+        allowResponseBodyReads: true,
       },
     });
     const settings = {
@@ -820,6 +841,8 @@ test('access options show defaults, update settings and enable only this tab', a
       allowClosingUserTabs: true,
       closeAiTabsWhenDone: false,
       allowOffDomainNavigation: true,
+      allowIndexedDBReads: true,
+      allowResponseBodyReads: true,
     };
     pair.left.dispatchMessage(
       createSidepanelStateSync(false, null, null, [], { accessSettings: settings })
@@ -827,6 +850,8 @@ test('access options show defaults, update settings and enable only this tab', a
     assert.equal(create.checked, false);
     assert.equal(cleanup.checked, false);
     assert.equal(offDomain.checked, true);
+    assert.equal(sensitive.checked, true);
+    assert.equal(indexedDB.checked, true);
     document.body.dispatchEvent(new window.Event('click', { bubbles: true }));
     assert.equal(options.open, false);
     options.open = true;

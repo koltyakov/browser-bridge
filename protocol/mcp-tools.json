@@ -322,6 +322,12 @@
             "maximum": 3,
             "description": "Requires find. Include this many semantic siblings on either side and ancestors; default 1, 0 returns only matches."
           },
+          "since": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "DOM accessibility outlines only. snapshotId from an earlier read of this tab: returns unchanged, a delta {added, changed, removed}, or the full outline with deltaUnavailable."
+          },
           "textBudget": {
             "description": "Max chars of text content per node (default: 600)",
             "type": "integer",
@@ -495,20 +501,77 @@
     {
       "name": "browser_sensitive_read",
       "title": "Sensitive Browser Read",
-      "description": "High-risk exact-value read for one local or session storage key. This operation is logged as Sensitive access, is never batched or retried, and returns the whole value or fails atomically.",
+      "description": "High-risk exact-value read for one local or session storage key, one response body from this tab's CDP capture started with bodies, or one IndexedDB record. Response bodies and IndexedDB each require their own user opt-in. Logged as Sensitive access, never batched or retried, and returns the whole value or fails atomically.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "source": {
             "type": "string",
-            "enum": ["local_storage", "session_storage"],
-            "description": "Exact storage source"
+            "enum": ["local_storage", "session_storage", "response_body", "indexeddb"],
+            "description": "Exact sensitive source"
           },
           "key": {
+            "description": "Storage sources: exact storage key, including an empty key if intended. indexeddb: record primary key as a string, finite number, {\"type\":\"date\",\"value\":<epoch ms>}, or an array of those",
+            "anyOf": [
+              { "type": "string", "maxLength": 2048 },
+              { "type": "number" },
+              {
+                "type": "object",
+                "properties": {
+                  "type": { "type": "string", "const": "date" },
+                  "value": { "type": "number" }
+                },
+                "required": ["type", "value"],
+                "additionalProperties": false
+              },
+              {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "anyOf": [
+                    { "type": "string", "maxLength": 2048 },
+                    { "type": "number" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": { "type": "string", "const": "date" },
+                        "value": { "type": "number" }
+                      },
+                      "required": ["type", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "database": {
             "type": "string",
-            "maxLength": 2048,
-            "description": "Exact storage key, including an empty key if intended"
+            "maxLength": 1024,
+            "description": "indexeddb: exact database name from page.get_storage type=indexeddb"
+          },
+          "store": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "indexeddb: exact object store name"
+          },
+          "frameId": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "indexeddb: frameId from the listing whose origin owns the database (default 0, top document)"
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "response_body: requestId of a page.get_network source=cdp entry with bodyAvailable=true"
+          },
+          "encoding": {
+            "type": "string",
+            "enum": ["text", "base64"],
+            "description": "response_body: text (default) rejects binary bodies; base64 returns any body"
           },
           "tabId": {
             "description": "Tab ID; with several profiles also pass extensionId.",
@@ -539,7 +602,7 @@
             "maxLength": 256
           }
         },
-        "required": ["source", "key"],
+        "required": ["source"],
         "additionalProperties": false
       }
     },
@@ -627,6 +690,10 @@
             "description": "Clear buffer after reading (default: false)",
             "type": "boolean"
           },
+          "resolveSources": {
+            "description": "Console: map stack frames through source maps of scripts the tab loaded (default: false). The extension fetches those scripts and maps.",
+            "type": "boolean"
+          },
           "limit": {
             "description": "Maximum entries to return (console default: 50; HAR default: 50, max: 200)",
             "type": "integer",
@@ -634,12 +701,12 @@
             "maximum": 9007199254740991
           },
           "type": {
-            "description": "Storage type to read (default: local)",
+            "description": "Storage type to read (default: local). indexeddb lists database/store metadata per frame. Never values.",
             "type": "string",
-            "enum": ["local", "session"]
+            "enum": ["local", "session", "indexeddb"]
           },
           "keys": {
-            "description": "Specific storage keys to fetch (omitting returns all)",
+            "description": "local/session only: specific storage keys to fetch (omitting returns all)",
             "type": "array",
             "items": {
               "type": "string"
@@ -689,6 +756,25 @@
             "description": "Explicit CDP capture lifecycle action (default: read)",
             "type": "string",
             "enum": ["read", "start", "clear", "stop"]
+          },
+          "bodies": {
+            "description": "With source=cdp capture=start, buffer response bodies for sensitive.read. Pass a narrow urlPattern glob.",
+            "type": "object",
+            "properties": {
+              "urlPattern": {
+                "description": "Case-sensitive glob (* and ?) for the full request URL; only matching bodies are readable",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048
+              },
+              "maxResourceBytes": {
+                "description": "Per-resource buffer cap in bytes (default and maximum 5242880)",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5242880
+              }
+            },
+            "additionalProperties": false
           },
           "delivery": {
             "description": "HAR delivery mode: auto chooses inline or a daemon-owned artifact",

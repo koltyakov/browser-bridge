@@ -46,6 +46,7 @@
     findByRole: (params: Record<string, unknown>) => unknown;
     findByText: (params: Record<string, unknown>) => unknown;
     getAccessibilityOutline: (params: Record<string, unknown>) => unknown;
+    clearOutlineSnapshots: () => unknown;
     probeTarget: (params: Record<string, unknown>) => { found: boolean };
     getAttributes: (ref: string, attrs: string[]) => unknown;
     getBoxModel: (ref: string) => unknown;
@@ -225,9 +226,12 @@
       case 'page.get_state':
         return getPageState();
       case 'page.get_storage':
-        return getStorageData(params);
+        return params.type === 'indexeddb' ? getIndexedDbMetadata() : getStorageData(params);
       case 'sensitive.read':
         return getSensitiveStorageValue(params);
+      // Internal: the background sends this only after the sensitive-data gate.
+      case 'indexeddb.read_record':
+        return readIndexedDbRecord(params);
       case 'page.get_text':
         return getFullPageText(params);
       case 'navigation.navigate':
@@ -260,6 +264,8 @@
         return domQueryModule.findByRole(params);
       case 'dom.get_accessibility_tree':
         return domQueryModule.getAccessibilityOutline(params);
+      case 'dom.outline.clear':
+        return domQueryModule.clearOutlineSnapshots();
       case 'dom.probe_target':
         return domQueryModule.probeTarget(params);
       case 'dom.get_html':
@@ -476,6 +482,13 @@ Lightweight - only checks a few DOM/stylesheet signals. */
     total: number;
     truncated: boolean;
   } {
+    if (params.type !== undefined && params.type !== 'local' && params.type !== 'session') {
+      throw {
+        code: 'INVALID_REQUEST',
+        message: 'The content script lists only local and session storage keys here.',
+        details: { reason: 'unsupported_storage_type' },
+      };
+    }
     const type = params.type === 'session' ? 'session' : 'local';
     const storage = type === 'session' ? sessionStorage : localStorage;
     const keys = Array.isArray(params.keys)
@@ -510,7 +523,16 @@ Lightweight - only checks a few DOM/stylesheet signals. */
     value: string;
     exact: true;
   } {
-    const source = params.source === 'session_storage' ? 'session_storage' : 'local_storage';
+    // Only Web Storage is read here. Any other source is handled, and gated, in
+    // the background; never fall back to localStorage for an unknown source.
+    if (params.source !== 'local_storage' && params.source !== 'session_storage') {
+      throw {
+        code: 'INVALID_REQUEST',
+        message: 'The content script reads only local_storage and session_storage.',
+        details: { reason: 'unsupported_source' },
+      };
+    }
+    const source = params.source;
     const storage = source === 'session_storage' ? sessionStorage : localStorage;
     const key = typeof params.key === 'string' ? params.key : '';
     const value = storage.getItem(key);
@@ -537,6 +559,421 @@ Lightweight - only checks a few DOM/stylesheet signals. */
       };
     }
     return { source, value, exact: true };
+  }
+
+  // IndexedDB. This runs in the frame's own document, so it sees exactly the
+  // storage that origin sees in this tab's partition. Rules: open only names
+  // indexedDB.databases() reported, never pass a version, close at once, and
+  // close on versionchange so the page's own upgrade is never blocked.
+  const IDB_MAX_DATABASES = 20;
+  const IDB_MAX_STORES = 50;
+  const IDB_MAX_INDEXES = 20;
+  const IDB_WALK_BUDGET_MS = 2_000;
+  const IDB_OPEN_TIMEOUT_MS = 1_000;
+  const IDB_READ_TIMEOUT_MS = 1_500;
+  const IDB_MAX_DESCRIBE_NODES = 50_000;
+  const IDB_MAX_DESCRIBE_DEPTH = 64;
+
+  type IdbOpenOutcome =
+    | { db: IDBDatabase }
+    | { error: 'open_timeout' | 'database_missing' | 'open_failed' };
+
+  const IDB_TIMEOUT: unique symbol = Symbol('idb-timeout');
+  const IDB_TOO_LARGE: unique symbol = Symbol('idb-too-large');
+
+  /** Resolve a promise or report a timeout; the work itself is not canceled. */
+  function idbWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<T | typeof IDB_TIMEOUT> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => resolve(IDB_TIMEOUT), Math.max(0, timeoutMs));
+      promise.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          reject(error);
+        }
+      );
+    });
+  }
+
+  function idbRequest<T>(request: IDBRequest<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = (event) => {
+        event.preventDefault();
+        reject(request.error);
+      };
+    });
+  }
+
+  /** Open an existing database without a version. A late success after the
+   * timeout is closed immediately, and a missing database is never created:
+   * upgradeneeded only fires for a name that no longer exists, and aborting
+   * that upgrade transaction leaves nothing behind. */
+  function openExistingDatabase(name: string, timeoutMs: number): Promise<IdbOpenOutcome> {
+    return new Promise((resolve) => {
+      let settled = false;
+      let missing = false;
+      const finish = (outcome: IdbOpenOutcome) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(outcome);
+      };
+      let request: IDBOpenDBRequest;
+      try {
+        request = indexedDB.open(name);
+      } catch {
+        resolve({ error: 'open_failed' });
+        return;
+      }
+      const timer = setTimeout(() => finish({ error: 'open_timeout' }), Math.max(0, timeoutMs));
+      request.onupgradeneeded = () => {
+        missing = true;
+        try {
+          request.transaction?.abort();
+        } catch {
+          // The open then fails with AbortError; nothing is committed.
+        }
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        db.onversionchange = () => db.close();
+        if (settled || missing) {
+          db.close();
+          finish({ error: missing ? 'database_missing' : 'open_timeout' });
+          return;
+        }
+        finish({ db });
+      };
+      request.onerror = (event) => {
+        event.preventDefault();
+        finish({ error: missing ? 'database_missing' : 'open_failed' });
+      };
+      // blocked fires only for version changes, which BBX never requests.
+      request.onblocked = () => {};
+    });
+  }
+
+  function idbKeyPath(value: unknown): string | string[] | null {
+    if (typeof value === 'string') return value;
+    if (value && typeof (value as ArrayLike<string>).length === 'number')
+      return Array.from(value as ArrayLike<string>, String);
+    return null;
+  }
+
+  function listIndexedDbDatabases(timeoutMs: number) {
+    const factory = typeof indexedDB === 'undefined' ? null : indexedDB;
+    if (!factory || typeof factory.databases !== 'function') return null;
+    return idbWithin(factory.databases(), timeoutMs);
+  }
+
+  /** Database, store, and index metadata for this frame's origin. Record
+   * counts and the whole walk are bounded by time and by size. */
+  async function getIndexedDbMetadata(): Promise<Record<string, unknown>> {
+    const started = Date.now();
+    const remaining = () => IDB_WALK_BUDGET_MS - (Date.now() - started);
+    const incomplete = new Set<string>();
+    const databases: Array<Record<string, unknown>> = [];
+    const result = () => ({
+      type: 'indexeddb',
+      origin: location.origin,
+      available,
+      databases,
+      total,
+      incomplete: [...incomplete],
+    });
+    let available = true;
+    let total = 0;
+    let listed: Awaited<ReturnType<IDBFactory['databases']>> | typeof IDB_TIMEOUT;
+    try {
+      const pending = listIndexedDbDatabases(IDB_OPEN_TIMEOUT_MS);
+      if (!pending) {
+        available = false;
+        return result();
+      }
+      listed = await pending;
+    } catch {
+      // Opaque origins and storage-blocked documents cannot use IndexedDB.
+      available = false;
+      return result();
+    }
+    if (listed === IDB_TIMEOUT) {
+      incomplete.add('databases_timeout');
+      return result();
+    }
+    const named = listed.filter((entry) => typeof entry?.name === 'string');
+    total = named.length;
+    if (named.length > IDB_MAX_DATABASES) incomplete.add('database_limit');
+    for (const entry of named.slice(0, IDB_MAX_DATABASES)) {
+      if (remaining() <= 0) {
+        incomplete.add('time_budget');
+        break;
+      }
+      const name = entry.name as string;
+      const opened = await openExistingDatabase(name, Math.min(IDB_OPEN_TIMEOUT_MS, remaining()));
+      if ('error' in opened) {
+        databases.push({
+          name,
+          version: typeof entry.version === 'number' ? entry.version : 0,
+          stores: [],
+          storeCount: 0,
+          error: opened.error,
+        });
+        incomplete.add('database_error');
+        continue;
+      }
+      const db = opened.db;
+      try {
+        const storeNames = Array.from(db.objectStoreNames);
+        if (storeNames.length > IDB_MAX_STORES) incomplete.add('store_limit');
+        const selected = storeNames.slice(0, IDB_MAX_STORES);
+        const stores: Array<Record<string, unknown>> = [];
+        if (selected.length) {
+          const transaction = db.transaction(selected, 'readonly');
+          const counts: Array<Promise<number>> = [];
+          for (const storeName of selected) {
+            const store = transaction.objectStore(storeName);
+            const indexNames = Array.from(store.indexNames).slice(0, IDB_MAX_INDEXES);
+            stores.push({
+              name: storeName,
+              keyPath: idbKeyPath(store.keyPath),
+              autoIncrement: store.autoIncrement === true,
+              indexes: indexNames.map((indexName) => {
+                const index = store.index(indexName);
+                return {
+                  name: indexName,
+                  keyPath: idbKeyPath(index.keyPath) ?? '',
+                  unique: index.unique === true,
+                  multiEntry: index.multiEntry === true,
+                };
+              }),
+              count: null,
+            });
+            counts.push(idbRequest(store.count()));
+          }
+          const settled = await idbWithin(
+            Promise.all(counts.map((count) => count.catch(() => null))),
+            Math.max(0, remaining())
+          );
+          if (settled === IDB_TIMEOUT) {
+            incomplete.add('time_budget');
+            try {
+              transaction.abort();
+            } catch {
+              // Already finished.
+            }
+          } else {
+            settled.forEach((count, index) => {
+              stores[index].count = typeof count === 'number' ? count : null;
+            });
+          }
+        }
+        databases.push({ name, version: db.version, stores, storeCount: storeNames.length });
+      } catch {
+        databases.push({
+          name,
+          version: db.version,
+          stores: [],
+          storeCount: 0,
+          error: 'open_failed',
+        });
+        incomplete.add('database_error');
+      } finally {
+        db.close();
+      }
+    }
+    return result();
+  }
+
+  /** Convert an IndexedDbKey from JSON params to an IndexedDB key. */
+  function toIndexedDbKey(value: unknown): IDBValidKey {
+    const part = (item: unknown): IDBValidKey => {
+      if (typeof item === 'string' || typeof item === 'number') return item;
+      if (item && typeof item === 'object' && (item as { type?: unknown }).type === 'date')
+        return new Date(Number((item as { value?: unknown }).value));
+      throw {
+        code: 'INVALID_REQUEST',
+        message: 'Unsupported IndexedDB key type.',
+        details: { reason: 'unsupported_key_type' },
+      };
+    };
+    return Array.isArray(value) ? value.map(part) : part(value);
+  }
+
+  /** Copy a structured-clone value to JSON. Values JSON cannot carry are
+   * replaced in place by a {$bbxType} description; binary contents are never
+   * copied. Returns null when the value is too large to walk. */
+  function describeForJson(value: unknown): { json: unknown; described: number } | null {
+    let nodes = 0;
+    let described = 0;
+    const ancestors: object[] = [];
+    const tag = (item: object) => Object.prototype.toString.call(item).slice(8, -1);
+    const mark = (description: Record<string, unknown>) => {
+      described += 1;
+      return description;
+    };
+    const walk = (item: unknown, depth: number): unknown => {
+      nodes += 1;
+      if (nodes > IDB_MAX_DESCRIBE_NODES) throw IDB_TOO_LARGE;
+      if (item === null || typeof item === 'string' || typeof item === 'boolean') return item;
+      if (typeof item === 'number')
+        return Number.isFinite(item) ? item : mark({ $bbxType: 'Number', value: String(item) });
+      if (typeof item === 'undefined') return mark({ $bbxType: 'undefined' });
+      if (typeof item === 'bigint') return mark({ $bbxType: 'BigInt', value: item.toString() });
+      if (typeof item !== 'object') return mark({ $bbxType: typeof item });
+      if (depth >= IDB_MAX_DESCRIBE_DEPTH) return mark({ $bbxType: 'DepthLimit' });
+      if (ancestors.includes(item)) return mark({ $bbxType: 'Circular' });
+      const kind = tag(item);
+      if (kind === 'Blob' || kind === 'File') {
+        const blob = item as Blob;
+        return mark({ $bbxType: kind, mimeType: blob.type, size: blob.size });
+      }
+      if (kind === 'ArrayBuffer' || kind === 'SharedArrayBuffer')
+        return mark({ $bbxType: kind, byteLength: (item as ArrayBuffer).byteLength });
+      if (ArrayBuffer.isView(item))
+        return mark({ $bbxType: kind, byteLength: (item as ArrayBufferView).byteLength });
+      if (kind === 'Date') {
+        const time = (item as Date).getTime();
+        return mark({
+          $bbxType: 'Date',
+          value: Number.isFinite(time) ? (item as Date).toISOString() : null,
+        });
+      }
+      if (kind === 'Map' || kind === 'Set')
+        return mark({ $bbxType: kind, size: (item as Map<unknown, unknown>).size });
+      if (kind === 'FileList') return mark({ $bbxType: kind, length: (item as FileList).length });
+      if (kind === 'String' || kind === 'Number' || kind === 'Boolean')
+        return mark({ $bbxType: kind, value: (item as { valueOf: () => unknown }).valueOf() });
+      if (kind !== 'Object' && kind !== 'Array') return mark({ $bbxType: kind });
+      ancestors.push(item);
+      try {
+        if (Array.isArray(item)) {
+          const out: unknown[] = [];
+          for (let index = 0; index < item.length; index += 1)
+            out.push(walk(item[index], depth + 1));
+          return out;
+        }
+        const out: Record<string, unknown> = {};
+        for (const key of Object.keys(item))
+          out[key] = walk((item as Record<string, unknown>)[key], depth + 1);
+        return out;
+      } finally {
+        ancestors.pop();
+      }
+    };
+    try {
+      return { json: walk(value, 0), described };
+    } catch (error) {
+      if (error === IDB_TOO_LARGE) return null;
+      throw error;
+    }
+  }
+
+  /** Read one record whole, or reject it whole. Only reached through the
+   * background's gated sensitive.read path. */
+  async function readIndexedDbRecord(params: Record<string, unknown>): Promise<unknown> {
+    const database = typeof params.database === 'string' ? params.database : null;
+    const storeName = typeof params.store === 'string' ? params.store : null;
+    const maxBytes = typeof params.maxBytes === 'number' ? params.maxBytes : 262_144;
+    if (database === null || storeName === null || !Object.hasOwn(params, 'key'))
+      throw { code: 'INVALID_REQUEST', message: 'database, store, and key are required.' };
+    const notFound = (reason: string, message: string) => ({
+      code: 'SENSITIVE_TARGET_NOT_FOUND',
+      message,
+      details: { source: 'indexeddb', reason },
+    });
+    const key = toIndexedDbKey(params.key);
+    let listed: Awaited<ReturnType<IDBFactory['databases']>> | typeof IDB_TIMEOUT;
+    try {
+      const pending = listIndexedDbDatabases(IDB_OPEN_TIMEOUT_MS);
+      if (!pending) throw new Error('unavailable');
+      listed = await pending;
+    } catch {
+      throw notFound('indexeddb_unavailable', 'This document cannot use IndexedDB.');
+    }
+    if (listed === IDB_TIMEOUT)
+      throw {
+        code: 'TIMEOUT',
+        message: 'IndexedDB did not list its databases in time.',
+        details: { source: 'indexeddb', reason: 'indexeddb_timeout' },
+      };
+    // Never open a name the origin does not already have: open() creates it.
+    if (!listed.some((entry) => entry?.name === database))
+      throw notFound('database_not_found', 'No IndexedDB database with that name exists here.');
+    const opened = await openExistingDatabase(database, IDB_READ_TIMEOUT_MS);
+    if ('error' in opened) {
+      if (opened.error === 'open_timeout')
+        throw {
+          code: 'TIMEOUT',
+          message:
+            'The IndexedDB database did not open in time; another connection may be upgrading it.',
+          details: { source: 'indexeddb', reason: 'open_timeout' },
+        };
+      throw notFound(
+        opened.error === 'database_missing' ? 'database_not_found' : 'database_unavailable',
+        'The IndexedDB database could not be opened.'
+      );
+    }
+    const db = opened.db;
+    let record: unknown;
+    try {
+      if (!db.objectStoreNames.contains(storeName))
+        throw notFound('store_not_found', 'No object store with that name exists in the database.');
+      const transaction = db.transaction(storeName, 'readonly');
+      let cursorRequest: IDBRequest<IDBCursorWithValue | null>;
+      try {
+        cursorRequest = transaction.objectStore(storeName).openCursor(key);
+      } catch {
+        throw {
+          code: 'INVALID_REQUEST',
+          message: 'The key is not a valid IndexedDB key.',
+          details: { source: 'indexeddb', reason: 'unsupported_key_type' },
+        };
+      }
+      const cursor = await idbWithin(idbRequest(cursorRequest), IDB_READ_TIMEOUT_MS);
+      if (cursor === IDB_TIMEOUT) {
+        try {
+          transaction.abort();
+        } catch {
+          // Already finished.
+        }
+        throw {
+          code: 'TIMEOUT',
+          message: 'The IndexedDB record was not read in time.',
+          details: { source: 'indexeddb', reason: 'read_timeout' },
+        };
+      }
+      if (!cursor) throw notFound('key_not_found', 'No record with that key exists in the store.');
+      record = cursor.value;
+    } finally {
+      db.close();
+    }
+    const tooLarge = (bytes: number | null) => ({
+      code: 'RESULT_TOO_LARGE',
+      message: 'The IndexedDB record is too large to return atomically.',
+      details: {
+        source: 'indexeddb',
+        ...(bytes === null ? {} : { bytes }),
+        maxBytes,
+        guidance: 'Partial records are never returned.',
+      },
+    });
+    const copy = describeForJson(record);
+    if (!copy) throw tooLarge(null);
+    const bytes = new TextEncoder().encode(JSON.stringify(copy.json)).byteLength;
+    if (bytes > maxBytes) throw tooLarge(bytes);
+    return {
+      source: 'indexeddb',
+      database,
+      store: storeName,
+      value: copy.json,
+      described: copy.described,
+      bytes,
+      exact: true,
+    };
   }
 
   /** Return the viewport rect for an element reference. */

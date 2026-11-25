@@ -122,6 +122,11 @@ export function createTabCleanupController(
             frameId !== 0 && deps.sendFrameMessage
               ? deps.sendFrameMessage(tabId, frameId, message, CONTENT_SCRIPT_TIMEOUT_MS)
               : deps.sendTabMessage(tabId, message, CONTENT_SCRIPT_TIMEOUT_MS);
+          // Outline snapshots hold only refs and hashes; dropping them is best
+          // effort and must not block patch rollback.
+          await Promise.resolve()
+            .then(() => send({ type: 'bridge.execute', method: 'dom.outline.clear', params: {} }))
+            .catch(() => {});
           const listed = await send({
             type: 'bridge.execute',
             method: 'patch.list',

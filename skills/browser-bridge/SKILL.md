@@ -31,7 +31,7 @@ Browser Bridge reads and drives the tabs the user already has open in Chrome thr
 | Need | Method |
 | --- | --- |
 | URL, title, readiness, framework hints | `page.get_state` |
-| What can I act on? | `dom.get_accessibility_tree {source: "dom", interactiveOnly: true}`: lines like `- button "Save" [el_k7q2_1f]` whose refs are input targets |
+| What can I act on? | `dom.get_accessibility_tree {source: "dom", interactiveOnly: true}`: lines like `- button "Save" [el_k7q2_1f]` whose refs are input targets. Pass its `snapshotId` as `since` next time to get only changed lines |
 | Article or documentation text | `page.extract_content` |
 | All visible text | `page.get_text {textBudget}` |
 | Specific elements | `dom.query {selector, maxNodes, attributeAllowlist}` lists every match with checkbox state; `dom.find_by_role {role, name}`, `dom.find_by_text {text}` |
@@ -44,6 +44,8 @@ Browser Bridge reads and drives the tabs the user already has open in Chrome thr
 - Batch independent reads (`browser_batch`, `bbx batch '[...]'`). `batch` is not a `browser_call` method.
 - Escalate only when structured reads cannot answer: `screenshot.capture_element`, a tight `screenshot.capture_region`, `page.evaluate`, CDP-source accessibility trees, `cdp.*`. These attach the debugger.
 - Exact storage values are sensitive: read `page.get_storage` metadata first and call `sensitive.read` for one key only when needed, never batched or retried.
+- Response bodies need the user's body-read setting and `page.get_network {source:"cdp",capture:"start",bodies:{urlPattern}}`; always pass a narrow `urlPattern`, then `sensitive.read {source:"response_body",requestId}`.
+- IndexedDB: list with `page.get_storage {type:"indexeddb"}` (metadata only); a value needs the IndexedDB record setting and `sensitive.read {source:"indexeddb",database,store,key,frameId}`.
 - Unfamiliar method: `protocol.describe {method}` for its schema, `{query: "..."}` to search. In MCP scripts, `resultMode: "data"` beside `method` returns the raw result of a batch-safe read.
 
 ## Act
@@ -71,7 +73,7 @@ Run known steps in one `input.perform`; it stays inside the browser and needs no
 ]}}
 ```
 
-- Steps may also be written flat: `{"action": "fill", "target": {...}, "value": "..."}`. Allowed steps are input actions, `navigation.navigate`, `viewport.scroll`, waits, and `page.get_state`, `page.get_text`, `dom.query`, `dom.get_text` reads. Steps after a navigating click see the new page.
+- Steps may also be written flat: `{"action": "fill", "target": {...}, "value": "..."}`. Allowed steps are input actions, `navigation.navigate`, `viewport.scroll`, waits, and `page.get_state`, `page.get_text`, `dom.query`, `dom.get_text`, DOM-outline reads. Steps after a navigating click see the new page.
 - `input.perform.outcomes` verifies DOM, URL, or fetch/XHR conditions in the same call; `OUTCOME_NOT_MET` means inspect, not retry.
 - Field methods: `input.fill {value}` (framework-safe), `input.type {text}` (keystrokes; types into the focused field when no target), `input.select_option {values | labels}` (visible option text works), `input.set_checked {checked}`, `input.press_key {key}`.
 - Click, key, check, select, and submitting fills return `effects` (URL change, dialogs, messages, focus, target state). Read them before taking another snapshot, but wait for a specific outcome before claiming success.

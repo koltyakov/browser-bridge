@@ -33,6 +33,8 @@ for (const requiredEntry of [
   'ui/sidepanel.html',
   'ui/sidepanel.js',
   'protocol/index.js',
+  'vendor/trace-mapping.js',
+  'vendor/trace-mapping.LICENSE.txt',
 ]) {
   if (!entries.includes(requiredEntry)) {
     throw new Error(`Missing required file in ${path.basename(zipPath)}: ${requiredEntry}`);
@@ -150,6 +152,7 @@ function isAllowedEntry(entry) {
     entry === 'manifest.json' ||
     entry === 'LICENSE' ||
     (entry.startsWith('protocol/') && entry.endsWith('.js')) ||
+    (entry.startsWith('vendor/') && /\.(?:js|LICENSE\.txt)$/.test(entry)) ||
     entry.startsWith('assets/') ||
     (entry.startsWith('src/') && entry.endsWith('.js')) ||
     (entry.startsWith('ui/') && /\.(?:js|html|css)$/.test(entry))

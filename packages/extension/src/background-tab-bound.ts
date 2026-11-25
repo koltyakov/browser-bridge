@@ -18,8 +18,16 @@ import {
   normalizeWaitForParams,
 } from '../../../protocol/src/index.js';
 import { requestLifetimes } from './background-request-lifetime.js';
+import { collectIndexedDbFrames } from './background-indexeddb.js';
 import { waitAcrossFrames } from './background-frame-wait.js';
 import { createInputAftermath, inputAftermathError } from './input-aftermath.js';
+import {
+  isOutlineComparison,
+  mergeOutlineDeltas,
+  outlineSnapshots,
+  type OutlineReadPlan,
+  type OutlineSnapshotStore,
+} from './background-outline-snapshots.js';
 
 export type BridgeRequest = import('../../../protocol/src/types.js').BridgeRequest;
 export type BridgeResponse = import('../../../protocol/src/types.js').BridgeResponse;
@@ -87,8 +95,13 @@ export type TabBoundRequestDependencies = {
     method: string,
     params: Record<string, unknown>
   ) => Promise<{ mode: 'dom' | 'cdp'; reason: string }>;
+  /** Snapshot records for DOM outline deltas; defaults to the shared store. */
+  outlineSnapshots?: OutlineSnapshotStore;
   contentScriptTimeoutMs: number;
 };
+
+/** Frames that took part in one outline read, filled in by the frame merge. */
+type OutlineReadContext = { plan: OutlineReadPlan; frames: number[]; cut: boolean };
 
 /** Normalizers for tab-bound request params. Each entry maps a bridge method to
 a function that coerces and defaults the raw request params. */
@@ -220,6 +233,23 @@ export async function handleTabBoundRequest(
   }
   const normalizer = TAB_BOUND_NORMALIZERS[request.method];
   let payload = normalizer ? normalizer(request.params) : request.params;
+  const snapshotStore = dependencies.outlineSnapshots ?? outlineSnapshots;
+  let outlineRead: OutlineReadContext | null = null;
+  if (request.method === 'dom.get_accessibility_tree' && payload.source === 'dom') {
+    const plan = snapshotStore.begin(
+      target.tabId,
+      typeof payload.since === 'string' ? payload.since : null
+    );
+    // A since that cannot be used here never reaches a content script.
+    const rest = { ...payload };
+    delete rest.since;
+    payload = {
+      ...rest,
+      ...(plan.since ? { since: plan.since } : {}),
+      snapshotId: plan.snapshotId,
+    };
+    outlineRead = { plan, frames: [], cut: false };
+  }
 
   if (request.method.startsWith('screenshot.')) {
     const result = await dependencies.handleScreenshot(
@@ -346,16 +376,28 @@ export async function handleTabBoundRequest(
     ) {
       response = { ...response, duration: Math.round(response.duration + frameSearchMs) };
     }
+    if (outlineRead) outlineRead.frames = [frameId];
     if (frameId !== 0 && response && typeof response === 'object' && !('error' in response)) {
       response = { ...response, frameId };
+    } else if (
+      frameId === 0 &&
+      request.method === 'page.get_storage' &&
+      payload.type === 'indexeddb'
+    ) {
+      // Per frame, never merged: each frame reports its own origin's storage.
+      response = await collectIndexedDbFrames(message, response, target.tabId, dependencies.frames);
     } else if (frameId === 0 && FAN_OUT_METHODS.has(request.method) && dependencies.frames) {
       response = await mergeChildFrameResults(
         request.method,
         message,
         response,
         target.tabId,
-        dependencies
+        dependencies,
+        outlineRead
       );
+    }
+    if (outlineRead) {
+      response = finishOutlineRead(response, outlineRead, frameId, target.tabId, snapshotStore);
     }
     if (
       response &&
@@ -407,6 +449,33 @@ export async function handleTabBoundRequest(
       aftermath.observation = { status: 'interrupted', reason: 'action_interrupted' };
     throw inputAftermathError(error, aftermath);
   }
+}
+
+/** Attach the snapshotId, explain a full read that was asked for a delta, and
+record which frames the agent now holds lines from. */
+function finishOutlineRead(
+  response: unknown,
+  read: OutlineReadContext,
+  frameId: number,
+  tabId: number,
+  store: OutlineSnapshotStore
+): unknown {
+  if (!response || typeof response !== 'object' || 'error' in response) return response;
+  const result = { ...(response as Record<string, unknown>) };
+  // A content script injected before snapshots existed keeps none.
+  if (result.snapshotId !== read.plan.snapshotId) return response;
+  const { plan } = read;
+  if (plan.unavailable) result.deltaUnavailable = plan.unavailable;
+  // The base was taken in another frame, for example a selector that now
+  // matches elsewhere; this frame's document never held it.
+  else if (
+    result.deltaUnavailable === 'navigated' &&
+    plan.base &&
+    !plan.base.frames.includes(frameId)
+  )
+    result.deltaUnavailable = 'scope_changed';
+  store.commit(tabId, plan.snapshotId, read.frames, read.cut);
+  return result;
 }
 
 /** Report tabs an input action opened (window.open, target=_blank, a
@@ -600,7 +669,8 @@ async function mergeChildFrameResults(
   message: Record<string, unknown>,
   topResponse: unknown,
   tabId: number,
-  dependencies: TabBoundRequestDependencies
+  dependencies: TabBoundRequestDependencies,
+  outline: OutlineReadContext | null = null
 ): Promise<unknown> {
   const frames = dependencies.frames;
   if (!frames || !topResponse || typeof topResponse !== 'object' || 'error' in topResponse) {
@@ -612,25 +682,33 @@ async function mergeChildFrameResults(
   const params = message.params as Record<string, unknown>;
   if (isOutline && (params.selector || params.scope !== undefined || params.find !== undefined))
     return topResponse;
+  // Children compare with the same base only while the top frame does; a
+  // full top outline needs full child outlines.
+  const deltaMode = isOutline && typeof params.since === 'string' && isOutlineComparison(top);
   const childFrames = (await frames.listFrames(tabId)).filter((frame) => frame.frameId !== 0);
-  if (!childFrames.length) return topResponse;
+  if (!childFrames.length && !(deltaMode && outline?.plan.base?.frames.some((id) => id !== 0)))
+    return topResponse;
   // An offset addresses the merged text, so child frames read from their
   // start, far enough to fill the window after the top frame's text.
   const textOffset = isPageText ? Math.max(0, Number(params.offset) || 0) : 0;
+  const fullOutlineParams = { ...params };
+  delete fullOutlineParams.since;
   const childMessage =
-    isPageText && textOffset > 0
-      ? {
-          ...message,
-          params: {
-            ...params,
-            offset: 0,
-            textBudget: Math.min(
-              PAGE_TEXT_MAX_BUDGET,
-              textOffset + (Number(params.textBudget) || 8000)
-            ),
-          },
-        }
-      : message;
+    isOutline && !deltaMode && params.since !== undefined
+      ? { ...message, params: fullOutlineParams }
+      : isPageText && textOffset > 0
+        ? {
+            ...message,
+            params: {
+              ...params,
+              offset: 0,
+              textBudget: Math.min(
+                PAGE_TEXT_MAX_BUDGET,
+                textOffset + (Number(params.textBudget) || 8000)
+              ),
+            },
+          }
+        : message;
   const childResults = await Promise.all(
     childFrames.map(async (frame) => {
       try {
@@ -687,6 +765,49 @@ async function mergeChildFrameResults(
   }
   if (isOutline) {
     const maxNodes = Number(params.maxNodes) || 150;
+    const baseFrames = outline?.plan.base?.frames ?? [];
+    if (outline) {
+      // Frames that did not answer keep their earlier lines in the agent's
+      // view, so the next comparison must still know about them.
+      outline.frames = [
+        0,
+        ...usable.map((entry) => entry.frameId),
+        ...(deltaMode ? incompleteFrames.filter((id) => baseFrames.includes(id)) : []),
+      ];
+    }
+    if (deltaMode) {
+      const merged = mergeOutlineDeltas({
+        top,
+        children: usable,
+        baseFrames,
+        incompleteFrames,
+        format: params.format === 'tree' ? 'tree' : 'outline',
+        maxNodes,
+        scanned,
+        truncated: sourceTruncated,
+        frameMetadata,
+      });
+      if (!merged.overflow) return merged.result;
+      // A full read would drop child lines at maxNodes, which a delta cannot
+      // express. Read everything again under the same snapshotId.
+      const fullMessage = { ...message, params: fullOutlineParams };
+      const fullTop = await dependencies.sendTabMessage(
+        tabId,
+        fullMessage,
+        dependencies.contentScriptTimeoutMs
+      );
+      const full = await mergeChildFrameResults(
+        method,
+        fullMessage,
+        fullTop,
+        tabId,
+        dependencies,
+        outline
+      );
+      return full && typeof full === 'object' && !('error' in full)
+        ? { ...full, deltaUnavailable: 'base_truncated' }
+        : full;
+    }
     if (params.format === 'tree') {
       const nodes = [
         ...(Array.isArray(top.nodes) ? top.nodes : []),
@@ -697,6 +818,7 @@ async function mergeChildFrameResults(
           }))
         ),
       ];
+      if (outline) outline.cut = nodes.length > maxNodes;
       return {
         ...top,
         nodes: nodes.slice(0, maxNodes),
@@ -720,6 +842,7 @@ async function mergeChildFrameResults(
           ? [`- iframe [frame ${entry.frameId}]\n${selected.map((line) => `  ${line}`).join('\n')}`]
           : [];
       });
+    if (outline) outline.cut = omitted > 0;
     return {
       ...top,
       outline: [top.outline, ...sections].filter(Boolean).join('\n'),

@@ -31,6 +31,8 @@ function harness(overrides: Partial<CapabilityDependencies> = {}) {
         allowClosingUserTabs: false,
         closeAiTabsWhenDone: true,
         allowOffDomainNavigation: false,
+        allowResponseBodyReads: false,
+        allowIndexedDBReads: false,
       },
     }),
     ownsTab: () => false,
@@ -217,6 +219,58 @@ test('runtime policy settings distinguish AI-owned closes and off-domain navigat
   assert.equal(result.operations[3]?.reason, 'allowOffDomainNavigation_disabled');
   const denied = await harness().discover([{ method: 'tabs.close', params: { tabId: 7 } }]);
   assert.equal(denied.operations[0]?.reason, 'allowClosingUserTabs_disabled');
+});
+
+test('gated sensitive sources report the sensitive data setting; storage sources do not', async () => {
+  const calls: RuntimeCapabilityCall[] = [
+    { method: 'sensitive.read', params: { source: 'response_body', requestId: 'r' } },
+    { method: 'sensitive.read', params: { source: 'local_storage', key: 'k' } },
+  ];
+  const off = await harness().discover(calls);
+  assert.deepEqual(
+    off.operations.map((op) => [op.status, op.reason]),
+    [
+      ['unavailable', 'allowResponseBodyReads_disabled'],
+      ['available', 'eligible_dispatch_checks_required'],
+    ]
+  );
+  const enabled = harness();
+  const settings = enabled.dependencies.settings;
+  enabled.dependencies.settings = () => ({
+    ...settings(),
+    settings: { ...settings().settings, allowResponseBodyReads: true },
+  });
+  const on = await enabled.discover(calls);
+  assert.equal(on.operations[0]?.status, 'available');
+  const framed = await enabled.discover([calls[0]!], { frameId: 3 });
+  assert.equal(framed.operations[0]?.reason, 'top_frame_only');
+});
+
+test('IndexedDB reads and metadata run in the named frame', async () => {
+  const calls: RuntimeCapabilityCall[] = [
+    {
+      method: 'sensitive.read',
+      params: { source: 'indexeddb', database: 'd', store: 's', key: 1 },
+    },
+    { method: 'page.get_storage', params: { type: 'indexeddb' } },
+  ];
+  const off = await harness().discover(calls);
+  assert.deepEqual(
+    off.operations.map((op) => op.reason),
+    ['allowIndexedDBReads_disabled', 'eligible_dispatch_checks_required'],
+    'metadata needs no sensitive setting'
+  );
+  const enabled = harness();
+  const settings = enabled.dependencies.settings;
+  enabled.dependencies.settings = () => ({
+    ...settings(),
+    settings: { ...settings().settings, allowIndexedDBReads: true },
+  });
+  const framed = await enabled.discover(calls, { frameId: 3 });
+  assert.deepEqual(
+    framed.operations.map((op) => op.reason),
+    ['eligible_dispatch_checks_required', 'eligible_dispatch_checks_required']
+  );
 });
 
 for (const { name, currentUrl, destinationUrl } of [

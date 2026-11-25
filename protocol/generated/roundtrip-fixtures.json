@@ -231,6 +231,8 @@
           "allowClosingUserTabs": false,
           "closeAiTabsWhenDone": false,
           "allowOffDomainNavigation": false,
+          "allowResponseBodyReads": false,
+          "allowIndexedDBReads": false,
           "future_extension": {
             "arbitrary": [
               null,
@@ -398,6 +400,8 @@
           "allowClosingUserTabs": false,
           "closeAiTabsWhenDone": false,
           "allowOffDomainNavigation": false,
+          "allowResponseBodyReads": false,
+          "allowIndexedDBReads": false,
           "future_extension": {
             "arbitrary": [
               null,
@@ -492,6 +496,8 @@
         "allowClosingUserTabs": false,
         "closeAiTabsWhenDone": false,
         "allowOffDomainNavigation": false,
+        "allowResponseBodyReads": false,
+        "allowIndexedDBReads": false,
         "future_extension": {
           "arbitrary": [
             null,
@@ -519,6 +525,8 @@
       "allowClosingUserTabs": false,
       "closeAiTabsWhenDone": false,
       "allowOffDomainNavigation": false,
+      "allowResponseBodyReads": false,
+      "allowIndexedDBReads": false,
       "future_extension": {
         "arbitrary": [
           null,
@@ -1039,6 +1047,8 @@
         "allowClosingUserTabs": false,
         "closeAiTabsWhenDone": false,
         "allowOffDomainNavigation": false,
+        "allowResponseBodyReads": false,
+        "allowIndexedDBReads": false,
         "future_extension": {
           "arbitrary": [
             null,
@@ -1704,6 +1714,7 @@
         "level": "wire-✓",
         "clear": false,
         "limit": 1.25,
+        "resolveSources": false,
         "future_extension": {
           "arbitrary": [
             null,
@@ -1800,6 +1811,18 @@
         "urlPattern": "wire-✓",
         "source": "fetch-xhr",
         "capture": "read",
+        "bodies": {
+          "urlPattern": "wire-✓",
+          "maxResourceBytes": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        },
         "future_extension": {
           "arbitrary": [
             null,
@@ -2197,6 +2220,7 @@
         "scope": "auto",
         "find": "wire-✓",
         "context": 1.25,
+        "since": "wire-✓",
         "future_extension": {
           "arbitrary": [
             null,
@@ -3811,6 +3835,7 @@
       "level": "wire-✓",
       "clear": false,
       "limit": 1.25,
+      "resolveSources": false,
       "future_extension": {
         "arbitrary": [
           null,
@@ -3880,7 +3905,28 @@
     }
   },
   {
+    "type": "StorageType",
+    "valid": true,
+    "input": "local"
+  },
+  {
     "type": "SensitiveReadParams",
+    "valid": true,
+    "input": {
+      "source": "local_storage",
+      "key": "wire-✓",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "SensitiveStorageReadParams",
     "valid": true,
     "input": {
       "source": "local_storage",
@@ -3899,6 +3945,68 @@
     "type": "SensitiveStorageSource",
     "valid": true,
     "input": "local_storage"
+  },
+  {
+    "type": "SensitiveResponseBodyReadParams",
+    "valid": true,
+    "input": {
+      "source": "response_body",
+      "requestId": "wire-✓",
+      "encoding": "text",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "SensitiveBodyEncoding",
+    "valid": true,
+    "input": "text"
+  },
+  {
+    "type": "SensitiveIndexedDbReadParams",
+    "valid": true,
+    "input": {
+      "source": "indexeddb",
+      "database": "wire-✓",
+      "store": "wire-✓",
+      "key": "wire-✓",
+      "frameId": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "IndexedDbKey",
+    "valid": true,
+    "input": "wire-✓"
+  },
+  {
+    "type": "IndexedDbDateKey",
+    "valid": true,
+    "input": {
+      "type": "date",
+      "value": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
   },
   {
     "type": "PageTextParams",
@@ -3955,6 +4063,18 @@
       "urlPattern": "wire-✓",
       "source": "fetch-xhr",
       "capture": "read",
+      "bodies": {
+        "urlPattern": "wire-✓",
+        "maxResourceBytes": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
       "future_extension": {
         "arbitrary": [
           null,
@@ -3974,6 +4094,22 @@
     "type": "NetworkCaptureAction",
     "valid": true,
     "input": "read"
+  },
+  {
+    "type": "NetworkBodyCaptureParams",
+    "valid": true,
+    "input": {
+      "urlPattern": "wire-✓",
+      "maxResourceBytes": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
   },
   {
     "type": "HarExportParams",
@@ -4262,6 +4398,7 @@
       "scope": "auto",
       "find": "wire-✓",
       "context": 1.25,
+      "since": "wire-✓",
       "future_extension": {
         "arbitrary": [
           null,
@@ -7310,6 +7447,183 @@
     }
   },
   {
+    "type": "ConsoleSourceUnavailableReason",
+    "valid": true,
+    "input": "unsupported_scheme"
+  },
+  {
+    "type": "ConsoleFrameSource",
+    "valid": true,
+    "input": {
+      "file": "wire-✓",
+      "path": "wire-✓",
+      "line": 1.25,
+      "column": 1.25,
+      "name": "wire-✓",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "ConsoleStackFrame",
+    "valid": true,
+    "input": {
+      "function": "wire-✓",
+      "url": "wire-✓",
+      "line": 1.25,
+      "column": 1.25,
+      "source": {
+        "file": "wire-✓",
+        "path": "wire-✓",
+        "line": 1.25,
+        "column": 1.25,
+        "name": "wire-✓",
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "sourceUnavailable": "unsupported_scheme",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "ConsoleEntry",
+    "valid": true,
+    "input": {
+      "level": "wire-✓",
+      "args": [
+        "wire-✓"
+      ],
+      "ts": 1.25,
+      "stack": [
+        {
+          "function": "wire-✓",
+          "url": "wire-✓",
+          "line": 1.25,
+          "column": 1.25,
+          "source": {
+            "file": "wire-✓",
+            "path": "wire-✓",
+            "line": 1.25,
+            "column": 1.25,
+            "name": "wire-✓",
+            "future_extension": {
+              "arbitrary": [
+                null,
+                false,
+                0,
+                "JSON"
+              ]
+            }
+          },
+          "sourceUnavailable": "unsupported_scheme",
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "ConsoleResult",
+    "valid": true,
+    "input": {
+      "entries": [
+        {
+          "level": "wire-✓",
+          "args": [
+            "wire-✓"
+          ],
+          "ts": 1.25,
+          "stack": [
+            {
+              "function": "wire-✓",
+              "url": "wire-✓",
+              "line": 1.25,
+              "column": 1.25,
+              "source": {
+                "file": "wire-✓",
+                "path": "wire-✓",
+                "line": 1.25,
+                "column": 1.25,
+                "name": "wire-✓",
+                "future_extension": {
+                  "arbitrary": [
+                    null,
+                    false,
+                    0,
+                    "JSON"
+                  ]
+                }
+              },
+              "sourceUnavailable": "unsupported_scheme",
+              "future_extension": {
+                "arbitrary": [
+                  null,
+                  false,
+                  0,
+                  "JSON"
+                ]
+              }
+            }
+          ],
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "count": 1.25,
+      "total": 1.25,
+      "dropped": 1.25,
+      "provenance": "page_main_world",
+      "integrity": "untrusted",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
     "type": "NormalizedHandleDialogParams",
     "valid": true,
     "input": {
@@ -7333,6 +7647,7 @@
       "level": "wire-✓",
       "clear": false,
       "limit": 1.25,
+      "resolveSources": false,
       "future_extension": {
         "arbitrary": [
           null,
@@ -7537,12 +7852,474 @@
     }
   },
   {
+    "type": "IndexedDbIndexMetadata",
+    "valid": true,
+    "input": {
+      "name": "wire-✓",
+      "keyPath": "wire-✓",
+      "unique": false,
+      "multiEntry": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "IndexedDbStoreMetadata",
+    "valid": true,
+    "input": {
+      "name": "wire-✓",
+      "keyPath": "wire-✓",
+      "autoIncrement": false,
+      "indexes": [
+        {
+          "name": "wire-✓",
+          "keyPath": "wire-✓",
+          "unique": false,
+          "multiEntry": false,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "count": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "IndexedDbDatabaseError",
+    "valid": true,
+    "input": "open_timeout"
+  },
+  {
+    "type": "IndexedDbDatabaseMetadata",
+    "valid": true,
+    "input": {
+      "name": "wire-✓",
+      "version": 1.25,
+      "stores": [
+        {
+          "name": "wire-✓",
+          "keyPath": "wire-✓",
+          "autoIncrement": false,
+          "indexes": [
+            {
+              "name": "wire-✓",
+              "keyPath": "wire-✓",
+              "unique": false,
+              "multiEntry": false,
+              "future_extension": {
+                "arbitrary": [
+                  null,
+                  false,
+                  0,
+                  "JSON"
+                ]
+              }
+            }
+          ],
+          "count": 1.25,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "storeCount": 1.25,
+      "error": "open_timeout",
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "IndexedDbIncompleteReason",
+    "valid": true,
+    "input": "time_budget"
+  },
+  {
+    "type": "IndexedDbFrameMetadata",
+    "valid": true,
+    "input": {
+      "frameId": 1.25,
+      "origin": "wire-✓",
+      "available": false,
+      "databases": [
+        {
+          "name": "wire-✓",
+          "version": 1.25,
+          "stores": [
+            {
+              "name": "wire-✓",
+              "keyPath": "wire-✓",
+              "autoIncrement": false,
+              "indexes": [
+                {
+                  "name": "wire-✓",
+                  "keyPath": "wire-✓",
+                  "unique": false,
+                  "multiEntry": false,
+                  "future_extension": {
+                    "arbitrary": [
+                      null,
+                      false,
+                      0,
+                      "JSON"
+                    ]
+                  }
+                }
+              ],
+              "count": 1.25,
+              "future_extension": {
+                "arbitrary": [
+                  null,
+                  false,
+                  0,
+                  "JSON"
+                ]
+              }
+            }
+          ],
+          "storeCount": 1.25,
+          "error": "open_timeout",
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "total": 1.25,
+      "incomplete": [
+        "time_budget"
+      ],
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "IndexedDbStorageResult",
+    "valid": true,
+    "input": {
+      "type": "indexeddb",
+      "frames": [
+        {
+          "frameId": 1.25,
+          "origin": "wire-✓",
+          "available": false,
+          "databases": [
+            {
+              "name": "wire-✓",
+              "version": 1.25,
+              "stores": [
+                {
+                  "name": "wire-✓",
+                  "keyPath": "wire-✓",
+                  "autoIncrement": false,
+                  "indexes": [
+                    {
+                      "name": "wire-✓",
+                      "keyPath": "wire-✓",
+                      "unique": false,
+                      "multiEntry": false,
+                      "future_extension": {
+                        "arbitrary": [
+                          null,
+                          false,
+                          0,
+                          "JSON"
+                        ]
+                      }
+                    }
+                  ],
+                  "count": 1.25,
+                  "future_extension": {
+                    "arbitrary": [
+                      null,
+                      false,
+                      0,
+                      "JSON"
+                    ]
+                  }
+                }
+              ],
+              "storeCount": 1.25,
+              "error": "open_timeout",
+              "future_extension": {
+                "arbitrary": [
+                  null,
+                  false,
+                  0,
+                  "JSON"
+                ]
+              }
+            }
+          ],
+          "total": 1.25,
+          "incomplete": [
+            "time_budget"
+          ],
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "incompleteFrames": [
+        1.25
+      ],
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "WebStorageResult",
+    "valid": true,
+    "input": {
+      "type": "local",
+      "entries": [
+        {
+          "key": "wire-✓",
+          "present": false,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "count": 1.25,
+      "total": 1.25,
+      "truncated": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "StorageResult",
+    "valid": true,
+    "input": {
+      "type": "local",
+      "entries": [
+        {
+          "key": "wire-✓",
+          "present": false,
+          "future_extension": {
+            "arbitrary": [
+              null,
+              false,
+              0,
+              "JSON"
+            ]
+          }
+        }
+      ],
+      "count": 1.25,
+      "total": 1.25,
+      "truncated": false,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "SensitiveGatedSource",
+    "valid": true,
+    "input": "response_body"
+  },
+  {
+    "type": "SensitiveReadSource",
+    "valid": true,
+    "input": "local_storage"
+  },
+  {
+    "type": "NormalizedSensitiveStorageReadParams",
+    "valid": true,
+    "input": {
+      "source": "local_storage",
+      "key": "wire-✓",
+      "maxBytes": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "NormalizedSensitiveResponseBodyReadParams",
+    "valid": true,
+    "input": {
+      "source": "response_body",
+      "requestId": "wire-✓",
+      "encoding": "text",
+      "maxBytes": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "NormalizedSensitiveIndexedDbReadParams",
+    "valid": true,
+    "input": {
+      "source": "indexeddb",
+      "database": "wire-✓",
+      "store": "wire-✓",
+      "key": "wire-✓",
+      "frameId": 1.25,
+      "maxBytes": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
     "type": "NormalizedSensitiveReadParams",
     "valid": true,
     "input": {
       "source": "local_storage",
       "key": "wire-✓",
       "maxBytes": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "SensitiveStorageReadResult",
+    "valid": true,
+    "input": {
+      "source": "local_storage",
+      "value": "wire-✓",
+      "exact": true,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "SensitiveResponseBodyReadResult",
+    "valid": true,
+    "input": {
+      "source": "response_body",
+      "requestId": "wire-✓",
+      "body": "wire-✓",
+      "encoding": "text",
+      "mimeType": "wire-✓",
+      "bytes": 1.25,
+      "exact": true,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
+    "type": "SensitiveIndexedDbReadResult",
+    "valid": true,
+    "input": {
+      "source": "indexeddb",
+      "frameId": 1.25,
+      "database": "wire-✓",
+      "store": "wire-✓",
+      "value": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      },
+      "described": 1.25,
+      "bytes": 1.25,
+      "exact": true,
       "future_extension": {
         "arbitrary": [
           null,
@@ -8291,6 +9068,7 @@
       "scope": "auto",
       "find": "wire-✓",
       "context": 1.25,
+      "since": "wire-✓",
       "future_extension": {
         "arbitrary": [
           null,
@@ -8382,6 +9160,37 @@
     }
   },
   {
+    "type": "DomOutlineDeltaUnavailableReason",
+    "valid": true,
+    "input": "navigated"
+  },
+  {
+    "type": "DomOutlineDelta",
+    "valid": true,
+    "input": {
+      "added": [
+        "wire-✓"
+      ],
+      "changed": [
+        "wire-✓"
+      ],
+      "removed": [
+        "wire-✓"
+      ],
+      "removedFrames": [
+        1.25
+      ],
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
     "type": "DomOutlineResult",
     "valid": true,
     "input": {
@@ -8457,6 +9266,31 @@
           ]
         }
       },
+      "snapshotId": "wire-✓",
+      "unchanged": true,
+      "delta": {
+        "added": [
+          "wire-✓"
+        ],
+        "changed": [
+          "wire-✓"
+        ],
+        "removed": [
+          "wire-✓"
+        ],
+        "removedFrames": [
+          1.25
+        ],
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
+      "deltaUnavailable": "navigated",
       "future_extension": {
         "arbitrary": [
           null,
@@ -8572,6 +9406,22 @@
     }
   },
   {
+    "type": "NormalizedNetworkBodyCaptureParams",
+    "valid": true,
+    "input": {
+      "urlPattern": "wire-✓",
+      "maxResourceBytes": 1.25,
+      "future_extension": {
+        "arbitrary": [
+          null,
+          false,
+          0,
+          "JSON"
+        ]
+      }
+    }
+  },
+  {
     "type": "NormalizedNetworkParams",
     "valid": true,
     "input": {
@@ -8580,6 +9430,18 @@
       "urlPattern": "wire-✓",
       "source": "fetch-xhr",
       "capture": "read",
+      "bodies": {
+        "urlPattern": "wire-✓",
+        "maxResourceBytes": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
       "future_extension": {
         "arbitrary": [
           null,
@@ -8634,6 +9496,7 @@
       "failureReason": "wire-✓",
       "duration": 1.25,
       "timestamp": 1.25,
+      "bodyAvailable": false,
       "future_extension": {
         "arbitrary": [
           null,
@@ -8690,6 +9553,7 @@
           "failureReason": "wire-✓",
           "duration": 1.25,
           "timestamp": 1.25,
+          "bodyAvailable": false,
           "future_extension": {
             "arbitrary": [
               null,
@@ -8715,6 +9579,18 @@
       "ownershipHeld": false,
       "startedAt": 1.25,
       "inflight": 1.25,
+      "bodyCapture": {
+        "urlPattern": "wire-✓",
+        "maxResourceBytes": 1.25,
+        "future_extension": {
+          "arbitrary": [
+            null,
+            false,
+            0,
+            "JSON"
+          ]
+        }
+      },
       "truncated": false,
       "truncation": {
         "reason": "limit",

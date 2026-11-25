@@ -76,8 +76,8 @@ export type ActionLogEntry = {
   continuationHint: string | null;
   severity?: 'info' | 'warning';
   sensitiveAccess?: {
-    source: 'local_storage' | 'session_storage';
-    category: 'storage_value';
+    source: 'local_storage' | 'session_storage' | 'response_body' | 'indexeddb';
+    category: 'storage_value' | 'response_body' | 'indexeddb_record';
     keyLength: number;
   } | null;
 };
@@ -144,6 +144,8 @@ const accessSettingInputs = {
   allowOffDomainNavigation: document.getElementById(
     'allow-off-domain-navigation'
   ) as HTMLInputElement,
+  allowResponseBodyReads: document.getElementById('allow-response-body-reads') as HTMLInputElement,
+  allowIndexedDBReads: document.getElementById('allow-indexeddb-reads') as HTMLInputElement,
 };
 const actionLog = document.getElementById('action-log') as HTMLDivElement;
 const setupSection = document.getElementById('native-setup') as HTMLElement;

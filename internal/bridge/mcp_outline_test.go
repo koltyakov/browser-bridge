@@ -163,3 +163,73 @@ func TestDOMOutlineTypedToolForwardsScopeSearch(t *testing.T) {
 		t.Fatalf("typed tool dropped scope/search: %s", value(params))
 	}
 }
+
+func TestDOMOutlineTypedToolForwardsSince(t *testing.T) {
+	c, requests := mcpTestDaemon(t, func(request object) object {
+		return success(request.text("id"), object{"source": value("dom"), "format": value("outline"), "count": value(0), "snapshotId": value("ol_next"), "unchanged": value(true)})
+	})
+	s := &mcpSession{config: c, agentSession: "typed-outline-since"}
+	t.Cleanup(func() {
+		for _, cl := range s.clients {
+			cl.close()
+		}
+	})
+	result, err := s.handleTool(context.Background(), "browser_dom", object{"action": value("accessibility_tree"), "source": value("dom"), "since": value("ol_base"), "tabId": value(4)}, "modern")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if params := (<-requests).object("params"); params.text("since") != "ol_base" {
+		t.Fatalf("typed tool dropped since: %s", value(params))
+	}
+	if meta := result.object("structuredContent").object("evidenceMeta"); meta.text("snapshotId") != "ol_next" {
+		t.Fatalf("typed tool dropped the next snapshotId: %s", value(result))
+	}
+}
+
+func TestDOMOutlineSnapshotsSurviveCLIAndMCPSummaries(t *testing.T) {
+	full := object{"source": value("dom"), "format": value("outline"), "outline": value(`- button "Save" [el_1]`), "count": value(1), "scanned": value(3), "truncated": value(false), "snapshotId": value("ol_a"), "deltaUnavailable": value("navigated")}
+	cli := cliSummaryNow(success("full", full), "dom.get_accessibility_tree")
+	if meta := cli.object("evidenceMeta"); meta.text("snapshotId") != "ol_a" || meta.text("deltaUnavailable") != "navigated" {
+		t.Fatalf("CLI summary dropped the snapshot: %s", value(cli))
+	}
+	if cli.text("evidence") != `- button "Save" [el_1]` {
+		t.Fatalf("full outline evidence changed: %s", value(cli))
+	}
+	single := mcpResponse(success("full", full), "dom.get_accessibility_tree", object{"source": value("dom")}).object("structuredContent")
+	if single.object("evidenceMeta").text("snapshotId") != "ol_a" {
+		t.Fatalf("MCP dropped the snapshot: %s", value(single))
+	}
+	tree := object{"source": value("dom"), "format": value("tree"), "nodes": value([]object{{"ref": value("el_1"), "role": value("button"), "name": value("Save"), "depth": value(0), "states": value([]string{})}}), "count": value(1), "scanned": value(3), "truncated": value(false), "snapshotId": value("ol_t")}
+	treeMeta := mcpResponse(success("tree", tree), "dom.get_accessibility_tree", object{"source": value("dom"), "format": value("tree")}).object("structuredContent").object("evidenceMeta")
+	if treeMeta.text("snapshotId") != "ol_t" || treeMeta.number("scanned") != 3 {
+		t.Fatalf("MCP tree metadata lost the snapshot or traversal fields: %s", value(treeMeta))
+	}
+
+	delta := object{"added": value([]string{`  - checkbox "Bread" [el_9]`}), "changed": value([]string{}), "removed": value([]string{"el_4"}), "removedFrames": value([]int{7})}
+	scope := object{"requested": value("main"), "resolved": value("main"), "boundary": value("document"), "scanned": value(2)}
+	compared := object{"source": value("dom"), "format": value("outline"), "count": value(5), "scanned": value(40), "truncated": value(false), "snapshotId": value("ol_b"), "delta": value(delta), "scope": value(scope), "completeness": value(object{"complete": value(true), "reasons": value([]string{})})}
+	for name, structured := range map[string]object{
+		"cli": cliSummaryNow(success("delta", compared), "dom.get_accessibility_tree"),
+		"mcp": mcpResponse(success("delta", compared), "dom.get_accessibility_tree", object{"source": value("dom"), "scope": value("main")}).object("structuredContent"),
+	} {
+		if !jsonEqual(structured["evidence"], value(delta)) {
+			t.Fatalf("%s mangled the delta: %s", name, value(structured))
+		}
+		meta := structured.object("evidenceMeta")
+		if meta.text("snapshotId") != "ol_b" || meta.number("count") != 5 || meta["scope"] == nil {
+			t.Fatalf("%s dropped delta metadata: %s", name, value(structured))
+		}
+		if _, ok := meta["completeness"]; !ok || meta.object("completeness").boolean("complete") != true {
+			t.Fatalf("%s marked a delta as a clipped outline: %s", name, value(meta))
+		}
+		if summary := structured.text("summary"); !strings.Contains(summary, "1 added, 0 changed, 1 removed of 5") || !strings.Contains(summary, "removedFrames") {
+			t.Fatalf("%s summary: %s", name, summary)
+		}
+	}
+
+	unchanged := object{"source": value("dom"), "format": value("outline"), "count": value(5), "scanned": value(0), "truncated": value(false), "snapshotId": value("ol_c"), "unchanged": value(true)}
+	summary := cliSummaryNow(success("same", unchanged), "dom.get_accessibility_tree")
+	if !jsonEqual(summary["evidence"], value(object{"unchanged": value(true)})) || summary.object("evidenceMeta").text("snapshotId") != "ol_c" || !strings.Contains(summary.text("summary"), "unchanged: 5 node(s)") {
+		t.Fatalf("unchanged summary: %s", value(summary))
+	}
+}

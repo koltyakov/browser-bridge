@@ -555,13 +555,21 @@
         },
         "allowOffDomainNavigation": {
           "type": "boolean"
+        },
+        "allowResponseBodyReads": {
+          "type": "boolean"
+        },
+        "allowIndexedDBReads": {
+          "type": "boolean"
         }
       },
       "required": [
         "allowCreatingTabs",
         "allowClosingUserTabs",
         "closeAiTabsWhenDone",
-        "allowOffDomainNavigation"
+        "allowOffDomainNavigation",
+        "allowResponseBodyReads",
+        "allowIndexedDBReads"
       ],
       "additionalProperties": true
     },
@@ -2614,6 +2622,9 @@
         },
         "limit": {
           "type": "number"
+        },
+        "resolveSources": {
+          "type": "boolean"
         }
       },
       "required": [],
@@ -2695,11 +2706,7 @@
       "type": "object",
       "properties": {
         "type": {
-          "type": "string",
-          "enum": [
-            "local",
-            "session"
-          ]
+          "$ref": "#/$defs/StorageType"
         },
         "keys": {
           "type": "array",
@@ -2711,7 +2718,28 @@
       "required": [],
       "additionalProperties": true
     },
+    "StorageType": {
+      "type": "string",
+      "enum": [
+        "local",
+        "session",
+        "indexeddb"
+      ]
+    },
     "SensitiveReadParams": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SensitiveStorageReadParams"
+        },
+        {
+          "$ref": "#/$defs/SensitiveResponseBodyReadParams"
+        },
+        {
+          "$ref": "#/$defs/SensitiveIndexedDbReadParams"
+        }
+      ]
+    },
+    "SensitiveStorageReadParams": {
       "type": "object",
       "properties": {
         "source": {
@@ -2733,6 +2761,113 @@
         "local_storage",
         "session_storage"
       ]
+    },
+    "SensitiveResponseBodyReadParams": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "response_body"
+          ]
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "encoding": {
+          "$ref": "#/$defs/SensitiveBodyEncoding"
+        }
+      },
+      "required": [
+        "source",
+        "requestId"
+      ],
+      "additionalProperties": true
+    },
+    "SensitiveBodyEncoding": {
+      "type": "string",
+      "enum": [
+        "text",
+        "base64"
+      ]
+    },
+    "SensitiveIndexedDbReadParams": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "indexeddb"
+          ]
+        },
+        "database": {
+          "type": "string"
+        },
+        "store": {
+          "type": "string"
+        },
+        "key": {
+          "$ref": "#/$defs/IndexedDbKey"
+        },
+        "frameId": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "source",
+        "database",
+        "store",
+        "key"
+      ],
+      "additionalProperties": true
+    },
+    "IndexedDbKey": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "$ref": "#/$defs/IndexedDbDateKey"
+        },
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "$ref": "#/$defs/IndexedDbDateKey"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "IndexedDbDateKey": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "date"
+          ]
+        },
+        "value": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "value"
+      ],
+      "additionalProperties": true
     },
     "PageTextParams": {
       "type": "object",
@@ -2803,6 +2938,9 @@
         },
         "capture": {
           "$ref": "#/$defs/NetworkCaptureAction"
+        },
+        "bodies": {
+          "$ref": "#/$defs/NetworkBodyCaptureParams"
         }
       },
       "required": [],
@@ -2823,6 +2961,19 @@
         "clear",
         "stop"
       ]
+    },
+    "NetworkBodyCaptureParams": {
+      "type": "object",
+      "properties": {
+        "urlPattern": {
+          "type": "string"
+        },
+        "maxResourceBytes": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
     },
     "HarExportParams": {
       "type": "object",
@@ -3158,6 +3309,9 @@
         },
         "context": {
           "type": "number"
+        },
+        "since": {
+          "type": "string"
         }
       },
       "required": [],
@@ -5281,6 +5435,7 @@
         "page.get_text",
         "dom.query",
         "dom.get_text",
+        "dom.get_accessibility_tree",
         "navigation.navigate"
       ]
     },
@@ -6061,6 +6216,155 @@
       ],
       "additionalProperties": true
     },
+    "ConsoleSourceUnavailableReason": {
+      "type": "string",
+      "enum": [
+        "unsupported_scheme",
+        "loaded_scripts_unavailable",
+        "not_a_loaded_script",
+        "ambiguous_script",
+        "local_network_script",
+        "budget_exhausted",
+        "fetch_timeout",
+        "script_fetch_failed",
+        "script_too_large",
+        "no_source_map",
+        "invalid_map_url",
+        "unsupported_map_url",
+        "cross_origin_map",
+        "map_fetch_failed",
+        "map_too_large",
+        "malformed_map",
+        "no_mapping",
+        "resolution_failed"
+      ]
+    },
+    "ConsoleFrameSource": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "type": "number"
+        },
+        "column": {
+          "type": "number"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "path",
+        "line",
+        "column"
+      ],
+      "additionalProperties": true
+    },
+    "ConsoleStackFrame": {
+      "type": "object",
+      "properties": {
+        "function": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "line": {
+          "type": "number"
+        },
+        "column": {
+          "type": "number"
+        },
+        "source": {
+          "$ref": "#/$defs/ConsoleFrameSource"
+        },
+        "sourceUnavailable": {
+          "$ref": "#/$defs/ConsoleSourceUnavailableReason"
+        }
+      },
+      "required": [
+        "url",
+        "line",
+        "column"
+      ],
+      "additionalProperties": true
+    },
+    "ConsoleEntry": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ts": {
+          "type": "number"
+        },
+        "stack": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConsoleStackFrame"
+          }
+        }
+      },
+      "required": [
+        "level",
+        "args",
+        "ts"
+      ],
+      "additionalProperties": true
+    },
+    "ConsoleResult": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConsoleEntry"
+          }
+        },
+        "count": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        },
+        "dropped": {
+          "type": "number"
+        },
+        "provenance": {
+          "type": "string",
+          "enum": [
+            "page_main_world"
+          ]
+        },
+        "integrity": {
+          "type": "string",
+          "enum": [
+            "untrusted"
+          ]
+        }
+      },
+      "required": [
+        "entries",
+        "count",
+        "total",
+        "dropped",
+        "provenance",
+        "integrity"
+      ],
+      "additionalProperties": true
+    },
     "NormalizedHandleDialogParams": {
       "type": "object",
       "properties": {
@@ -6106,12 +6410,16 @@
         },
         "limit": {
           "type": "number"
+        },
+        "resolveSources": {
+          "type": "boolean"
         }
       },
       "required": [
         "level",
         "clear",
-        "limit"
+        "limit",
+        "resolveSources"
       ],
       "additionalProperties": true
     },
@@ -6270,11 +6578,7 @@
       "type": "object",
       "properties": {
         "type": {
-          "type": "string",
-          "enum": [
-            "local",
-            "session"
-          ]
+          "$ref": "#/$defs/StorageType"
         },
         "keys": {
           "anyOf": [
@@ -6296,7 +6600,281 @@
       ],
       "additionalProperties": true
     },
-    "NormalizedSensitiveReadParams": {
+    "IndexedDbIndexMetadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "keyPath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "unique": {
+          "type": "boolean"
+        },
+        "multiEntry": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "keyPath",
+        "unique",
+        "multiEntry"
+      ],
+      "additionalProperties": true
+    },
+    "IndexedDbStoreMetadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "keyPath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "autoIncrement": {
+          "type": "boolean"
+        },
+        "indexes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IndexedDbIndexMetadata"
+          }
+        },
+        "count": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "keyPath",
+        "autoIncrement",
+        "indexes",
+        "count"
+      ],
+      "additionalProperties": true
+    },
+    "IndexedDbDatabaseError": {
+      "type": "string",
+      "enum": [
+        "open_timeout",
+        "database_missing",
+        "open_failed"
+      ]
+    },
+    "IndexedDbDatabaseMetadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        },
+        "stores": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IndexedDbStoreMetadata"
+          }
+        },
+        "storeCount": {
+          "type": "number"
+        },
+        "error": {
+          "$ref": "#/$defs/IndexedDbDatabaseError"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "stores",
+        "storeCount"
+      ],
+      "additionalProperties": true
+    },
+    "IndexedDbIncompleteReason": {
+      "type": "string",
+      "enum": [
+        "time_budget",
+        "database_limit",
+        "store_limit",
+        "database_error",
+        "databases_timeout"
+      ]
+    },
+    "IndexedDbFrameMetadata": {
+      "type": "object",
+      "properties": {
+        "frameId": {
+          "type": "number"
+        },
+        "origin": {
+          "type": "string"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "databases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IndexedDbDatabaseMetadata"
+          }
+        },
+        "total": {
+          "type": "number"
+        },
+        "incomplete": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IndexedDbIncompleteReason"
+          }
+        }
+      },
+      "required": [
+        "frameId",
+        "origin",
+        "available",
+        "databases",
+        "total",
+        "incomplete"
+      ],
+      "additionalProperties": true
+    },
+    "IndexedDbStorageResult": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "indexeddb"
+          ]
+        },
+        "frames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IndexedDbFrameMetadata"
+          }
+        },
+        "incompleteFrames": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        }
+      },
+      "required": [
+        "type",
+        "frames"
+      ],
+      "additionalProperties": true
+    },
+    "WebStorageResult": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "local",
+            "session"
+          ]
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "present": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "key",
+              "present"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "count": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "entries",
+        "count",
+        "total",
+        "truncated"
+      ],
+      "additionalProperties": true
+    },
+    "StorageResult": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WebStorageResult"
+        },
+        {
+          "$ref": "#/$defs/IndexedDbStorageResult"
+        }
+      ]
+    },
+    "SensitiveGatedSource": {
+      "type": "string",
+      "enum": [
+        "response_body",
+        "indexeddb"
+      ]
+    },
+    "SensitiveReadSource": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SensitiveStorageSource"
+        },
+        {
+          "$ref": "#/$defs/SensitiveGatedSource"
+        }
+      ]
+    },
+    "NormalizedSensitiveStorageReadParams": {
       "type": "object",
       "properties": {
         "source": {
@@ -6316,7 +6894,82 @@
       ],
       "additionalProperties": true
     },
-    "SensitiveReadResult": {
+    "NormalizedSensitiveResponseBodyReadParams": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "response_body"
+          ]
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "encoding": {
+          "$ref": "#/$defs/SensitiveBodyEncoding"
+        },
+        "maxBytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "source",
+        "requestId",
+        "encoding",
+        "maxBytes"
+      ],
+      "additionalProperties": true
+    },
+    "NormalizedSensitiveIndexedDbReadParams": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "indexeddb"
+          ]
+        },
+        "database": {
+          "type": "string"
+        },
+        "store": {
+          "type": "string"
+        },
+        "key": {
+          "$ref": "#/$defs/IndexedDbKey"
+        },
+        "frameId": {
+          "type": "number"
+        },
+        "maxBytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "source",
+        "database",
+        "store",
+        "key",
+        "frameId",
+        "maxBytes"
+      ],
+      "additionalProperties": true
+    },
+    "NormalizedSensitiveReadParams": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NormalizedSensitiveStorageReadParams"
+        },
+        {
+          "$ref": "#/$defs/NormalizedSensitiveResponseBodyReadParams"
+        },
+        {
+          "$ref": "#/$defs/NormalizedSensitiveIndexedDbReadParams"
+        }
+      ]
+    },
+    "SensitiveStorageReadResult": {
       "type": "object",
       "properties": {
         "source": {
@@ -6338,6 +6991,105 @@
         "exact"
       ],
       "additionalProperties": true
+    },
+    "SensitiveResponseBodyReadResult": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "response_body"
+          ]
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "encoding": {
+          "$ref": "#/$defs/SensitiveBodyEncoding"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "bytes": {
+          "type": "number"
+        },
+        "exact": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "requestId",
+        "body",
+        "encoding",
+        "mimeType",
+        "bytes",
+        "exact"
+      ],
+      "additionalProperties": true
+    },
+    "SensitiveIndexedDbReadResult": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "indexeddb"
+          ]
+        },
+        "frameId": {
+          "type": "number"
+        },
+        "database": {
+          "type": "string"
+        },
+        "store": {
+          "type": "string"
+        },
+        "value": {},
+        "described": {
+          "type": "number"
+        },
+        "bytes": {
+          "type": "number"
+        },
+        "exact": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "frameId",
+        "database",
+        "store",
+        "value",
+        "described",
+        "bytes",
+        "exact"
+      ],
+      "additionalProperties": true
+    },
+    "SensitiveReadResult": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SensitiveStorageReadResult"
+        },
+        {
+          "$ref": "#/$defs/SensitiveResponseBodyReadResult"
+        },
+        {
+          "$ref": "#/$defs/SensitiveIndexedDbReadResult"
+        }
+      ]
     },
     "ExtractContentSource": {
       "type": "string",
@@ -7624,6 +8376,9 @@
         },
         "context": {
           "type": "number"
+        },
+        "since": {
+          "type": "string"
         }
       },
       "required": [
@@ -7779,6 +8534,73 @@
       ],
       "additionalProperties": true
     },
+    "DomOutlineDeltaUnavailableReason": {
+      "type": "string",
+      "enum": [
+        "navigated",
+        "expired",
+        "evicted",
+        "scope_changed",
+        "base_truncated",
+        "refs_pruned",
+        "delta_too_large"
+      ]
+    },
+    "DomOutlineDelta": {
+      "type": "object",
+      "properties": {
+        "added": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/DomOutlineNode"
+              }
+            }
+          ]
+        },
+        "changed": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/DomOutlineNode"
+              }
+            }
+          ]
+        },
+        "removed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "removedFrames": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        }
+      },
+      "required": [
+        "added",
+        "changed",
+        "removed"
+      ],
+      "additionalProperties": true
+    },
     "DomOutlineResult": {
       "type": "object",
       "properties": {
@@ -7821,6 +8643,21 @@
         },
         "completeness": {
           "$ref": "#/$defs/DomOutlineCompleteness"
+        },
+        "snapshotId": {
+          "type": "string"
+        },
+        "unchanged": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "delta": {
+          "$ref": "#/$defs/DomOutlineDelta"
+        },
+        "deltaUnavailable": {
+          "$ref": "#/$defs/DomOutlineDeltaUnavailableReason"
         }
       },
       "required": [
@@ -8035,6 +8872,29 @@
       ],
       "additionalProperties": true
     },
+    "NormalizedNetworkBodyCaptureParams": {
+      "type": "object",
+      "properties": {
+        "urlPattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxResourceBytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "urlPattern",
+        "maxResourceBytes"
+      ],
+      "additionalProperties": true
+    },
     "NormalizedNetworkParams": {
       "type": "object",
       "properties": {
@@ -8059,6 +8919,16 @@
         },
         "capture": {
           "$ref": "#/$defs/NetworkCaptureAction"
+        },
+        "bodies": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NormalizedNetworkBodyCaptureParams"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -8066,7 +8936,8 @@
         "limit",
         "urlPattern",
         "source",
-        "capture"
+        "capture",
+        "bodies"
       ],
       "additionalProperties": true
     },
@@ -8150,6 +9021,9 @@
         },
         "timestamp": {
           "type": "number"
+        },
+        "bodyAvailable": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -8167,7 +9041,8 @@
         "redirect",
         "failureReason",
         "duration",
-        "timestamp"
+        "timestamp",
+        "bodyAvailable"
       ],
       "additionalProperties": true
     },
@@ -8260,6 +9135,9 @@
         },
         "inflight": {
           "type": "number"
+        },
+        "bodyCapture": {
+          "$ref": "#/$defs/NormalizedNetworkBodyCaptureParams"
         },
         "truncated": {
           "type": "boolean"

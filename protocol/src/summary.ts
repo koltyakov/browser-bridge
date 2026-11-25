@@ -31,7 +31,16 @@ function outlineEvidenceMeta(
   result: Record<string, unknown>,
   evidence: unknown
 ): Record<string, unknown> {
-  if (result.source !== 'dom' || !result.scope || !result.completeness) return {};
+  // The next read passes snapshotId as since; a summary must not drop it.
+  const snapshot =
+    result.source === 'dom' && typeof result.snapshotId === 'string'
+      ? {
+          snapshotId: result.snapshotId,
+          ...(result.deltaUnavailable ? { deltaUnavailable: result.deltaUnavailable } : {}),
+        }
+      : null;
+  if (result.source !== 'dom' || !result.scope || !result.completeness)
+    return snapshot ? { evidenceMeta: snapshot } : {};
   const lines = typeof evidence === 'string' && evidence ? evidence.split('\n') : [];
   const returnedCount = Array.isArray(evidence) ? evidence.length : lines.length;
   const limited =
@@ -62,6 +71,7 @@ function outlineEvidenceMeta(
             },
           }
         : {}),
+      ...snapshot,
     },
   };
 }
@@ -310,6 +320,40 @@ function summarizeBridgeResponseBody(response: BridgeResponse, method?: string):
   }
 
   const result = toRecord(response.result);
+  if (
+    method === 'dom.get_accessibility_tree' &&
+    result.source === 'dom' &&
+    (result.unchanged === true || (result.delta !== null && typeof result.delta === 'object'))
+  ) {
+    const count = typeof result.count === 'number' ? result.count : 0;
+    const delta = toRecord(result.delta);
+    const length = (key: string) => (Array.isArray(delta[key]) ? delta[key].length : 0);
+    const evidenceMeta: Record<string, unknown> = {};
+    for (const key of [
+      'source',
+      'format',
+      'count',
+      'scanned',
+      'truncated',
+      'frames',
+      'incompleteFrames',
+      'scope',
+      'search',
+      'completeness',
+      'snapshotId',
+    ])
+      if (key in result) evidenceMeta[key] = result[key];
+    const summary =
+      result.unchanged === true
+        ? `Accessibility outline unchanged: ${count} node(s); refs from the base still apply.`
+        : `Accessibility outline delta: ${length('added')} added, ${length('changed')} changed, ${length('removed')} removed of ${count} node(s).${length('removedFrames') ? ` Drop earlier lines of ${length('removedFrames')} frame(s) in removedFrames.` : ''}`;
+    return {
+      ok: true,
+      summary: appendProtocolWarning(summary, protocolWarning),
+      evidence: result.unchanged === true ? { unchanged: true } : result.delta,
+      evidenceMeta,
+    };
+  }
   if (method === 'input.perform' && result.verified === true) {
     return {
       ok: true,

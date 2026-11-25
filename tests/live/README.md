@@ -6,6 +6,19 @@ drivers, and agent usage accounting, see
 `make bench-comparative` with `BBX_BENCH_CHROME` set to a disposable Chrome executable.
 The existing interaction microbenchmark remains available as `make bench-interaction`.
 
+## Source-mapped console errors
+
+```sh
+BBX_LIVE_EXTENSION_ID=<id> make test-sourcemaps-live
+```
+
+Requires window access already enabled for that profile. The test serves the
+checked-in fixture bundle from `tests/fixtures/source-maps/generated/` on
+127.0.0.1, opens it in a background tab, makes it throw, and checks that
+`bbx console exception --resolve` reports `src/alpha.ts:6:5` while a plain read
+makes no map request. It closes its tab afterwards. Regenerate the fixtures with
+`node --import tsx tests/fixtures/source-maps/generate.ts`.
+
 ## Isolated native-input and observer regressions
 
 ```sh

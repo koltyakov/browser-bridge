@@ -10,10 +10,17 @@ import {
 } from './background-helpers.js';
 import { getMainWorldInstrumentationKey } from './background-main-world-instrumentation.js';
 import { isNumber } from './background-state.js';
+import { parseV8Stack } from './console-stack.js';
+
+/** Entry as buffered in the page. stack is raw V8 text, parsed and bounded
+again by the service worker because the page can rewrite this buffer. */
+export type PageConsoleEntry = { level: string; args: string[]; ts: number; stack?: string };
+
+export type ConsoleEntry = import('../../../protocol/src/types.js').ConsoleEntry;
 
 export type ConsoleInstrumentationRecord = {
   enabled: boolean;
-  buffer: Array<{ level: string; args: string[]; ts: number }>;
+  buffer: PageConsoleEntry[];
   dropped: number;
   levels: string[];
   originals: Record<string, (...args: unknown[]) => void>;
@@ -66,7 +73,7 @@ export async function ensureConsoleInterceptor(
             release?: () => void;
           }
         | undefined;
-      const earlyEntries: Array<{ level: string; args: string[]; ts: number }> = [];
+      const earlyEntries: PageConsoleEntry[] = [];
       let earlyDropped = 0;
       if (early && typeof early === 'object' && Array.isArray(early.buffer)) {
         early.adopted = true;
@@ -77,12 +84,21 @@ export async function ensureConsoleInterceptor(
             typeof (entry as { level?: unknown }).level === 'string' &&
             Array.isArray((entry as { args?: unknown }).args)
           ) {
-            const typed = entry as { level: string; args: unknown[]; ts?: unknown };
-            earlyEntries.push({
+            const typed = entry as {
+              level: string;
+              args: unknown[];
+              ts?: unknown;
+              stack?: unknown;
+            };
+            const adopted: PageConsoleEntry = {
               level: typed.level.slice(0, 20),
               args: typed.args.slice(0, 20).map((arg) => String(arg).slice(0, 500)),
               ts: typeof typed.ts === 'number' ? typed.ts : Date.now(),
-            });
+            };
+            if (typeof typed.stack === 'string' && typed.stack) {
+              adopted.stack = typed.stack.slice(0, 1_500);
+            }
+            earlyEntries.push(adopted);
           }
         }
         earlyDropped = typeof early.dropped === 'number' ? early.dropped : 0;
@@ -125,7 +141,7 @@ export async function ensureConsoleInterceptor(
         return;
       }
 
-      const buffer: Array<{ level: string; args: string[]; ts: number }> = [];
+      const buffer: PageConsoleEntry[] = [];
       const levels = ['log', 'warn', 'error', 'info', 'debug'];
       const record: ConsoleInstrumentationRecord = {
         enabled: false,
@@ -148,6 +164,32 @@ export async function ensureConsoleInterceptor(
       globalThis.__bb_console_dropped = 0;
       const MAX = 200;
       const MAX_ARG_CHARS = 500;
+      const MAX_STACK_CHARS = 1_500;
+      let readingStack = false;
+
+      /** Read a thrown value's V8 stack text. The page owns the value, so a
+throwing or re-entrant stack getter yields no stack instead of an error. */
+      const readStack = (value: unknown): string | undefined => {
+        if (readingStack || !value || typeof value !== 'object') return undefined;
+        readingStack = true;
+        try {
+          const stack = (value as { stack?: unknown }).stack;
+          return typeof stack === 'string' && stack ? stack.slice(0, MAX_STACK_CHARS) : undefined;
+        } catch {
+          return undefined;
+        } finally {
+          readingStack = false;
+        }
+      };
+      const isErrorLike = (value: unknown): boolean => {
+        try {
+          return (
+            value instanceof Error || Object.prototype.toString.call(value) === '[object Error]'
+          );
+        } catch {
+          return false;
+        }
+      };
 
       /** Serialize one console argument into a bounded string. Uses a budgeted
 JSON walk that prunes subtrees once the budget is spent, so logging a
@@ -197,9 +239,11 @@ huge state tree stays cheap for the page. Errors keep their message
         }
       };
 
-      const pushEntry = (level: string, args: string[]): void => {
+      const pushEntry = (level: string, args: string[], stack?: string): void => {
         if (!record.enabled) return;
-        buffer.push({ level, args, ts: Date.now() });
+        const entry: PageConsoleEntry = { level, args, ts: Date.now() };
+        if (stack) entry.stack = stack;
+        buffer.push(entry);
         if (buffer.length > MAX) {
           record.dropped =
             (typeof globalThis.__bb_console_dropped === 'number'
@@ -213,23 +257,27 @@ huge state tree stays cheap for the page. Errors keep their message
 
       for (const level of levels) {
         record.originals[level] = consoleMethods[level];
+        const keepsStack = level === 'error' || level === 'warn';
         record.wrappers[level] = (...args) => {
+          const error = keepsStack ? args.find(isErrorLike) : undefined;
           pushEntry(
             level,
-            args.map((a) => serializeArg(a))
+            args.map((a) => serializeArg(a)),
+            error === undefined ? undefined : readStack(error)
           );
           record.originals[level].apply(console, args);
         };
         consoleMethods[level] = record.wrappers[level];
       }
       record.onError = (e) => {
-        pushEntry('exception', [
-          e.message || 'Unknown error',
-          e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : '',
-        ]);
+        pushEntry(
+          'exception',
+          [e.message || 'Unknown error', e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : ''],
+          readStack(e.error)
+        );
       };
       record.onRejection = (e) => {
-        pushEntry('rejection', [String(e.reason).slice(0, MAX_ARG_CHARS)]);
+        pushEntry('rejection', [String(e.reason).slice(0, MAX_ARG_CHARS)], readStack(e.reason));
       };
       globalThis.addEventListener('error', record.onError);
       globalThis.addEventListener('unhandledrejection', record.onRejection);
@@ -290,7 +338,7 @@ export async function readConsoleBuffer(
   clear: boolean,
   chromeObj: ChromeWithScripting
 ): Promise<{
-  entries: Array<{ level: string; args: string[]; ts: number }>;
+  entries: ConsoleEntry[];
   dropped: number;
   provenance: 'page_main_world';
   integrity: 'untrusted';
@@ -361,19 +409,22 @@ function normalizeConsoleTimestamp(value: unknown): number {
     : 0;
 }
 
-function normalizeConsoleEntry(
-  value: unknown
-): { level: string; args: string[]; ts: number } | null {
+function normalizeConsoleEntry(value: unknown): ConsoleEntry | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const entry = value as Record<string, unknown>;
   const args = Array.isArray(entry.args)
     ? entry.args.slice(0, 20).map((argument) => sanitizeConsoleArgument(argument))
     : [];
-  return {
+  const normalized: ConsoleEntry = {
     level: typeof entry.level === 'string' && CONSOLE_LEVELS.has(entry.level) ? entry.level : 'log',
     args,
     ts: normalizeConsoleTimestamp(entry.ts),
   };
+  // Only raw stack text is accepted. Page-supplied frame objects or other
+  // shapes are dropped rather than trusted.
+  const stack = parseV8Stack(entry.stack);
+  if (stack.length) normalized.stack = stack;
+  return normalized;
 }
 
 function sanitizeConsoleArgument(value: unknown) {

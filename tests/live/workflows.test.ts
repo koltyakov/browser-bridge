@@ -299,6 +299,133 @@ test(
         }
       );
 
+      await t.test(
+        'read the echoed JSON response body through a narrow opt-in capture',
+        async (sub) => {
+          const health = record((await call(control, 'health.ping')).evidence);
+          const settings = record(record(health.accessSettings).settings);
+          if (settings.allowResponseBodyReads !== true) {
+            sub.skip('Turn on "Allow reading response bodies" in the side panel to run this.');
+            return;
+          }
+          await call(
+            formClient,
+            'navigation.navigate',
+            { url: 'https://httpbin.org/forms/post', waitForLoad: true },
+            form
+          );
+          await call(
+            formClient,
+            'page.get_network',
+            {
+              source: 'cdp',
+              capture: 'start',
+              bodies: { urlPattern: 'https://httpbin.org/post*' },
+            },
+            form
+          );
+          try {
+            await call(
+              formClient,
+              'input.perform',
+              {
+                timeoutMs: 20_000,
+                steps: [
+                  {
+                    method: 'input.fill',
+                    params: { target: { label: 'Customer name:' }, value: 'BBX Body Echo' },
+                  },
+                  {
+                    method: 'input.click',
+                    params: {
+                      target: { role: 'button', name: 'Submit order' },
+                      executionMode: 'dom',
+                    },
+                  },
+                  {
+                    method: 'page.wait_for_load_state',
+                    params: {
+                      url: 'https://httpbin.org/post',
+                      urlMatch: 'exact',
+                      waitForLoad: true,
+                    },
+                  },
+                ],
+              },
+              form
+            );
+            const listed = record(
+              (await call(formClient, 'page.get_network', { source: 'cdp', limit: 50 }, form))
+                .evidence
+            );
+            const entries = (Array.isArray(listed.entries) ? listed.entries : []).map(record);
+            const echo = entries.find(
+              (entry) =>
+                String(entry.url).startsWith('https://httpbin.org/post') &&
+                entry.bodyAvailable === true
+            );
+            assert(echo, 'the echo document body was not buffered');
+            assert.equal(JSON.stringify(listed).includes('BBX Body Echo'), false);
+            const body = await call(
+              formClient,
+              'sensitive.read',
+              { source: 'response_body', requestId: String(echo.requestId) },
+              form
+            );
+            assert.equal(body.exact, true);
+            assert.match(String(body.mimeType), /json/);
+            const parsed = record(JSON.parse(String(body.body)));
+            assert.equal(record(parsed.form).custname, 'BBX Body Echo');
+          } finally {
+            await call(formClient, 'page.get_network', { source: 'cdp', capture: 'stop' }, form);
+          }
+        }
+      );
+
+      await t.test('list and read back one synthetic IndexedDB record', async (sub) => {
+        const health = record((await call(control, 'health.ping')).evidence);
+        const settings = record(record(health.accessSettings).settings);
+        if (settings.allowIndexedDBReads !== true) {
+          sub.skip('Turn on "Allow reading IndexedDB records" in the side panel to run this.');
+          return;
+        }
+        const marker = `bbx-live-${Date.now()}`;
+        try {
+          await call(
+            formClient,
+            'page.evaluate',
+            {
+              expression: `new Promise((resolve, reject) => { const r = indexedDB.open('bbx-live', 1); r.onupgradeneeded = () => r.result.createObjectStore('items', { keyPath: 'id' }); r.onerror = () => reject(r.error); r.onsuccess = () => { const db = r.result; const tx = db.transaction('items', 'readwrite'); tx.objectStore('items').put({ id: 1, marker: '${marker}' }); tx.oncomplete = () => { db.close(); resolve(true); }; }; })`,
+              awaitPromise: true,
+            },
+            form
+          );
+          const databases = JSON.stringify(
+            (await call(formClient, 'page.get_storage', { type: 'indexeddb' }, form)).evidence
+          );
+          assert.match(databases, /"name":"bbx-live"/);
+          assert.equal(databases.includes(marker), false, 'IndexedDB metadata carries no record');
+          const item = await call(
+            formClient,
+            'sensitive.read',
+            { source: 'indexeddb', database: 'bbx-live', store: 'items', key: 1 },
+            form
+          );
+          assert.deepEqual(item.value, { id: 1, marker });
+        } finally {
+          await call(
+            formClient,
+            'page.evaluate',
+            {
+              expression:
+                "new Promise((resolve) => { const r = indexedDB.deleteDatabase('bbx-live'); r.onsuccess = r.onerror = r.onblocked = () => resolve(true); })",
+              awaitPromise: true,
+            },
+            form
+          );
+        }
+      });
+
       await t.test('partial failure preserves state and never recommends replay', async () => {
         const failed = await call(
           todoClient,
@@ -536,6 +663,119 @@ test(
           }
         }
       );
+
+      await t.test('an outline delta after adding a todo holds only that change', async () => {
+        const name = `BBX delta ${crypto.randomUUID()}`;
+        const listed = record(
+          (
+            await call(
+              todoClient,
+              'dom.find_by_role',
+              {
+                role: 'checkbox',
+                selector: '.todo-list input[type="checkbox"]',
+                includeHidden: true,
+                maxResults: 50,
+              },
+              todos,
+              undefined,
+              'deep'
+            )
+          ).evidence
+        );
+        assert.equal(listed.truncated, false, 'Do not index an incomplete todo list.');
+        const added = `.todo-list li:nth-child(${Number(listed.count) + 1})`;
+        // Focus first, so the base and the delta agree on the header's state.
+        await call(
+          todoClient,
+          'input.focus',
+          { target: { placeholder: 'What needs to be done?' } },
+          todos
+        );
+        const base = await call(
+          todoClient,
+          'dom.get_accessibility_tree',
+          { source: 'dom', maxNodes: 500 },
+          todos
+        );
+        const since = record(base.evidenceMeta).snapshotId;
+        assert.equal(typeof since, 'string');
+        try {
+          const performed = record(
+            (
+              await call(
+                todoClient,
+                'input.perform',
+                {
+                  timeoutMs: 10_000,
+                  returnLastResult: true,
+                  steps: [
+                    {
+                      method: 'input.fill',
+                      params: { target: { placeholder: 'What needs to be done?' }, value: name },
+                    },
+                    {
+                      method: 'input.press_key',
+                      params: { target: { placeholder: 'What needs to be done?' }, key: 'Enter' },
+                    },
+                    {
+                      method: 'dom.get_accessibility_tree',
+                      params: { since, maxNodes: 500 },
+                    },
+                  ],
+                },
+                todos
+              )
+            ).evidence
+          );
+          const outline = record(record(performed.lastResult).result);
+          assert.equal(outline.deltaUnavailable, undefined, JSON.stringify(outline));
+          const delta = record(outline.delta);
+          assert(Array.isArray(delta.added) && Array.isArray(delta.changed));
+          const lines = [...delta.added, ...delta.changed].map(String);
+          assert.equal(lines.filter((line) => /checkbox "Toggle Todo"/.test(line)).length, 1);
+          assert(
+            !lines.some((line) => /heading "todos"|What needs to be done/i.test(line)),
+            `The header did not change: ${lines.join('\n')}`
+          );
+        } finally {
+          const label = record(
+            (
+              await call(
+                todoClient,
+                'dom.get_text',
+                { target: { selector: `${added} label` }, textBudget: 160 },
+                todos
+              )
+            ).evidence
+          );
+          if (String(label.text) === name) {
+            const patchId = `live-delete-${crypto.randomUUID()}`;
+            await call(
+              todoClient,
+              'patch.apply_styles',
+              {
+                target: { selector: `${added} .destroy` },
+                declarations: { display: 'block' },
+                patchId,
+              },
+              todos
+            );
+            try {
+              await call(
+                todoClient,
+                'input.click',
+                { target: { selector: `${added} .destroy` }, executionMode: 'dom' },
+                todos
+              );
+            } finally {
+              await call(todoClient, 'patch.rollback', { patchId }, todos);
+            }
+          } else {
+            t.diagnostic(`Ownership changed at ${added}; did not delete that todo.`);
+          }
+        }
+      });
 
       await t.test(
         'semantic state, delayed enable/disable, and stale identity after remount',

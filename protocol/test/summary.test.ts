@@ -465,6 +465,78 @@ test('scoped DOM summaries retain scope, search, and extraction versus delivery 
   assert.equal(outline.evidence, '- button "Save" [el_1] [match]');
   assert.deepEqual(outline.evidenceMeta?.completeness, { complete: false, reasons: ['scanLimit'] });
   assert.equal(outline.evidenceMeta?.returnedCount, 1);
+  const snapshot = summarizeBridgeResponse(
+    ok({ ...result, snapshotId: 'ol_s', deltaUnavailable: 'scope_changed' }),
+    'dom.get_accessibility_tree'
+  );
+  assert.equal(snapshot.evidenceMeta?.snapshotId, 'ol_s');
+  assert.equal(snapshot.evidenceMeta?.deltaUnavailable, 'scope_changed');
+});
+
+test('DOM outline snapshots and deltas survive summaries', () => {
+  const full = summarizeBridgeResponse(
+    ok({
+      source: 'dom',
+      format: 'outline',
+      outline: '- button "Save" [el_1]',
+      count: 1,
+      scanned: 3,
+      truncated: false,
+      snapshotId: 'ol_a',
+    }),
+    'dom.get_accessibility_tree'
+  );
+  assert.equal(full.evidence, '- button "Save" [el_1]');
+  assert.deepEqual(full.evidenceMeta, { snapshotId: 'ol_a' });
+  const delta = {
+    added: ['- button "Add" [el_2]'],
+    changed: [],
+    removed: ['el_1'],
+    removedFrames: [7],
+  };
+  const compared = summarizeBridgeResponse(
+    ok({
+      source: 'dom',
+      format: 'outline',
+      count: 4,
+      scanned: 9,
+      truncated: false,
+      snapshotId: 'ol_b',
+      delta,
+    }),
+    'dom.get_accessibility_tree'
+  );
+  assert.equal(
+    compared.summary,
+    'Accessibility outline delta: 1 added, 0 changed, 1 removed of 4 node(s). Drop earlier lines of 1 frame(s) in removedFrames.'
+  );
+  assert.deepEqual(compared.evidence, delta);
+  assert.equal(compared.evidenceMeta?.snapshotId, 'ol_b');
+  const unchanged = summarizeBridgeResponse(
+    ok({
+      source: 'dom',
+      format: 'outline',
+      count: 4,
+      scanned: 0,
+      truncated: false,
+      snapshotId: 'ol_c',
+      unchanged: true,
+    }),
+    'dom.get_accessibility_tree'
+  );
+  assert.equal(
+    unchanged.summary,
+    'Accessibility outline unchanged: 4 node(s); refs from the base still apply.'
+  );
+  assert.deepEqual(unchanged.evidence, { unchanged: true });
+  assert.deepEqual(unchanged.evidenceMeta, {
+    source: 'dom',
+    format: 'outline',
+    count: 4,
+    scanned: 0,
+    truncated: false,
+    snapshotId: 'ol_c',
+  });
 });
 
 // --- summarizeBridgeResponse: DOM query results ---

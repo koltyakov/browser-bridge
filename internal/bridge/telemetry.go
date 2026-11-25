@@ -356,6 +356,13 @@ func normalizeAccessSettingsSnapshot(source object) *protocol.AccessSettingsSnap
 			return nil
 		}
 	}
+	// Extensions older than the sensitive-data gate omit it; they cannot serve
+	// gated sources, so absence decodes as false. A present value must be boolean.
+	for _, key := range []string{"allowResponseBodyReads", "allowIndexedDBReads"} {
+		if raw, ok := settings[key]; ok && !jsonBoolean(raw) {
+			return nil
+		}
+	}
 	var snapshot protocol.AccessSettingsSnapshot
 	if json.Unmarshal(value(source), &snapshot) != nil {
 		return nil

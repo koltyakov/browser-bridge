@@ -265,3 +265,39 @@ func cliErrorRecovery(code string) object {
 	}
 	return result
 }
+
+// cliConsoleTopFrame formats the first stack frame of a console entry as
+// "function (location)", preferring the source-mapped position when present.
+// Frames are page-controlled, so every field is checked and bounded.
+func cliConsoleTopFrame(entry object) string {
+	frames, ok := cliArray(entry["stack"])
+	if !ok || len(frames) == 0 {
+		return ""
+	}
+	frame := cliRecord(frames[0])
+	location := func(file string, line, column json.RawMessage) string {
+		l, lineOK := cliNumberValue(line)
+		c, columnOK := cliNumberValue(column)
+		if file == "" || !lineOK || !columnOK {
+			return ""
+		}
+		return fmt.Sprintf("%s:%d:%d", cliSlice(file, 300), int64(l), int64(c))
+	}
+	at := location(frame.text("url"), frame["line"], frame["column"])
+	if source := frame.object("source"); source != nil {
+		file := source.text("path")
+		if file == "" {
+			file = source.text("file")
+		}
+		if mapped := location(file, source["line"], source["column"]); mapped != "" {
+			at = mapped
+		}
+	}
+	if at == "" {
+		return ""
+	}
+	if name := cliSlice(frame.text("function"), 120); name != "" {
+		return name + " (" + at + ")"
+	}
+	return at
+}

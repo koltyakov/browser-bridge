@@ -1,4 +1,10 @@
-import { sanitizeIncidentalUrl } from '../../../protocol/src/index.js';
+import {
+  BridgeError,
+  ERROR_CODES,
+  MAX_CDP_BODY_TOTAL_BYTES,
+  sanitizeIncidentalUrl,
+} from '../../../protocol/src/index.js';
+import { compileUrlPattern } from './background-url-pattern.js';
 
 const DEFAULT_MAX_ENTRIES = 200;
 const DEFAULT_MAX_HAR_ENTRIES = 200;
@@ -6,6 +12,9 @@ const DEFAULT_MAX_INFLIGHT = 400;
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_TTL_RETRY_MS = 5_000;
 const MAX_DIAGNOSTIC_COUNT = 10_000;
+const DEFAULT_MAX_BODY_RECORDS = 1_000;
+// Chrome reports an evicted or never-buffered body with one of these messages.
+const EVICTED_BODY_PATTERN = /No resource with given identifier|No data found for resource/iu;
 
 export type RedirectHop = { url: string; status: number };
 export type CdpNetworkEntry = {
@@ -30,6 +39,35 @@ export type PendingNetworkEntry = CdpNetworkEntry & {
   established: boolean;
 };
 export type HarEvidenceEntry = import('../../../protocol/src/types.js').HarEvidenceEntry;
+export type BodyCaptureOptions =
+  import('../../../protocol/src/types.js').NormalizedNetworkBodyCaptureParams;
+/** Why a response body cannot be read. Each maps to its own typed error. */
+export type BodyReadFailure =
+  | 'capture_not_armed'
+  | 'bodies_not_enabled'
+  | 'request_unknown'
+  | 'request_other_tab'
+  | 'body_not_matched'
+  | 'request_failed'
+  | 'body_pending'
+  | 'body_evicted'
+  | 'body_unavailable'
+  | 'capture_stopped';
+/** Per-request body bookkeeping. Holds no URL, header or body content. */
+type BodyRecord = {
+  eligible: boolean;
+  finished: boolean;
+  failed: boolean;
+  evicted: boolean;
+  mimeType: string;
+};
+type BodyCaptureState = BodyCaptureOptions & { matcher: { test: (url: string) => boolean } | null };
+export type RawResponseBody = {
+  requestId: string;
+  body: string;
+  base64Encoded: boolean;
+  mimeType: string;
+};
 export type PendingHarEvidenceEntry = HarEvidenceEntry & { startMonotonic: number | null };
 export type TabCaptureState = {
   entries: CdpNetworkEntry[];
@@ -45,6 +83,9 @@ export type TabCaptureState = {
   everArmed: boolean;
   status: 'armed' | 'stop_failed';
   ttlTimer?: ReturnType<typeof setTimeout>;
+  /** Non-null only while Chrome buffers bodies for this capture. */
+  bodies: BodyCaptureState | null;
+  bodyIndex: Map<string, BodyRecord>;
 };
 
 export function createCdpNetworkCapture(deps: {
@@ -59,12 +100,14 @@ export function createCdpNetworkCapture(deps: {
   maxEntries?: number;
   maxHarEntries?: number;
   maxInflight?: number;
+  maxBodyRecords?: number;
   ttlMs?: number;
   ttlRetryMs?: number;
 }) {
   const maxEntries = deps.maxEntries ?? DEFAULT_MAX_ENTRIES;
   const maxHarEntries = deps.maxHarEntries ?? DEFAULT_MAX_HAR_ENTRIES;
   const maxInflight = deps.maxInflight ?? DEFAULT_MAX_INFLIGHT;
+  const maxBodyRecords = deps.maxBodyRecords ?? DEFAULT_MAX_BODY_RECORDS;
   const ttlMs = deps.ttlMs ?? DEFAULT_TTL_MS;
   const ttlRetryMs = deps.ttlRetryMs ?? DEFAULT_TTL_RETRY_MS;
 
@@ -111,20 +154,27 @@ export function createCdpNetworkCapture(deps: {
     }
   }
 
-  function start(tabId: number) {
+  /** Arm capture. Without options.bodies Chrome buffers no bodies, as before. */
+  function start(tabId: number, options: { bodies?: BodyCaptureOptions | null } = {}) {
     deps.assertDebuggerAvailable?.(tabId);
     const stopEpoch = stopEpochs.get(tabId) ?? 0;
+    const bodies = options.bodies ?? null;
     return runLifecycle(tabId, async () => {
       const epoch = getDetachEpoch(tabId);
       const existing = states.get(tabId);
       if (existing?.status === 'armed') {
+        // Body buffering changes need fresh Chrome buffers. Disabling Network
+        // drops every buffered body, so earlier requestIds become unreadable.
+        if (existing.bodies || bodies) await reconfigureBodies(tabId, existing, bodies, epoch);
         clearState(existing);
+        existing.bodyIndex.clear();
         resetTtl(tabId, existing);
         return snapshot(existing, true);
       }
       if (existing) {
-        await enableOwnedState(tabId, existing, epoch);
+        await enableOwnedState(tabId, existing, epoch, bodies);
         clearState(existing);
+        existing.bodyIndex.clear();
         resetTtl(tabId, existing);
         if ((stopEpochs.get(tabId) ?? 0) !== stopEpoch) {
           return stopState(tabId, existing, true);
@@ -138,14 +188,11 @@ export function createCdpNetworkCapture(deps: {
         await deps.acquireDebugger(tabId);
         acquired = true;
         assertNotDetached(tabId, epoch);
-        await deps.sendCommand({ tabId }, 'Network.enable', {
-          maxTotalBufferSize: 0,
-          maxResourceBufferSize: 0,
-          maxPostDataSize: 0,
-        });
+        await deps.sendCommand({ tabId }, 'Network.enable', networkEnableParams(bodies));
         enabled = true;
         assertNotDetached(tabId, epoch);
         const state = createState();
+        state.bodies = compileBodyCapture(bodies);
         states.set(tabId, state);
         resetTtl(tabId, state);
         if ((stopEpochs.get(tabId) ?? 0) !== stopEpoch) {
@@ -189,6 +236,7 @@ export function createCdpNetworkCapture(deps: {
       const state = states.get(tabId);
       if (!state) return emptySnapshot();
       clearState(state);
+      state.bodyIndex.clear();
       if (state.status === 'armed') resetTtl(tabId, state);
       return snapshot(state, state.status === 'armed');
     });
@@ -242,6 +290,8 @@ export function createCdpNetworkCapture(deps: {
       state.status = 'stop_failed';
       abandonInflight(state);
     }
+    // Disabled Network holds no bodies; never let a retained record claim one.
+    if (!state.networkEnabled) dropBodies(state);
     if (state.ownsDebugger) {
       try {
         await deps.releaseDebugger(tabId);
@@ -269,6 +319,7 @@ publish an armed state after Chrome has already detached the target. */
       state.networkEnabled = false;
       state.ownsDebugger = false;
       state.status = 'stop_failed';
+      dropBodies(state);
       const result = snapshot(state, false, false);
       states.delete(tabId);
       return result;
@@ -281,9 +332,13 @@ publish an armed state after Chrome has already detached the target. */
     if (method === 'Network.requestWillBeSent') {
       handleRequestWillBeSent(state, params);
       handleHarRequestWillBeSent(state, params);
+      recordBodyRequest(state, params);
     } else if (method === 'Network.responseReceived') {
       handleResponseReceived(state, params);
       handleHarResponseReceived(state, params);
+      const record = getBodyRecord(state, params.requestId);
+      if (record && isRecord(params.response))
+        record.mimeType = boundString(params.response.mimeType, 256);
     } else if (method === 'Network.requestServedFromCache') {
       const entry = getPending(state, params.requestId);
       if (entry) entry.fromCache = true;
@@ -292,7 +347,11 @@ publish an armed state after Chrome has already detached the target. */
     } else if (method === 'Network.loadingFinished') {
       finishRequest(state, params.requestId, params.timestamp, '');
       finishHarRequest(state, params.requestId, params.timestamp, '');
+      const record = getBodyRecord(state, params.requestId);
+      if (record) record.finished = true;
     } else if (method === 'Network.loadingFailed') {
+      const record = getBodyRecord(state, params.requestId);
+      if (record) record.failed = true;
       finishRequest(state, params.requestId, params.timestamp, boundString(params.errorText, 256));
       finishHarRequest(
         state,
@@ -365,21 +424,160 @@ publish an armed state after Chrome has already detached the target. */
     state.ttlTimer.unref?.();
   }
 
-  async function enableOwnedState(tabId: number, state: TabCaptureState, epoch: number) {
+  async function enableOwnedState(
+    tabId: number,
+    state: TabCaptureState,
+    epoch: number,
+    bodies: BodyCaptureOptions | null = null
+  ) {
     try {
-      await deps.sendCommand({ tabId }, 'Network.enable', {
-        maxTotalBufferSize: 0,
-        maxResourceBufferSize: 0,
-        maxPostDataSize: 0,
-      });
+      await deps.sendCommand({ tabId }, 'Network.enable', networkEnableParams(bodies));
       assertNotDetached(tabId, epoch);
       state.networkEnabled = true;
       state.status = 'armed';
       state.everArmed = true;
+      state.bodies = compileBodyCapture(bodies);
     } catch (error) {
       resetTtl(tabId, state, ttlRetryMs);
       throw error;
     }
+  }
+
+  /** Replace an armed capture's Chrome buffers. Any failure leaves the state
+  claiming no bodies and schedules the TTL stop to release the debugger. */
+  async function reconfigureBodies(
+    tabId: number,
+    state: TabCaptureState,
+    bodies: BodyCaptureOptions | null,
+    epoch: number
+  ) {
+    dropBodies(state);
+    try {
+      await deps.sendCommand({ tabId }, 'Network.disable', {});
+      state.networkEnabled = false;
+      abandonInflight(state);
+      await deps.sendCommand({ tabId }, 'Network.enable', networkEnableParams(bodies));
+      assertNotDetached(tabId, epoch);
+      state.networkEnabled = true;
+      state.bodies = compileBodyCapture(bodies);
+    } catch (error) {
+      if (!state.networkEnabled) state.status = 'stop_failed';
+      resetTtl(tabId, state, ttlRetryMs);
+      throw error;
+    }
+  }
+
+  function recordBodyRequest(state: TabCaptureState, event: Record<string, unknown>) {
+    if (!state.bodies) return;
+    const requestId = boundString(event.requestId, 256);
+    if (!requestId || !isRecord(event.request)) return;
+    const url = typeof event.request.url === 'string' ? event.request.url : '';
+    // A redirect reuses the requestId; the body belongs to the final URL.
+    const eligible = Boolean(url) && (state.bodies.matcher?.test(url) ?? true);
+    const existing = state.bodyIndex.get(requestId);
+    if (existing) {
+      existing.eligible = eligible;
+      existing.mimeType = '';
+      return;
+    }
+    if (state.bodyIndex.size >= maxBodyRecords) {
+      const oldest = state.bodyIndex.keys().next().value;
+      if (typeof oldest === 'string') state.bodyIndex.delete(oldest);
+    }
+    state.bodyIndex.set(requestId, {
+      eligible,
+      finished: false,
+      failed: false,
+      evicted: false,
+      mimeType: '',
+    });
+  }
+
+  function getBodyRecord(state: TabCaptureState, requestId: unknown) {
+    const id = boundString(requestId, 256);
+    return id && state.bodies ? state.bodyIndex.get(id) : undefined;
+  }
+
+  function bodyFailure(reason: BodyReadFailure): BridgeError {
+    const messages: Record<BodyReadFailure, string> = {
+      capture_not_armed:
+        'No CDP network capture is armed on this tab. Start one with page.get_network {source: "cdp", capture: "start", bodies: {...}}.',
+      bodies_not_enabled:
+        'This tab\'s CDP capture does not buffer response bodies. Restart it with capture: "start" and bodies.',
+      request_unknown:
+        "The requestId was not recorded by this tab's current capture. Use a requestId from page.get_network source=cdp.",
+      request_other_tab:
+        "The requestId belongs to another tab's capture. Read it with that tab's tabId.",
+      body_not_matched: "The request does not match the capture's bodies.urlPattern.",
+      request_failed: 'The request failed, so Chrome holds no response body for it.',
+      body_pending: 'The response has not finished loading. Read it after the request completes.',
+      body_evicted:
+        'Chrome no longer holds this response body (evicted, navigated, or over the buffer cap).',
+      body_unavailable: 'Chrome did not return a response body for this request.',
+      capture_stopped:
+        'The capture stopped or the debugger detached during the read. No body was returned.',
+    };
+    return new BridgeError(ERROR_CODES.SENSITIVE_TARGET_NOT_FOUND, messages[reason], {
+      source: 'response_body',
+      reason,
+    });
+  }
+
+  function heldByOtherTab(tabId: number, requestId: string) {
+    for (const [otherTabId, other] of states) {
+      if (otherTabId !== tabId && other.bodyIndex.has(requestId)) return true;
+    }
+    return false;
+  }
+
+  /** Read one buffered body recorded by this tab's own capture. Reads share the
+  lifecycle queue, so stop and detach cannot interleave with a read. */
+  function readBody(tabId: number, requestId: string): Promise<RawResponseBody> {
+    return runLifecycle(tabId, async () => {
+      const state = states.get(tabId);
+      if (!state || state.status !== 'armed' || !state.networkEnabled)
+        throw bodyFailure(
+          heldByOtherTab(tabId, requestId) ? 'request_other_tab' : 'capture_not_armed'
+        );
+      if (!state.bodies) throw bodyFailure('bodies_not_enabled');
+      const record = state.bodyIndex.get(requestId);
+      if (!record)
+        throw bodyFailure(
+          heldByOtherTab(tabId, requestId) ? 'request_other_tab' : 'request_unknown'
+        );
+      if (!record.eligible) throw bodyFailure('body_not_matched');
+      if (record.failed) throw bodyFailure('request_failed');
+      if (!record.finished) throw bodyFailure('body_pending');
+      if (record.evicted) throw bodyFailure('body_evicted');
+      const epoch = getDetachEpoch(tabId);
+      let raw: unknown;
+      try {
+        raw = await deps.sendCommand({ tabId }, 'Network.getResponseBody', { requestId });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (getDetachEpoch(tabId) !== epoch || states.get(tabId) !== state)
+          throw bodyFailure('capture_stopped');
+        if (EVICTED_BODY_PATTERN.test(message)) {
+          record.evicted = true;
+          throw bodyFailure('body_evicted');
+        }
+        throw bodyFailure('body_unavailable');
+      }
+      if (
+        getDetachEpoch(tabId) !== epoch ||
+        states.get(tabId) !== state ||
+        state.status !== 'armed' ||
+        !state.bodies
+      )
+        throw bodyFailure('capture_stopped');
+      if (!isRecord(raw) || typeof raw.body !== 'string') throw bodyFailure('body_unavailable');
+      return {
+        requestId,
+        body: raw.body,
+        base64Encoded: raw.base64Encoded === true,
+        mimeType: record.mimeType,
+      };
+    });
   }
 
   function handleRequestWillBeSent(state: TabCaptureState, event: Record<string, unknown>) {
@@ -557,7 +755,48 @@ publish an armed state after Chrome has already detached the target. */
     }
   }
 
-  return { start, clear, read, readHar, stop, handleDetach, handleEvent, getDiagnostics };
+  return {
+    start,
+    clear,
+    read,
+    readHar,
+    readBody,
+    stop,
+    handleDetach,
+    handleEvent,
+    getDiagnostics,
+  };
+}
+
+function networkEnableParams(bodies: BodyCaptureOptions | null) {
+  // maxPostDataSize stays 0: request bodies are never buffered.
+  return bodies
+    ? {
+        maxTotalBufferSize: MAX_CDP_BODY_TOTAL_BYTES,
+        maxResourceBufferSize: bodies.maxResourceBytes,
+        maxPostDataSize: 0,
+      }
+    : { maxTotalBufferSize: 0, maxResourceBufferSize: 0, maxPostDataSize: 0 };
+}
+
+function compileBodyCapture(bodies: BodyCaptureOptions | null): BodyCaptureState | null {
+  if (!bodies) return null;
+  return {
+    urlPattern: bodies.urlPattern,
+    maxResourceBytes: bodies.maxResourceBytes,
+    matcher: bodies.urlPattern ? compileUrlPattern(bodies.urlPattern) : null,
+  };
+}
+
+function dropBodies(state: TabCaptureState) {
+  state.bodies = null;
+  state.bodyIndex.clear();
+}
+
+function isBodyAvailable(state: TabCaptureState, requestId: string) {
+  if (!state.bodies || state.status !== 'armed' || !state.networkEnabled) return false;
+  const record = state.bodyIndex.get(requestId);
+  return Boolean(record && record.eligible && record.finished && !record.failed && !record.evicted);
 }
 
 function createState(armed: boolean = true): TabCaptureState {
@@ -574,6 +813,8 @@ function createState(armed: boolean = true): TabCaptureState {
     ownsDebugger: true,
     everArmed: armed,
     status: armed ? 'armed' : 'stop_failed',
+    bodies: null,
+    bodyIndex: new Map(),
   };
 }
 
@@ -700,7 +941,10 @@ function snapshot(
   armed: boolean = state.status === 'armed'
 ) {
   return {
-    entries: state.entries.map((entry) => structuredClone(entry)),
+    entries: state.entries.map((entry) => ({
+      ...structuredClone(entry),
+      bodyAvailable: isBodyAvailable(state, entry.requestId),
+    })),
     dropped: state.dropped,
     abandoned: state.abandoned,
     armed,
@@ -709,6 +953,14 @@ function snapshot(
     captureState: armed ? 'armed' : state.ownsDebugger ? 'stop_failed' : 'stopped',
     startedAt: state.startedAt,
     inflight: state.inflight.size,
+    ...(armed && state.bodies
+      ? {
+          bodyCapture: {
+            urlPattern: state.bodies.urlPattern,
+            maxResourceBytes: state.bodies.maxResourceBytes,
+          },
+        }
+      : {}),
   };
 }
 

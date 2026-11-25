@@ -18,6 +18,10 @@ type proxyConfig struct {
 	Port     int    `json:"port"`
 	BindHost string `json:"bindHost"`
 	Token    string `json:"token,omitempty"`
+	// RemoteSensitiveReads allows gated sensitive.read sources (response
+	// bodies, IndexedDB records) for proxy agents. The
+	// transport is unencrypted without SSH.
+	RemoteSensitiveReads bool `json:"remoteSensitiveReads,omitempty"`
 }
 
 func readProxyConfig(c config) (*proxyConfig, error) {
@@ -56,7 +60,8 @@ func readProxyConfig(c config) (*proxyConfig, error) {
 	if bindHost == "" || strings.ContainsAny(bindHost, " \t\r\n/\\") {
 		return ignored("invalid bindHost")
 	}
-	return &proxyConfig{Enabled: true, Port: port, BindHost: bindHost, Token: raw.text("token")}, nil
+	// Only an explicit JSON true opts in; anything else keeps the refusal.
+	return &proxyConfig{Enabled: true, Port: port, BindHost: bindHost, Token: raw.text("token"), RemoteSensitiveReads: string(raw["remoteSensitiveReads"]) == "true"}, nil
 }
 func loopbackHost(host string) bool {
 	host = strings.Trim(strings.ToLower(strings.TrimSpace(host)), "[]")
@@ -83,7 +88,7 @@ func resolveProxySettings(existing *proxyConfig, args []string) (proxyConfig, er
 		case "--unsafe-plaintext":
 			unsafe = true
 			continue
-		case "--port", "--bind-host", "--token":
+		case "--port", "--bind-host", "--token", "--remote-sensitive-reads":
 		default:
 			return p, fmt.Errorf("unknown proxy enable option %q", flag)
 		}
@@ -104,6 +109,15 @@ func resolveProxySettings(existing *proxyConfig, args []string) (proxyConfig, er
 		case "--token":
 			p.Token = strings.TrimSpace(args[i])
 			explicitToken = true
+		case "--remote-sensitive-reads":
+			switch args[i] {
+			case "allow":
+				p.RemoteSensitiveReads = true
+			case "deny":
+				p.RemoteSensitiveReads = false
+			default:
+				return p, errors.New("--remote-sensitive-reads must be allow or deny")
+			}
 		}
 	}
 	if explicitToken && rotate {
@@ -155,7 +169,7 @@ func handleProxyCommand(ctx context.Context, c config, args []string) error {
 			}
 			cl.close()
 		}
-		fmt.Printf("Browser Bridge proxy is enabled on %s.\nConfig: %s\nDaemon: %s\n", net.JoinHostPort(existing.BindHost, strconv.Itoa(existing.Port)), path, state)
+		fmt.Printf("Browser Bridge proxy is enabled on %s.\nConfig: %s\nDaemon: %s\nRemote sensitive reads: %s\n", net.JoinHostPort(existing.BindHost, strconv.Itoa(existing.Port)), path, state, remoteSensitiveReadsLabel(existing.RemoteSensitiveReads))
 		return nil
 	case "enable":
 		p, err := resolveProxySettings(existing, args[1:])
@@ -178,7 +192,7 @@ func handleProxyCommand(ctx context.Context, c config, args []string) error {
 		if _, err = startLocalDaemon(ctx, next); err != nil {
 			return err
 		}
-		fmt.Printf("Browser Bridge proxy enabled on %s.\nToken: %s\nConfig: %s\n", net.JoinHostPort(p.BindHost, strconv.Itoa(p.Port)), p.Token, path)
+		fmt.Printf("Browser Bridge proxy enabled on %s.\nToken: %s\nConfig: %s\nRemote sensitive reads: %s\n", net.JoinHostPort(p.BindHost, strconv.Itoa(p.Port)), p.Token, path, remoteSensitiveReadsLabel(p.RemoteSensitiveReads))
 		return nil
 	case "disable":
 		if len(args) != 1 {
@@ -202,6 +216,13 @@ func handleProxyCommand(ctx context.Context, c config, args []string) error {
 	}
 	return errors.New("usage: bbx proxy <enable|disable|status>")
 }
+func remoteSensitiveReadsLabel(allowed bool) string {
+	if allowed {
+		return "allowed (response bodies and IndexedDB records cross the proxy transport; use an SSH tunnel)"
+	}
+	return "denied (enable with --remote-sensitive-reads allow)"
+}
+
 func handleConfigCommand(c config, args []string) error {
 	if len(args) < 2 || args[1] != "auto-update" || (args[0] != "get" && args[0] != "set") || (args[0] == "get" && len(args) != 2) || (args[0] == "set" && len(args) != 3) {
 		return errors.New("usage: bbx config <get auto-update|set auto-update off|compatible>")

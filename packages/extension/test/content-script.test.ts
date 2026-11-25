@@ -3972,6 +3972,12 @@ test('content script page state, storage, and screenshot helpers report page con
         key: 'huge',
         maxBytes: 262_144,
       });
+      // An unknown or gated source never falls back to localStorage here.
+      const unknownSensitive = await executeBridgeMethod(listener, 'sensitive.read', {
+        source: 'response_body',
+        key: 'exact',
+        maxBytes: 262_144,
+      });
       const elementRect = await executeBridgeMethod(listener, 'screenshot.capture_element', {
         target: { selector: '#shot' },
       });
@@ -4016,6 +4022,12 @@ test('content script page state, storage, and screenshot helpers report page con
         message: 'No session storage value exists for the requested key.',
         details: { source: 'session_storage', keyLength: 7 },
       });
+      assert.deepEqual(unknownSensitive.error, {
+        code: 'INVALID_REQUEST',
+        message: 'The content script reads only local_storage and session_storage.',
+        details: { reason: 'unsupported_source' },
+      });
+      assert.equal(JSON.stringify(unknownSensitive).includes('line 1'), false);
       assert.deepEqual(emptySensitive, {
         source: 'local_storage',
         value: '',

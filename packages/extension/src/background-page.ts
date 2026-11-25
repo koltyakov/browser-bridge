@@ -5,11 +5,17 @@ export type PageRequestControllerDependencies = {
     tabId: number,
     clear: boolean
   ) => Promise<{
-    entries: Array<{ level: string } & Record<string, unknown>>;
+    entries: import('../../../protocol/src/types.js').ConsoleEntry[];
     dropped: number;
     provenance?: 'page_main_world';
     integrity?: 'untrusted';
   }>;
+  /** Map stack frames through source maps. Never rejects for a resolution
+  problem; frames carry sourceUnavailable instead. */
+  resolveConsoleSources?: (
+    tabId: number,
+    entries: import('../../../protocol/src/types.js').ConsoleEntry[]
+  ) => Promise<import('../../../protocol/src/types.js').ConsoleEntry[]>;
   ensureNetworkInterceptor: (tabId: number) => Promise<void>;
   readNetworkBuffer: (
     tabId: number,
@@ -20,7 +26,10 @@ export type PageRequestControllerDependencies = {
     provenance?: 'page_main_world';
     integrity?: 'untrusted';
   }>;
-  startCdpNetworkCapture: (tabId: number) => Promise<Record<string, unknown>>;
+  startCdpNetworkCapture: (
+    tabId: number,
+    bodies: import('../../../protocol/src/types.js').NormalizedNetworkBodyCaptureParams | null
+  ) => Promise<Record<string, unknown>>;
   clearCdpNetworkCapture: (tabId: number) => Promise<Record<string, unknown>>;
   readCdpNetworkCapture: (tabId: number, clear: boolean) => Promise<Record<string, unknown>>;
   stopCdpNetworkCapture: (tabId: number) => Promise<Record<string, unknown>>;
@@ -451,7 +460,26 @@ Uses chrome.scripting.executeScript in the MAIN world. */
       params.level === 'all'
         ? entries
         : entries.filter((entry) => matchesConsoleLevel(params.level, entry.level));
-    const limited = filtered.slice(-params.limit);
+    let limited = filtered.slice(-params.limit);
+    if (params.resolveSources && dependencies.resolveConsoleSources) {
+      // Resolve only the entries being returned, so the work stays bounded
+      // by limit. A failed resolution must not fail the console read.
+      try {
+        limited = await dependencies.resolveConsoleSources(target.tabId, limited);
+      } catch {
+        limited = limited.map((entry) =>
+          entry.stack
+            ? {
+                ...entry,
+                stack: entry.stack.map((frame) => ({
+                  ...frame,
+                  sourceUnavailable: 'resolution_failed' as const,
+                })),
+              }
+            : entry
+        );
+      }
+    }
 
     return createSuccess(
       request.id,
@@ -804,7 +832,7 @@ via chrome.scripting.executeScript in the MAIN world, capturing fetch/XHR. */
       params.source === 'fetch-xhr'
         ? await dependencies.readNetworkBuffer(target.tabId, params.clear)
         : params.capture === 'start'
-          ? await dependencies.startCdpNetworkCapture(target.tabId)
+          ? await dependencies.startCdpNetworkCapture(target.tabId, params.bodies)
           : params.capture === 'clear'
             ? await dependencies.clearCdpNetworkCapture(target.tabId)
             : params.capture === 'stop'
@@ -820,6 +848,7 @@ via chrome.scripting.executeScript in the MAIN world, capturing fetch/XHR. */
       captureState?: string;
       startedAt?: number | null;
       inflight?: number;
+      bodyCapture?: import('../../../protocol/src/types.js').NormalizedNetworkBodyCaptureParams;
       provenance?: 'page_main_world';
       integrity?: 'untrusted';
     };
@@ -849,6 +878,9 @@ via chrome.scripting.executeScript in the MAIN world, capturing fetch/XHR. */
         startedAt: params.source === 'cdp' ? (capture.startedAt ?? null) : null,
         inflight: params.source === 'cdp' ? (capture.inflight ?? 0) : 0,
         ownershipHeld: params.source === 'cdp' ? capture.ownershipHeld === true : false,
+        ...(params.source === 'cdp' && capture.bodyCapture
+          ? { bodyCapture: capture.bodyCapture }
+          : {}),
         provenance:
           params.source === 'fetch-xhr'
             ? (capture.provenance ?? 'page_main_world')

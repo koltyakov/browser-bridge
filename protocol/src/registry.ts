@@ -173,18 +173,20 @@ const BRIDGE_METHOD_DESCRIPTIONS: Readonly<Record<import('./types.js').BridgeMet
     'setup.install': 'Install or uninstall MCP or skill integration targets.',
     'page.get_state': 'Get URL, title, origin, and ready-state for the active page.',
     'page.evaluate': 'Evaluate JavaScript in the page context.',
-    'page.get_console': 'Read buffered console output from the page.',
+    'page.get_console':
+      'Read buffered console output and error stacks from the page. resolveSources=true maps frames through source maps the tab loaded.',
     'page.handle_dialog':
       'Inspect or explicitly act on the current JavaScript dialog. expectedDialogId is only a stale-decision check immediately before dispatch; Chrome cannot bind the CDP command atomically to that identifier.',
     'page.wait_for_load_state':
       'Wait for truthful tab-complete state and/or an event-aware URL condition.',
-    'page.get_storage': 'Read local or session storage key metadata without values.',
-    'sensitive.read': 'Deliberately read one exact local or session storage value.',
+    'page.get_storage': 'Read local/session storage keys or IndexedDB metadata, never values.',
+    'sensitive.read':
+      'Deliberately read one exact local/session storage value, or one captured CDP response body or IndexedDB record (each requiring its own access setting).',
     'page.get_text': 'Read bounded visible text from the page.',
     'page.extract_content':
       'Extract bounded semantic page content as text or Markdown without returning source HTML.',
     'page.get_network':
-      'Read buffered fetch/XHR activity or explicitly manage bounded all-resource CDP capture.',
+      'Read buffered fetch/XHR activity or explicitly manage bounded all-resource CDP capture. capture=start with bodies buffers response bodies for sensitive.read.',
     'network.export_har':
       'Export bounded captured network evidence as a HAR 1.2 document, inline or as a daemon-owned artifact.',
     'network.intercept.add': 'Add a request interception rule (CDP Fetch domain).',
@@ -212,7 +214,7 @@ const BRIDGE_METHOD_DESCRIPTIONS: Readonly<Record<import('./types.js').BridgeMet
     'dom.get_html':
       'Read inner or outer HTML for one element; prune drops scripts, styles, SVG, comments, hidden subtrees, and non-semantic attributes.',
     'dom.get_accessibility_tree':
-      'Read an accessibility tree; source=dom returns actionable refs without the debugger. DOM-only scope=auto|modal|main|document opts into document-local scope; selector overrides it. find is literal case-insensitive role/name search with context=0..3. Scoped/search reads never merge other frames and report scope, fallback and completeness.',
+      'Read an accessibility tree; source=dom returns actionable refs without the debugger. DOM-only scope=auto|modal|main|document opts into document-local scope; selector overrides it. find is literal case-insensitive role/name search with context=0..3. Scoped/search reads never merge other frames and report scope, fallback and completeness. DOM reads return snapshotId; pass it as since to get unchanged, a delta {added, changed, removed}, or the full outline with deltaUnavailable.',
     'layout.get_box_model': 'Read the box model for one element.',
     'layout.hit_test': 'Resolve the topmost element at a viewport point.',
     'styles.get_computed':
@@ -405,7 +407,7 @@ export const BRIDGE_METHOD_REGISTRY: Readonly<
     'page.get_console',
     'page',
     true,
-    ['level', 'clear', 'limit'],
+    ['level', 'clear', 'limit', 'resolveSources'],
     'low',
     METHOD_POLICIES.pageRead,
     { paramsType: 'ConsoleParams', example: { level: 'error', limit: 10 } }
@@ -442,7 +444,7 @@ export const BRIDGE_METHOD_REGISTRY: Readonly<
     'sensitive.read',
     'sensitive',
     true,
-    ['source', 'key'],
+    ['source', 'key', 'requestId', 'encoding', 'database', 'store', 'frameId'],
     'low',
     METHOD_POLICIES.sensitiveRead
   ),
@@ -468,7 +470,7 @@ export const BRIDGE_METHOD_REGISTRY: Readonly<
     'page.get_network',
     'page',
     true,
-    ['clear', 'limit', 'urlPattern', 'source', 'capture'],
+    ['clear', 'limit', 'urlPattern', 'source', 'capture', 'bodies'],
     'low',
     METHOD_POLICIES.networkRead
   ),
@@ -678,6 +680,7 @@ export const BRIDGE_METHOD_REGISTRY: Readonly<
       'scope',
       'find',
       'context',
+      'since',
     ],
     'moderate',
     METHOD_POLICIES.domReadDebugger,

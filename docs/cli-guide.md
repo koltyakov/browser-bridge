@@ -170,6 +170,7 @@ bbx console error
 bbx network 20
 bbx page-text 4000
 bbx storage local authToken featureFlag # key/presence metadata only
+bbx storage indexeddb                   # IndexedDB metadata per frame, never records
 bbx call sensitive.read '{"source":"local_storage","key":"authToken"}'
 bbx perf
 bbx eval 'window.location.href'

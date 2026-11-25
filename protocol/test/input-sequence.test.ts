@@ -111,6 +111,27 @@ test('input.perform normalizes bounded read steps and opt-in final evidence', ()
   assert.deepEqual(normalizeInputPerformParams(normalized), normalized);
 });
 
+test('input.perform reads the DOM outline, never the debugger tree', () => {
+  const normalized = normalizeInputPerformParams({
+    steps: [
+      { method: 'input.click', params: { target: { selector: '#add' } } },
+      { method: 'dom.get_accessibility_tree', params: { since: 'ol_k3v9x2m4q8w1' } },
+    ],
+  });
+  assert.deepEqual(
+    { source: normalized.steps[1].params.source, since: normalized.steps[1].params.since },
+    { source: 'dom', since: 'ol_k3v9x2m4q8w1' }
+  );
+  assert.deepEqual(normalizeInputPerformParams(normalized), normalized);
+  assert.throws(
+    () =>
+      normalizeInputPerformParams({
+        steps: [{ method: 'dom.get_accessibility_tree', params: { source: 'cdp' } }],
+      }),
+    { code: 'INVALID_REQUEST', message: /supports only source "dom"/ }
+  );
+});
+
 test('input.perform keeps observation explicit and preserves the final action auto-wait', () => {
   const normalized = normalizeInputPerformParams({
     returnLastResult: true,

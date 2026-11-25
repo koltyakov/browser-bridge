@@ -3,6 +3,7 @@ import {
   ERROR_CODES,
   BRIDGE_METHOD_REGISTRY,
   isBridgeMethod,
+  isGatedSensitiveSource,
 } from '../../../protocol/src/index.js';
 import type {
   BridgeRequest,
@@ -21,7 +22,7 @@ import {
 } from './background-helpers.js';
 import type { ResolvedTabTarget } from './background-routing.js';
 import type { AccessSettingsSnapshot } from '../../../protocol/src/types.js';
-import { isNavigationAllowed } from './access-settings.js';
+import { sensitiveReadSetting, isNavigationAllowed } from './access-settings.js';
 
 export type CapabilityProbe = { webmcp: boolean };
 
@@ -194,6 +195,7 @@ export async function discoverRuntimeCapabilities(
     const contentFrame =
       (isTabBoundMethod(method) &&
         method !== 'page.get_state' &&
+        !(method === 'sensitive.read' && args.source === 'response_body') &&
         (!method.startsWith('screenshot.') || method === 'screenshot.capture_element')) ||
       (method === 'dom.get_accessibility_tree' && args.source === 'dom');
     if (frameId !== 0 && !contentFrame) return answer('unavailable', 'top_frame_only');
@@ -215,6 +217,12 @@ export async function discoverRuntimeCapabilities(
       if (args.tabId !== tab.tabId) return answer('unknown', 'different_target_requires_discovery');
       if (!dependencies.ownsTab(args.tabId))
         return answer('unavailable', 'allowClosingUserTabs_disabled');
+    }
+    if (method === 'sensitive.read' && isGatedSensitiveSource(args.source)) {
+      if (args.source !== 'response_body' && args.source !== 'indexeddb')
+        return answer('unavailable', 'unsupported_sensitive_source');
+      const setting = sensitiveReadSetting(args.source);
+      if (!settings.settings[setting]) return answer('unavailable', `${setting}_disabled`);
     }
     if (method === 'navigation.navigate' && !settings.settings.allowOffDomainNavigation) {
       if (typeof args.url !== 'string') return answer('unknown', 'navigation_url_required');

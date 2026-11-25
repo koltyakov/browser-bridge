@@ -104,6 +104,9 @@ export interface AccessSettings {
   allowClosingUserTabs: boolean;
   closeAiTabsWhenDone: boolean;
   allowOffDomainNavigation: boolean;
+  /** Independent opt-ins for captured response bodies and IndexedDB record values. */
+  allowResponseBodyReads: boolean;
+  allowIndexedDBReads: boolean;
 }
 
 export interface AccessSettingsSnapshot {
@@ -1051,6 +1054,7 @@ export type PerformStepMethod =
   | 'page.get_text'
   | 'dom.query'
   | 'dom.get_text'
+  | 'dom.get_accessibility_tree'
   | 'navigation.navigate';
 
 export interface PerformStepParams {
@@ -1320,6 +1324,72 @@ export interface ConsoleParams {
   level?: string;
   clear?: boolean;
   limit?: number;
+  /** Map stack frames through source maps (default: false). Fetches scripts and maps from the extension. */
+  resolveSources?: boolean;
+}
+
+/** Why a stack frame has no original position. The frame keeps its generated position. */
+export type ConsoleSourceUnavailableReason =
+  | 'unsupported_scheme'
+  | 'loaded_scripts_unavailable'
+  | 'not_a_loaded_script'
+  | 'ambiguous_script'
+  | 'local_network_script'
+  | 'budget_exhausted'
+  | 'fetch_timeout'
+  | 'script_fetch_failed'
+  | 'script_too_large'
+  | 'no_source_map'
+  | 'invalid_map_url'
+  | 'unsupported_map_url'
+  | 'cross_origin_map'
+  | 'map_fetch_failed'
+  | 'map_too_large'
+  | 'malformed_map'
+  | 'no_mapping'
+  | 'resolution_failed';
+
+/** Original position from a source map. sourcesContent is never returned. */
+export interface ConsoleFrameSource {
+  /** Source as named by the map, resolved against the map URL when relative. */
+  file: string;
+  /** file without its scheme, bundler namespace, or leading "./". */
+  path: string;
+  /** 1-based line. */
+  line: number;
+  /** 1-based column. */
+  column: number;
+  name?: string;
+}
+
+/** One parsed V8 stack frame. Page-controlled text: treat as untrusted. */
+export interface ConsoleStackFrame {
+  function?: string;
+  /** Incidental-sanitized script URL. */
+  url: string;
+  /** 1-based line. */
+  line: number;
+  /** 1-based column. */
+  column: number;
+  source?: ConsoleFrameSource;
+  sourceUnavailable?: ConsoleSourceUnavailableReason;
+}
+
+export interface ConsoleEntry {
+  level: string;
+  args: string[];
+  ts: number;
+  /** Top frames of the error stack, when one was captured. */
+  stack?: ConsoleStackFrame[];
+}
+
+export interface ConsoleResult {
+  entries: ConsoleEntry[];
+  count: number;
+  total: number;
+  dropped: number;
+  provenance: 'page_main_world';
+  integrity: 'untrusted';
 }
 
 export type DialogAction = 'inspect' | 'accept' | 'dismiss';
@@ -1341,6 +1411,7 @@ export interface NormalizedConsoleParams extends BridgeParams {
   level: string;
   clear: boolean;
   limit: number;
+  resolveSources: boolean;
 }
 
 export interface WaitForParams {
@@ -1443,34 +1514,204 @@ export interface NormalizedDragParams extends BridgeParams {
   recoverStale: boolean;
 }
 
+/** local and session list Web Storage keys; indexeddb lists
+ * metadata only. No type returns values. */
+export type StorageType = 'local' | 'session' | 'indexeddb';
+
 export interface StorageParams {
-  type?: 'local' | 'session';
+  type?: StorageType;
+  /** local and session only. */
   keys?: string[];
 }
 
 export interface NormalizedStorageParams extends BridgeParams {
-  type: 'local' | 'session';
+  type: StorageType;
   keys: string[] | null;
 }
 
-export type SensitiveStorageSource = 'local_storage' | 'session_storage';
+export interface IndexedDbIndexMetadata {
+  name: string;
+  keyPath: string | string[];
+  unique: boolean;
+  multiEntry: boolean;
+}
 
-export interface SensitiveReadParams {
+export interface IndexedDbStoreMetadata {
+  name: string;
+  keyPath: string | string[] | null;
+  autoIncrement: boolean;
+  indexes: IndexedDbIndexMetadata[];
+  /** Record count, or null when counting hit the time bound. */
+  count: number | null;
+}
+
+/** Why one database's metadata is missing: the open waited past its bound
+ * (another connection holds a version change), the database disappeared after
+ * listing (its creation was aborted), or Chrome refused the open. */
+export type IndexedDbDatabaseError = 'open_timeout' | 'database_missing' | 'open_failed';
+
+export interface IndexedDbDatabaseMetadata {
+  name: string;
+  version: number;
+  stores: IndexedDbStoreMetadata[];
+  storeCount: number;
+  error?: IndexedDbDatabaseError;
+}
+
+export type IndexedDbIncompleteReason =
+  | 'time_budget'
+  | 'database_limit'
+  | 'store_limit'
+  | 'database_error'
+  | 'databases_timeout';
+
+/** IndexedDB metadata for one frame's own storage origin and partition. */
+export interface IndexedDbFrameMetadata {
+  frameId: number;
+  origin: string;
+  /** False when this document cannot use IndexedDB (opaque origin, blocked by policy). */
+  available: boolean;
+  databases: IndexedDbDatabaseMetadata[];
+  total: number;
+  incomplete: IndexedDbIncompleteReason[];
+}
+
+export interface IndexedDbStorageResult {
+  type: 'indexeddb';
+  /** One entry per scriptable frame, top document first. Never merged across frames. */
+  frames: IndexedDbFrameMetadata[];
+  /** Child frames whose content script did not answer in time. */
+  incompleteFrames?: number[];
+}
+
+export interface WebStorageResult {
+  type: 'local' | 'session';
+  entries: Array<{ key: string; present: boolean }>;
+  count: number;
+  total: number;
+  truncated: boolean;
+}
+
+export type StorageResult = WebStorageResult | IndexedDbStorageResult;
+
+export type SensitiveStorageSource = 'local_storage' | 'session_storage';
+/** Sources gated by source-specific access settings and refused over a
+ * remote destination unless the browser machine opts in. */
+export type SensitiveGatedSource = 'response_body' | 'indexeddb';
+export type SensitiveReadSource = SensitiveStorageSource | SensitiveGatedSource;
+export type SensitiveBodyEncoding = 'text' | 'base64';
+
+export interface SensitiveStorageReadParams {
   source: SensitiveStorageSource;
   key: string;
 }
 
-export interface NormalizedSensitiveReadParams extends BridgeParams {
+export interface SensitiveResponseBodyReadParams {
+  source: 'response_body';
+  /** requestId of a page.get_network source=cdp entry from this tab's capture. */
+  requestId: string;
+  /** text (default) rejects binary bodies; base64 returns any body as base64. */
+  encoding?: SensitiveBodyEncoding;
+}
+
+/** IndexedDB date key: milliseconds since the UNIX epoch. */
+export interface IndexedDbDateKey {
+  type: 'date';
+  value: number;
+}
+
+/** A JSON-expressible IndexedDB key. Strings and finite numbers map directly;
+ * dates use IndexedDbDateKey; arrays hold those, one level deep. Binary and
+ * nested array keys are not supported. */
+export type IndexedDbKey =
+  | string
+  | number
+  | IndexedDbDateKey
+  | Array<string | number | IndexedDbDateKey>;
+
+export interface SensitiveIndexedDbReadParams {
+  source: 'indexeddb';
+  /** Exact database name from page.get_storage type=indexeddb. */
+  database: string;
+  /** Exact object store name. */
+  store: string;
+  /** Primary key of the record. */
+  key: IndexedDbKey;
+  /** Frame whose origin owns the database, from the listing; default 0 (top document). */
+  frameId?: number;
+}
+
+/** Discriminated on source; each source declares its own exact locator. */
+export type SensitiveReadParams =
+  | SensitiveStorageReadParams
+  | SensitiveResponseBodyReadParams
+  | SensitiveIndexedDbReadParams;
+
+export interface NormalizedSensitiveStorageReadParams extends BridgeParams {
   source: SensitiveStorageSource;
   key: string;
   maxBytes: number;
 }
 
-export interface SensitiveReadResult {
+export interface NormalizedSensitiveResponseBodyReadParams extends BridgeParams {
+  source: 'response_body';
+  requestId: string;
+  encoding: SensitiveBodyEncoding;
+  maxBytes: number;
+}
+
+export interface NormalizedSensitiveIndexedDbReadParams extends BridgeParams {
+  source: 'indexeddb';
+  database: string;
+  store: string;
+  key: IndexedDbKey;
+  frameId: number;
+  maxBytes: number;
+}
+
+export type NormalizedSensitiveReadParams =
+  | NormalizedSensitiveStorageReadParams
+  | NormalizedSensitiveResponseBodyReadParams
+  | NormalizedSensitiveIndexedDbReadParams;
+
+export interface SensitiveStorageReadResult {
   source: SensitiveStorageSource;
   value: string;
   exact: true;
 }
+
+export interface SensitiveResponseBodyReadResult {
+  source: 'response_body';
+  requestId: string;
+  body: string;
+  encoding: SensitiveBodyEncoding;
+  mimeType: string;
+  /** Decoded body size in bytes, at most 262,144. */
+  bytes: number;
+  exact: true;
+}
+
+export interface SensitiveIndexedDbReadResult {
+  source: 'indexeddb';
+  frameId: number;
+  database: string;
+  store: string;
+  /** The record as JSON. Values JSON cannot carry (Blob, File, ArrayBuffer,
+   * typed arrays, Map, Set, Date, BigInt, non-finite numbers, undefined, cycles)
+   * are replaced, wherever they are nested, by {"$bbxType": name, ...} with a
+   * type and size description; binary contents are never returned. */
+  value: unknown;
+  /** Number of values replaced by a $bbxType description. */
+  described: number;
+  /** UTF-8 size of the JSON value, at most 262,144. */
+  bytes: number;
+  exact: true;
+}
+
+export type SensitiveReadResult =
+  | SensitiveStorageReadResult
+  | SensitiveResponseBodyReadResult
+  | SensitiveIndexedDbReadResult;
 
 export type ExtractContentFormat = 'text' | 'markdown';
 export type ExtractContentConsistency = 'best_effort' | 'settled';
@@ -1740,6 +1981,12 @@ export interface AccessibilityTreeParams {
   find?: string;
   /** Semantic siblings on either side plus ancestors; 0..3, default 1 with find. */
   context?: number;
+  /**
+   * DOM only. snapshotId of an earlier read in the same tab. Returns unchanged,
+   * a delta of added/changed lines and removed refs, or the full outline with
+   * deltaUnavailable.
+   */
+  since?: string;
 }
 
 export interface NormalizedAccessibilityTreeParams extends BridgeParams {
@@ -1753,6 +2000,7 @@ export interface NormalizedAccessibilityTreeParams extends BridgeParams {
   scope?: 'auto' | 'modal' | 'main' | 'document';
   find?: string;
   context?: number;
+  since?: string;
 }
 
 export interface DomOutlineNode {
@@ -1795,17 +2043,52 @@ export interface DomOutlineSearch {
   returnedMatches: number;
 }
 
+/**
+ * Why a read with since returned the full outline. navigated: the base belongs
+ * to another document or tab. base_truncated: the base or this read hit
+ * maxNodes or the scan limit. delta_too_large: the delta would cost more than
+ * about 60% of the outline.
+ */
+export type DomOutlineDeltaUnavailableReason =
+  | 'navigated'
+  | 'expired'
+  | 'evicted'
+  | 'scope_changed'
+  | 'base_truncated'
+  | 'refs_pruned'
+  | 'delta_too_large';
+
+export interface DomOutlineDelta {
+  /** New lines in document order: outline strings, or nodes when format is tree. */
+  added: string[] | DomOutlineNode[];
+  /** Lines whose role, name, states, depth, parent or sibling order changed. */
+  changed: string[] | DomOutlineNode[];
+  /** Refs of lines that are gone. */
+  removed: string[];
+  /** Child frames whose earlier lines are all gone; their current lines are in added. */
+  removedFrames?: number[];
+}
+
 export interface DomOutlineResult {
   source: 'dom';
   format: 'tree' | 'outline';
   nodes?: DomOutlineNode[];
   outline?: string;
+  /** Lines in the current outline, also when only a delta is returned. */
   count: number;
   scanned: number;
   truncated: boolean;
   scope?: DomOutlineScope;
   search?: DomOutlineSearch;
   completeness?: DomOutlineCompleteness;
+  /** Pass as since on the next read of this tab. Valid for five minutes, four per tab. */
+  snapshotId?: string;
+  /** With since: nothing in the outline changed. */
+  unchanged?: true;
+  /** With since: changes from the base. */
+  delta?: DomOutlineDelta;
+  /** With since: the full outline is returned instead of a delta. */
+  deltaUnavailable?: DomOutlineDeltaUnavailableReason;
 }
 
 export interface AccessibilityTreeNode {
@@ -1851,12 +2134,27 @@ export interface AccessibilityTreeResult {
 export type NetworkSource = 'fetch-xhr' | 'cdp';
 export type NetworkCaptureAction = 'read' | 'start' | 'clear' | 'stop';
 
+/** Opt-in response-body buffering for source=cdp capture=start. */
+export interface NetworkBodyCaptureParams {
+  /** Case-sensitive glob (* and ?) matched against the full request URL.
+   * Only matching requests are readable. Strongly recommended. */
+  urlPattern?: string;
+  /** Per-resource Chrome buffer cap in bytes, 1..5242880; default 5242880. */
+  maxResourceBytes?: number;
+}
+
+export interface NormalizedNetworkBodyCaptureParams {
+  urlPattern: string | null;
+  maxResourceBytes: number;
+}
+
 export interface NetworkParams {
   clear?: boolean;
   limit?: number;
   urlPattern?: string;
   source?: NetworkSource;
   capture?: NetworkCaptureAction;
+  bodies?: NetworkBodyCaptureParams;
 }
 
 export interface NormalizedNetworkParams extends BridgeParams {
@@ -1865,6 +2163,7 @@ export interface NormalizedNetworkParams extends BridgeParams {
   urlPattern: string | null;
   source: NetworkSource;
   capture: NetworkCaptureAction;
+  bodies: NormalizedNetworkBodyCaptureParams | null;
 }
 
 export interface CdpNetworkEntry {
@@ -1887,6 +2186,9 @@ export interface CdpNetworkEntry {
   failureReason: string;
   duration: number;
   timestamp: number;
+  /** True when this capture buffers bodies, the request finished and matches
+   * bodies.urlPattern. Chrome may still evict the body before a read. */
+  bodyAvailable: boolean;
 }
 
 export interface NetworkResult {
@@ -1906,6 +2208,8 @@ export interface NetworkResult {
   ownershipHeld: boolean;
   startedAt: number | null;
   inflight: number;
+  /** Present only while an armed CDP capture buffers response bodies. */
+  bodyCapture?: NormalizedNetworkBodyCaptureParams;
   truncated: boolean;
   truncation: { reason: 'limit' | null; limit: number; omitted: number };
 }

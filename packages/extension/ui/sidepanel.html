@@ -71,10 +71,12 @@
             <button id="enable-tab-access" class="access-tab-button" type="button">Enable this tab access (only)</button>
             <div id="access-settings-heading" class="access-settings-heading">Settings</div>
             <div role="group" aria-labelledby="access-settings-heading">
-              <label class="access-setting"><input id="allow-creating-tabs" type="checkbox" checked> Allow creating new tabs</label>
+              <label class="access-setting" title="Let agents open new tabs in the window where you enabled access."><input id="allow-creating-tabs" type="checkbox" checked> Allow creating new tabs</label>
               <label class="access-setting" title="Agents close the temporary tabs they opened as soon as they finish with them."><input id="close-ai-tabs-when-done" type="checkbox" checked> Close BBX tabs when done</label>
               <label class="access-setting" title="Allow direct navigation commands to a different hostname. Page links and redirects are not blocked."><input id="allow-off-domain-navigation" type="checkbox"> Allow changing this tab's domain</label>
-              <label class="access-setting"><input id="allow-closing-user-tabs" type="checkbox"> Allow closing user tabs</label>
+              <label class="access-setting" title="Let agents close tabs you opened. When this is off, agents can still close tabs they created."><input id="allow-closing-user-tabs" type="checkbox"> Allow closing user tabs</label>
+              <label class="access-setting" title="Let agents capture and read individual network response bodies."><input id="allow-response-body-reads" type="checkbox"> Allow reading response bodies</label>
+              <label class="access-setting" title="Let agents read individual IndexedDB records. Listing database metadata does not require this setting."><input id="allow-indexeddb-reads" type="checkbox"> Allow reading IndexedDB records</label>
             </div>
           </div>
         </details>

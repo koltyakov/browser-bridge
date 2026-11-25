@@ -4,9 +4,11 @@ Load when access is denied by a setting, several browser profiles are connected,
 
 ## Access settings
 
-The side panel can grant access to just one tab and control tab creation, user-tab closing, direct cross-domain navigation, and closing AI-created tabs when access ends. These settings take effect on new Bridge commands without reconnecting. Work already dispatched may finish. They are Bridge-command policies, not a browser-wide firewall for page scripts, link clicks, or redirects.
+The side panel can grant access to just one tab and control tab creation, user-tab closing, direct cross-domain navigation, closing AI-created tabs when access ends, and reading response bodies. These settings take effect on new Bridge commands without reconnecting. Work already dispatched may finish. They are Bridge-command policies, not a browser-wide firewall for page scripts, link clicks, or redirects.
 
 New tabs opened from an authorized tab inherit its tab-only access within the same window. This also applies to links opened from those new tabs. Unrelated tabs remain outside the grant, and linked user tabs are not AI-owned or automatically closed when access ends. Group membership alone never grants access.
+
+**Allow reading response bodies** (`allowResponseBodyReads`) gates `response_body` reads and `page.get_network` capture start with `bodies`. **Allow reading IndexedDB records** (`allowIndexedDBReads`) gates `indexeddb` reads. Both default off; `local_storage` and `session_storage` reads and `page.get_storage` metadata (including IndexedDB) are unaffected. Over a remote proxy those sources are also refused (`details.reason=remote_sensitive_reads_disabled`) unless the browser machine runs `bbx proxy enable --remote-sensitive-reads allow`; that is a daemon setting, so `access.wait_for_change` does not observe it.
 
 `health.ping` returns `accessSettings.settings` and an opaque `accessSettings.settingsRevision`. Active sessions also receive updated settings on their next ordinary response. A denied policy operation returns `ACCESS_DENIED` with `details.reason=policy_setting_disabled`, `details.setting`, `details.settingsRevision`, the current settings, and `dispatched:false`. This is not a request to re-enable window access. Do not retry repeatedly or bypass the setting through another method.
 

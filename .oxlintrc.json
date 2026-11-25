@@ -6,6 +6,7 @@
     "packages/extension/assets/**",
     "packages/extension/ui/**/*.css",
     "packages/extension/ui/**/*.html",
+    "tests/fixtures/source-maps/generated/**",
     "tmp/**"
   ],
   "plugins": ["eslint"],

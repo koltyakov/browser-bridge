@@ -124,6 +124,12 @@ func cliSummaryBody(response object, method string, now int64) object {
 		}
 		return done(text, value(evidence), true)
 	}
+	if method == "dom.get_accessibility_tree" && cliOutlineIsComparison(r) {
+		text, evidence, meta := cliOutlineComparisonSummary(r)
+		out := done(text, evidence, true)
+		out["evidenceMeta"] = value(meta)
+		return out
+	}
 	if method == "input.perform" && r.boolean("verified") {
 		outcomes, _ := arr("outcomes")
 		return done(fmt.Sprintf("Sequence completed %s/%s steps; verified %d outcome(s).", d("completed", "0"), d("total", "0"), len(outcomes)), record, true)
@@ -638,6 +644,11 @@ func cliSummaryBody(response object, method string, now int64) object {
 	if r.boolean("exact") && str("source") && str("value") {
 		return done("Sensitive storage value read exactly.", value(object{"source": r["source"], "exact": value(true)}), true)
 	}
+	if r.text("type") == "indexeddb" {
+		if frames, ok := arr("frames"); ok {
+			return cliIndexedDbStorageSummary(r, frames, done)
+		}
+	}
 	if number("count") && str("type") && cliTruthy(r["entries"]) {
 		e := []object{}
 		for _, raw := range entries {
@@ -657,6 +668,9 @@ func cliSummaryBody(response object, method string, now int64) object {
 			item := cliPick(entry, "level", "args")
 			if ts, ok := cliNumberValue(entry["ts"]); ok {
 				item["ago"] = value(cliRelativeTime(float64(now) - ts))
+			}
+			if at := cliConsoleTopFrame(entry); at != "" {
+				item["at"] = value(at)
 			}
 			e = append(e, item)
 		}

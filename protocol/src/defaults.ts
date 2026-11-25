@@ -41,6 +41,12 @@ export const MAX_JSON_LINE_BYTES = MAX_NATIVE_MESSAGE_BYTES;
 /** Maximum UTF-8 size of an exact sensitive value returned atomically. */
 export const MAX_SENSITIVE_VALUE_BYTES = 262_144;
 
+/** Chrome per-resource response-body buffer cap for opt-in CDP body capture. */
+export const MAX_CDP_BODY_RESOURCE_BYTES = 5_242_880;
+
+/** Chrome per-tab response-body buffer cap for opt-in CDP body capture. */
+export const MAX_CDP_BODY_TOTAL_BYTES = 52_428_800;
+
 /** Maximum calls accepted by any read-only batch surface. */
 export const MAX_BATCH_CALLS = 20;
 

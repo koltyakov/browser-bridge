@@ -36,8 +36,17 @@ var cliCommands = []cliCommandDefinition{
 		a.require(0)
 		a.put("patchId", 0)
 	}},
-	{name: "console", method: "page.get_console", summarize: true, parse: func(a *cliShortcutArgs) {
+	{name: "console", method: "page.get_console", usage: "console [level] [--resolve]", summarize: true, parse: func(a *cliShortcutArgs) {
 		a.params["level"], a.params["clear"] = value("all"), value(false)
+		positional := a.args[:0:0]
+		for _, arg := range a.args {
+			if arg == "--resolve" {
+				a.params["resolveSources"] = value(true)
+			} else {
+				positional = append(positional, arg)
+			}
+		}
+		a.args = positional
 		a.put("level", 0)
 	}},
 	{name: "wait", method: "dom.wait_for", usage: "wait <selector> [timeoutMs]", parse: func(a *cliShortcutArgs) {

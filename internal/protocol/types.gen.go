@@ -593,18 +593,22 @@ type AccessSettings struct {
 
 	AllowOffDomainNavigation bool `json:"allowOffDomainNavigation"`
 
+	AllowResponseBodyReads bool `json:"allowResponseBodyReads"`
+
+	AllowIndexedDBReads bool `json:"allowIndexedDBReads"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v AccessSettings) MarshalJSON() ([]byte, error) {
 	type alias AccessSettings
-	return marshalOpen(alias(v), v.Extra, []string{"allowCreatingTabs", "allowClosingUserTabs", "closeAiTabsWhenDone", "allowOffDomainNavigation"})
+	return marshalOpen(alias(v), v.Extra, []string{"allowCreatingTabs", "allowClosingUserTabs", "closeAiTabsWhenDone", "allowOffDomainNavigation", "allowResponseBodyReads", "allowIndexedDBReads"})
 }
 
 func (v *AccessSettings) UnmarshalJSON(data []byte) error {
 	type alias AccessSettings
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"allowCreatingTabs", "allowClosingUserTabs", "closeAiTabsWhenDone", "allowOffDomainNavigation"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"allowCreatingTabs", "allowClosingUserTabs", "closeAiTabsWhenDone", "allowOffDomainNavigation", "allowResponseBodyReads", "allowIndexedDBReads"})
 	if err != nil {
 		return err
 	}
@@ -2053,18 +2057,20 @@ type ConsoleParams struct {
 
 	Limit Optional[float64] `json:"limit,omitzero"`
 
+	ResolveSources Optional[bool] `json:"resolveSources,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v ConsoleParams) MarshalJSON() ([]byte, error) {
 	type alias ConsoleParams
-	return marshalOpen(alias(v), v.Extra, []string{"level", "clear", "limit"})
+	return marshalOpen(alias(v), v.Extra, []string{"level", "clear", "limit", "resolveSources"})
 }
 
 func (v *ConsoleParams) UnmarshalJSON(data []byte) error {
 	type alias ConsoleParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"level", "clear", "limit"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"level", "clear", "limit", "resolveSources"})
 	if err != nil {
 		return err
 	}
@@ -2148,7 +2154,7 @@ func (v *WaitForLoadStateParams) UnmarshalJSON(data []byte) error {
 }
 
 type StorageParams struct {
-	Type Optional[string] `json:"type,omitzero"`
+	Type Optional[StorageType] `json:"type,omitzero"`
 
 	Keys Optional[[]string] `json:"keys,omitzero"`
 
@@ -2172,7 +2178,27 @@ func (v *StorageParams) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type SensitiveReadParams struct {
+type StorageType string
+
+const (
+	StorageTypeLocal StorageType = "local"
+
+	StorageTypeSession StorageType = "session"
+
+	StorageTypeIndexeddb StorageType = "indexeddb"
+)
+
+func (v StorageType) Valid() bool {
+	switch v {
+	case StorageTypeLocal, StorageTypeSession, StorageTypeIndexeddb:
+		return true
+	}
+	return false
+}
+
+type SensitiveReadParams = json.RawMessage
+
+type SensitiveStorageReadParams struct {
 	Source SensitiveStorageSource `json:"source"`
 
 	Key string `json:"key"`
@@ -2180,20 +2206,20 @@ type SensitiveReadParams struct {
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
-func (v SensitiveReadParams) MarshalJSON() ([]byte, error) {
-	type alias SensitiveReadParams
+func (v SensitiveStorageReadParams) MarshalJSON() ([]byte, error) {
+	type alias SensitiveStorageReadParams
 	return marshalOpen(alias(v), v.Extra, []string{"source", "key"})
 }
 
-func (v *SensitiveReadParams) UnmarshalJSON(data []byte) error {
-	type alias SensitiveReadParams
+func (v *SensitiveStorageReadParams) UnmarshalJSON(data []byte) error {
+	type alias SensitiveStorageReadParams
 	var decoded alias
 	extra, err := unmarshalOpen(data, &decoded, []string{"source", "key"})
 	if err != nil {
 		return err
 	}
 	decoded.Extra = extra
-	*v = SensitiveReadParams(decoded)
+	*v = SensitiveStorageReadParams(decoded)
 	return nil
 }
 
@@ -2211,6 +2237,107 @@ func (v SensitiveStorageSource) Valid() bool {
 		return true
 	}
 	return false
+}
+
+type SensitiveResponseBodyReadParams struct {
+	Source string `json:"source"`
+
+	RequestId string `json:"requestId"`
+
+	Encoding Optional[SensitiveBodyEncoding] `json:"encoding,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v SensitiveResponseBodyReadParams) MarshalJSON() ([]byte, error) {
+	type alias SensitiveResponseBodyReadParams
+	return marshalOpen(alias(v), v.Extra, []string{"source", "requestId", "encoding"})
+}
+
+func (v *SensitiveResponseBodyReadParams) UnmarshalJSON(data []byte) error {
+	type alias SensitiveResponseBodyReadParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"source", "requestId", "encoding"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = SensitiveResponseBodyReadParams(decoded)
+	return nil
+}
+
+type SensitiveBodyEncoding string
+
+const (
+	SensitiveBodyEncodingText SensitiveBodyEncoding = "text"
+
+	SensitiveBodyEncodingBase64 SensitiveBodyEncoding = "base64"
+)
+
+func (v SensitiveBodyEncoding) Valid() bool {
+	switch v {
+	case SensitiveBodyEncodingText, SensitiveBodyEncodingBase64:
+		return true
+	}
+	return false
+}
+
+type SensitiveIndexedDbReadParams struct {
+	Source string `json:"source"`
+
+	Database string `json:"database"`
+
+	Store string `json:"store"`
+
+	Key IndexedDbKey `json:"key"`
+
+	FrameId Optional[float64] `json:"frameId,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v SensitiveIndexedDbReadParams) MarshalJSON() ([]byte, error) {
+	type alias SensitiveIndexedDbReadParams
+	return marshalOpen(alias(v), v.Extra, []string{"source", "database", "store", "key", "frameId"})
+}
+
+func (v *SensitiveIndexedDbReadParams) UnmarshalJSON(data []byte) error {
+	type alias SensitiveIndexedDbReadParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"source", "database", "store", "key", "frameId"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = SensitiveIndexedDbReadParams(decoded)
+	return nil
+}
+
+type IndexedDbKey = json.RawMessage
+
+type IndexedDbDateKey struct {
+	Type string `json:"type"`
+
+	Value float64 `json:"value"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v IndexedDbDateKey) MarshalJSON() ([]byte, error) {
+	type alias IndexedDbDateKey
+	return marshalOpen(alias(v), v.Extra, []string{"type", "value"})
+}
+
+func (v *IndexedDbDateKey) UnmarshalJSON(data []byte) error {
+	type alias IndexedDbDateKey
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"type", "value"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = IndexedDbDateKey(decoded)
+	return nil
 }
 
 type PageTextParams struct {
@@ -2314,18 +2441,20 @@ type NetworkParams struct {
 
 	Capture Optional[NetworkCaptureAction] `json:"capture,omitzero"`
 
+	Bodies Optional[NetworkBodyCaptureParams] `json:"bodies,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v NetworkParams) MarshalJSON() ([]byte, error) {
 	type alias NetworkParams
-	return marshalOpen(alias(v), v.Extra, []string{"clear", "limit", "urlPattern", "source", "capture"})
+	return marshalOpen(alias(v), v.Extra, []string{"clear", "limit", "urlPattern", "source", "capture", "bodies"})
 }
 
 func (v *NetworkParams) UnmarshalJSON(data []byte) error {
 	type alias NetworkParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"clear", "limit", "urlPattern", "source", "capture"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"clear", "limit", "urlPattern", "source", "capture", "bodies"})
 	if err != nil {
 		return err
 	}
@@ -2368,6 +2497,31 @@ func (v NetworkCaptureAction) Valid() bool {
 		return true
 	}
 	return false
+}
+
+type NetworkBodyCaptureParams struct {
+	UrlPattern Optional[string] `json:"urlPattern,omitzero"`
+
+	MaxResourceBytes Optional[float64] `json:"maxResourceBytes,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v NetworkBodyCaptureParams) MarshalJSON() ([]byte, error) {
+	type alias NetworkBodyCaptureParams
+	return marshalOpen(alias(v), v.Extra, []string{"urlPattern", "maxResourceBytes"})
+}
+
+func (v *NetworkBodyCaptureParams) UnmarshalJSON(data []byte) error {
+	type alias NetworkBodyCaptureParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"urlPattern", "maxResourceBytes"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = NetworkBodyCaptureParams(decoded)
+	return nil
 }
 
 type HarExportParams struct {
@@ -2783,18 +2937,20 @@ type AccessibilityTreeParams struct {
 
 	Context Optional[float64] `json:"context,omitzero"`
 
+	Since Optional[string] `json:"since,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v AccessibilityTreeParams) MarshalJSON() ([]byte, error) {
 	type alias AccessibilityTreeParams
-	return marshalOpen(alias(v), v.Extra, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format", "scope", "find", "context"})
+	return marshalOpen(alias(v), v.Extra, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format", "scope", "find", "context", "since"})
 }
 
 func (v *AccessibilityTreeParams) UnmarshalJSON(data []byte) error {
 	type alias AccessibilityTreeParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format", "scope", "find", "context"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format", "scope", "find", "context", "since"})
 	if err != nil {
 		return err
 	}
@@ -4591,12 +4747,14 @@ const (
 
 	PerformStepMethodDomGetText PerformStepMethod = "dom.get_text"
 
+	PerformStepMethodDomGetAccessibilityTree PerformStepMethod = "dom.get_accessibility_tree"
+
 	PerformStepMethodNavigationNavigate PerformStepMethod = "navigation.navigate"
 )
 
 func (v PerformStepMethod) Valid() bool {
 	switch v {
-	case PerformStepMethodInputClick, PerformStepMethodInputFocus, PerformStepMethodInputType, PerformStepMethodInputFill, PerformStepMethodInputPressKey, PerformStepMethodInputSetChecked, PerformStepMethodInputSelectOption, PerformStepMethodInputHover, PerformStepMethodInputDrag, PerformStepMethodInputTouch, PerformStepMethodInputScrollIntoView, PerformStepMethodViewportScroll, PerformStepMethodDomWaitFor, PerformStepMethodPageWaitForLoadState, PerformStepMethodPageGetState, PerformStepMethodPageGetText, PerformStepMethodDomQuery, PerformStepMethodDomGetText, PerformStepMethodNavigationNavigate:
+	case PerformStepMethodInputClick, PerformStepMethodInputFocus, PerformStepMethodInputType, PerformStepMethodInputFill, PerformStepMethodInputPressKey, PerformStepMethodInputSetChecked, PerformStepMethodInputSelectOption, PerformStepMethodInputHover, PerformStepMethodInputDrag, PerformStepMethodInputTouch, PerformStepMethodInputScrollIntoView, PerformStepMethodViewportScroll, PerformStepMethodDomWaitFor, PerformStepMethodPageWaitForLoadState, PerformStepMethodPageGetState, PerformStepMethodPageGetText, PerformStepMethodDomQuery, PerformStepMethodDomGetText, PerformStepMethodDomGetAccessibilityTree, PerformStepMethodNavigationNavigate:
 		return true
 	}
 	return false
@@ -5111,6 +5269,180 @@ func (v *NormalizedEvaluateParams) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type ConsoleSourceUnavailableReason string
+
+const (
+	ConsoleSourceUnavailableReasonUnsupportedScheme ConsoleSourceUnavailableReason = "unsupported_scheme"
+
+	ConsoleSourceUnavailableReasonLoadedScriptsUnavailable ConsoleSourceUnavailableReason = "loaded_scripts_unavailable"
+
+	ConsoleSourceUnavailableReasonNotALoadedScript ConsoleSourceUnavailableReason = "not_a_loaded_script"
+
+	ConsoleSourceUnavailableReasonAmbiguousScript ConsoleSourceUnavailableReason = "ambiguous_script"
+
+	ConsoleSourceUnavailableReasonLocalNetworkScript ConsoleSourceUnavailableReason = "local_network_script"
+
+	ConsoleSourceUnavailableReasonBudgetExhausted ConsoleSourceUnavailableReason = "budget_exhausted"
+
+	ConsoleSourceUnavailableReasonFetchTimeout ConsoleSourceUnavailableReason = "fetch_timeout"
+
+	ConsoleSourceUnavailableReasonScriptFetchFailed ConsoleSourceUnavailableReason = "script_fetch_failed"
+
+	ConsoleSourceUnavailableReasonScriptTooLarge ConsoleSourceUnavailableReason = "script_too_large"
+
+	ConsoleSourceUnavailableReasonNoSourceMap ConsoleSourceUnavailableReason = "no_source_map"
+
+	ConsoleSourceUnavailableReasonInvalidMapURL ConsoleSourceUnavailableReason = "invalid_map_url"
+
+	ConsoleSourceUnavailableReasonUnsupportedMapURL ConsoleSourceUnavailableReason = "unsupported_map_url"
+
+	ConsoleSourceUnavailableReasonCrossOriginMap ConsoleSourceUnavailableReason = "cross_origin_map"
+
+	ConsoleSourceUnavailableReasonMapFetchFailed ConsoleSourceUnavailableReason = "map_fetch_failed"
+
+	ConsoleSourceUnavailableReasonMapTooLarge ConsoleSourceUnavailableReason = "map_too_large"
+
+	ConsoleSourceUnavailableReasonMalformedMap ConsoleSourceUnavailableReason = "malformed_map"
+
+	ConsoleSourceUnavailableReasonNoMapping ConsoleSourceUnavailableReason = "no_mapping"
+
+	ConsoleSourceUnavailableReasonResolutionFailed ConsoleSourceUnavailableReason = "resolution_failed"
+)
+
+func (v ConsoleSourceUnavailableReason) Valid() bool {
+	switch v {
+	case ConsoleSourceUnavailableReasonUnsupportedScheme, ConsoleSourceUnavailableReasonLoadedScriptsUnavailable, ConsoleSourceUnavailableReasonNotALoadedScript, ConsoleSourceUnavailableReasonAmbiguousScript, ConsoleSourceUnavailableReasonLocalNetworkScript, ConsoleSourceUnavailableReasonBudgetExhausted, ConsoleSourceUnavailableReasonFetchTimeout, ConsoleSourceUnavailableReasonScriptFetchFailed, ConsoleSourceUnavailableReasonScriptTooLarge, ConsoleSourceUnavailableReasonNoSourceMap, ConsoleSourceUnavailableReasonInvalidMapURL, ConsoleSourceUnavailableReasonUnsupportedMapURL, ConsoleSourceUnavailableReasonCrossOriginMap, ConsoleSourceUnavailableReasonMapFetchFailed, ConsoleSourceUnavailableReasonMapTooLarge, ConsoleSourceUnavailableReasonMalformedMap, ConsoleSourceUnavailableReasonNoMapping, ConsoleSourceUnavailableReasonResolutionFailed:
+		return true
+	}
+	return false
+}
+
+type ConsoleFrameSource struct {
+	File string `json:"file"`
+
+	Path string `json:"path"`
+
+	Line float64 `json:"line"`
+
+	Column float64 `json:"column"`
+
+	Name Optional[string] `json:"name,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v ConsoleFrameSource) MarshalJSON() ([]byte, error) {
+	type alias ConsoleFrameSource
+	return marshalOpen(alias(v), v.Extra, []string{"file", "path", "line", "column", "name"})
+}
+
+func (v *ConsoleFrameSource) UnmarshalJSON(data []byte) error {
+	type alias ConsoleFrameSource
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"file", "path", "line", "column", "name"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = ConsoleFrameSource(decoded)
+	return nil
+}
+
+type ConsoleStackFrame struct {
+	Function Optional[string] `json:"function,omitzero"`
+
+	URL string `json:"url"`
+
+	Line float64 `json:"line"`
+
+	Column float64 `json:"column"`
+
+	Source Optional[ConsoleFrameSource] `json:"source,omitzero"`
+
+	SourceUnavailable Optional[ConsoleSourceUnavailableReason] `json:"sourceUnavailable,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v ConsoleStackFrame) MarshalJSON() ([]byte, error) {
+	type alias ConsoleStackFrame
+	return marshalOpen(alias(v), v.Extra, []string{"function", "url", "line", "column", "source", "sourceUnavailable"})
+}
+
+func (v *ConsoleStackFrame) UnmarshalJSON(data []byte) error {
+	type alias ConsoleStackFrame
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"function", "url", "line", "column", "source", "sourceUnavailable"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = ConsoleStackFrame(decoded)
+	return nil
+}
+
+type ConsoleEntry struct {
+	Level string `json:"level"`
+
+	Args []string `json:"args"`
+
+	Ts float64 `json:"ts"`
+
+	Stack Optional[[]ConsoleStackFrame] `json:"stack,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v ConsoleEntry) MarshalJSON() ([]byte, error) {
+	type alias ConsoleEntry
+	return marshalOpen(alias(v), v.Extra, []string{"level", "args", "ts", "stack"})
+}
+
+func (v *ConsoleEntry) UnmarshalJSON(data []byte) error {
+	type alias ConsoleEntry
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"level", "args", "ts", "stack"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = ConsoleEntry(decoded)
+	return nil
+}
+
+type ConsoleResult struct {
+	Entries []ConsoleEntry `json:"entries"`
+
+	Count float64 `json:"count"`
+
+	Total float64 `json:"total"`
+
+	Dropped float64 `json:"dropped"`
+
+	Provenance string `json:"provenance"`
+
+	Integrity string `json:"integrity"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v ConsoleResult) MarshalJSON() ([]byte, error) {
+	type alias ConsoleResult
+	return marshalOpen(alias(v), v.Extra, []string{"entries", "count", "total", "dropped", "provenance", "integrity"})
+}
+
+func (v *ConsoleResult) UnmarshalJSON(data []byte) error {
+	type alias ConsoleResult
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"entries", "count", "total", "dropped", "provenance", "integrity"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = ConsoleResult(decoded)
+	return nil
+}
+
 type NormalizedHandleDialogParams struct {
 	Action DialogAction `json:"action"`
 
@@ -5145,18 +5477,20 @@ type NormalizedConsoleParams struct {
 
 	Limit float64 `json:"limit"`
 
+	ResolveSources bool `json:"resolveSources"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v NormalizedConsoleParams) MarshalJSON() ([]byte, error) {
 	type alias NormalizedConsoleParams
-	return marshalOpen(alias(v), v.Extra, []string{"level", "clear", "limit"})
+	return marshalOpen(alias(v), v.Extra, []string{"level", "clear", "limit", "resolveSources"})
 }
 
 func (v *NormalizedConsoleParams) UnmarshalJSON(data []byte) error {
 	type alias NormalizedConsoleParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"level", "clear", "limit"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"level", "clear", "limit", "resolveSources"})
 	if err != nil {
 		return err
 	}
@@ -5325,7 +5659,7 @@ func (v *NormalizedDragParams) UnmarshalJSON(data []byte) error {
 }
 
 type NormalizedStorageParams struct {
-	Type string `json:"type"`
+	Type StorageType `json:"type"`
 
 	Keys Nullable[[]string] `json:"keys"`
 
@@ -5349,7 +5683,249 @@ func (v *NormalizedStorageParams) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type NormalizedSensitiveReadParams struct {
+type IndexedDbIndexMetadata struct {
+	Name string `json:"name"`
+
+	KeyPath json.RawMessage `json:"keyPath"`
+
+	Unique bool `json:"unique"`
+
+	MultiEntry bool `json:"multiEntry"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v IndexedDbIndexMetadata) MarshalJSON() ([]byte, error) {
+	type alias IndexedDbIndexMetadata
+	return marshalOpen(alias(v), v.Extra, []string{"name", "keyPath", "unique", "multiEntry"})
+}
+
+func (v *IndexedDbIndexMetadata) UnmarshalJSON(data []byte) error {
+	type alias IndexedDbIndexMetadata
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"name", "keyPath", "unique", "multiEntry"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = IndexedDbIndexMetadata(decoded)
+	return nil
+}
+
+type IndexedDbStoreMetadata struct {
+	Name string `json:"name"`
+
+	KeyPath json.RawMessage `json:"keyPath"`
+
+	AutoIncrement bool `json:"autoIncrement"`
+
+	Indexes []IndexedDbIndexMetadata `json:"indexes"`
+
+	Count Nullable[float64] `json:"count"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v IndexedDbStoreMetadata) MarshalJSON() ([]byte, error) {
+	type alias IndexedDbStoreMetadata
+	return marshalOpen(alias(v), v.Extra, []string{"name", "keyPath", "autoIncrement", "indexes", "count"})
+}
+
+func (v *IndexedDbStoreMetadata) UnmarshalJSON(data []byte) error {
+	type alias IndexedDbStoreMetadata
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"name", "keyPath", "autoIncrement", "indexes", "count"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = IndexedDbStoreMetadata(decoded)
+	return nil
+}
+
+type IndexedDbDatabaseError string
+
+const (
+	IndexedDbDatabaseErrorOpenTimeout IndexedDbDatabaseError = "open_timeout"
+
+	IndexedDbDatabaseErrorDatabaseMissing IndexedDbDatabaseError = "database_missing"
+
+	IndexedDbDatabaseErrorOpenFailed IndexedDbDatabaseError = "open_failed"
+)
+
+func (v IndexedDbDatabaseError) Valid() bool {
+	switch v {
+	case IndexedDbDatabaseErrorOpenTimeout, IndexedDbDatabaseErrorDatabaseMissing, IndexedDbDatabaseErrorOpenFailed:
+		return true
+	}
+	return false
+}
+
+type IndexedDbDatabaseMetadata struct {
+	Name string `json:"name"`
+
+	Version float64 `json:"version"`
+
+	Stores []IndexedDbStoreMetadata `json:"stores"`
+
+	StoreCount float64 `json:"storeCount"`
+
+	Error Optional[IndexedDbDatabaseError] `json:"error,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v IndexedDbDatabaseMetadata) MarshalJSON() ([]byte, error) {
+	type alias IndexedDbDatabaseMetadata
+	return marshalOpen(alias(v), v.Extra, []string{"name", "version", "stores", "storeCount", "error"})
+}
+
+func (v *IndexedDbDatabaseMetadata) UnmarshalJSON(data []byte) error {
+	type alias IndexedDbDatabaseMetadata
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"name", "version", "stores", "storeCount", "error"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = IndexedDbDatabaseMetadata(decoded)
+	return nil
+}
+
+type IndexedDbIncompleteReason string
+
+const (
+	IndexedDbIncompleteReasonTimeBudget IndexedDbIncompleteReason = "time_budget"
+
+	IndexedDbIncompleteReasonDatabaseLimit IndexedDbIncompleteReason = "database_limit"
+
+	IndexedDbIncompleteReasonStoreLimit IndexedDbIncompleteReason = "store_limit"
+
+	IndexedDbIncompleteReasonDatabaseError IndexedDbIncompleteReason = "database_error"
+
+	IndexedDbIncompleteReasonDatabasesTimeout IndexedDbIncompleteReason = "databases_timeout"
+)
+
+func (v IndexedDbIncompleteReason) Valid() bool {
+	switch v {
+	case IndexedDbIncompleteReasonTimeBudget, IndexedDbIncompleteReasonDatabaseLimit, IndexedDbIncompleteReasonStoreLimit, IndexedDbIncompleteReasonDatabaseError, IndexedDbIncompleteReasonDatabasesTimeout:
+		return true
+	}
+	return false
+}
+
+type IndexedDbFrameMetadata struct {
+	FrameId float64 `json:"frameId"`
+
+	Origin string `json:"origin"`
+
+	Available bool `json:"available"`
+
+	Databases []IndexedDbDatabaseMetadata `json:"databases"`
+
+	Total float64 `json:"total"`
+
+	Incomplete []IndexedDbIncompleteReason `json:"incomplete"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v IndexedDbFrameMetadata) MarshalJSON() ([]byte, error) {
+	type alias IndexedDbFrameMetadata
+	return marshalOpen(alias(v), v.Extra, []string{"frameId", "origin", "available", "databases", "total", "incomplete"})
+}
+
+func (v *IndexedDbFrameMetadata) UnmarshalJSON(data []byte) error {
+	type alias IndexedDbFrameMetadata
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"frameId", "origin", "available", "databases", "total", "incomplete"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = IndexedDbFrameMetadata(decoded)
+	return nil
+}
+
+type IndexedDbStorageResult struct {
+	Type string `json:"type"`
+
+	Frames []IndexedDbFrameMetadata `json:"frames"`
+
+	IncompleteFrames Optional[[]float64] `json:"incompleteFrames,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v IndexedDbStorageResult) MarshalJSON() ([]byte, error) {
+	type alias IndexedDbStorageResult
+	return marshalOpen(alias(v), v.Extra, []string{"type", "frames", "incompleteFrames"})
+}
+
+func (v *IndexedDbStorageResult) UnmarshalJSON(data []byte) error {
+	type alias IndexedDbStorageResult
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"type", "frames", "incompleteFrames"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = IndexedDbStorageResult(decoded)
+	return nil
+}
+
+type WebStorageResult struct {
+	Type string `json:"type"`
+
+	Entries []WebStorageResultEntriesItem `json:"entries"`
+
+	Count float64 `json:"count"`
+
+	Total float64 `json:"total"`
+
+	Truncated bool `json:"truncated"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v WebStorageResult) MarshalJSON() ([]byte, error) {
+	type alias WebStorageResult
+	return marshalOpen(alias(v), v.Extra, []string{"type", "entries", "count", "total", "truncated"})
+}
+
+func (v *WebStorageResult) UnmarshalJSON(data []byte) error {
+	type alias WebStorageResult
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"type", "entries", "count", "total", "truncated"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = WebStorageResult(decoded)
+	return nil
+}
+
+type StorageResult = json.RawMessage
+
+type SensitiveGatedSource string
+
+const (
+	SensitiveGatedSourceResponseBody SensitiveGatedSource = "response_body"
+
+	SensitiveGatedSourceIndexeddb SensitiveGatedSource = "indexeddb"
+)
+
+func (v SensitiveGatedSource) Valid() bool {
+	switch v {
+	case SensitiveGatedSourceResponseBody, SensitiveGatedSourceIndexeddb:
+		return true
+	}
+	return false
+}
+
+type SensitiveReadSource = json.RawMessage
+
+type NormalizedSensitiveStorageReadParams struct {
 	Source SensitiveStorageSource `json:"source"`
 
 	Key string `json:"key"`
@@ -5359,24 +5935,88 @@ type NormalizedSensitiveReadParams struct {
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
-func (v NormalizedSensitiveReadParams) MarshalJSON() ([]byte, error) {
-	type alias NormalizedSensitiveReadParams
+func (v NormalizedSensitiveStorageReadParams) MarshalJSON() ([]byte, error) {
+	type alias NormalizedSensitiveStorageReadParams
 	return marshalOpen(alias(v), v.Extra, []string{"source", "key", "maxBytes"})
 }
 
-func (v *NormalizedSensitiveReadParams) UnmarshalJSON(data []byte) error {
-	type alias NormalizedSensitiveReadParams
+func (v *NormalizedSensitiveStorageReadParams) UnmarshalJSON(data []byte) error {
+	type alias NormalizedSensitiveStorageReadParams
 	var decoded alias
 	extra, err := unmarshalOpen(data, &decoded, []string{"source", "key", "maxBytes"})
 	if err != nil {
 		return err
 	}
 	decoded.Extra = extra
-	*v = NormalizedSensitiveReadParams(decoded)
+	*v = NormalizedSensitiveStorageReadParams(decoded)
 	return nil
 }
 
-type SensitiveReadResult struct {
+type NormalizedSensitiveResponseBodyReadParams struct {
+	Source string `json:"source"`
+
+	RequestId string `json:"requestId"`
+
+	Encoding SensitiveBodyEncoding `json:"encoding"`
+
+	MaxBytes float64 `json:"maxBytes"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v NormalizedSensitiveResponseBodyReadParams) MarshalJSON() ([]byte, error) {
+	type alias NormalizedSensitiveResponseBodyReadParams
+	return marshalOpen(alias(v), v.Extra, []string{"source", "requestId", "encoding", "maxBytes"})
+}
+
+func (v *NormalizedSensitiveResponseBodyReadParams) UnmarshalJSON(data []byte) error {
+	type alias NormalizedSensitiveResponseBodyReadParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"source", "requestId", "encoding", "maxBytes"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = NormalizedSensitiveResponseBodyReadParams(decoded)
+	return nil
+}
+
+type NormalizedSensitiveIndexedDbReadParams struct {
+	Source string `json:"source"`
+
+	Database string `json:"database"`
+
+	Store string `json:"store"`
+
+	Key IndexedDbKey `json:"key"`
+
+	FrameId float64 `json:"frameId"`
+
+	MaxBytes float64 `json:"maxBytes"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v NormalizedSensitiveIndexedDbReadParams) MarshalJSON() ([]byte, error) {
+	type alias NormalizedSensitiveIndexedDbReadParams
+	return marshalOpen(alias(v), v.Extra, []string{"source", "database", "store", "key", "frameId", "maxBytes"})
+}
+
+func (v *NormalizedSensitiveIndexedDbReadParams) UnmarshalJSON(data []byte) error {
+	type alias NormalizedSensitiveIndexedDbReadParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"source", "database", "store", "key", "frameId", "maxBytes"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = NormalizedSensitiveIndexedDbReadParams(decoded)
+	return nil
+}
+
+type NormalizedSensitiveReadParams = json.RawMessage
+
+type SensitiveStorageReadResult struct {
 	Source SensitiveStorageSource `json:"source"`
 
 	Value string `json:"value"`
@@ -5386,22 +6026,96 @@ type SensitiveReadResult struct {
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
-func (v SensitiveReadResult) MarshalJSON() ([]byte, error) {
-	type alias SensitiveReadResult
+func (v SensitiveStorageReadResult) MarshalJSON() ([]byte, error) {
+	type alias SensitiveStorageReadResult
 	return marshalOpen(alias(v), v.Extra, []string{"source", "value", "exact"})
 }
 
-func (v *SensitiveReadResult) UnmarshalJSON(data []byte) error {
-	type alias SensitiveReadResult
+func (v *SensitiveStorageReadResult) UnmarshalJSON(data []byte) error {
+	type alias SensitiveStorageReadResult
 	var decoded alias
 	extra, err := unmarshalOpen(data, &decoded, []string{"source", "value", "exact"})
 	if err != nil {
 		return err
 	}
 	decoded.Extra = extra
-	*v = SensitiveReadResult(decoded)
+	*v = SensitiveStorageReadResult(decoded)
 	return nil
 }
+
+type SensitiveResponseBodyReadResult struct {
+	Source string `json:"source"`
+
+	RequestId string `json:"requestId"`
+
+	Body string `json:"body"`
+
+	Encoding SensitiveBodyEncoding `json:"encoding"`
+
+	MimeType string `json:"mimeType"`
+
+	Bytes float64 `json:"bytes"`
+
+	Exact bool `json:"exact"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v SensitiveResponseBodyReadResult) MarshalJSON() ([]byte, error) {
+	type alias SensitiveResponseBodyReadResult
+	return marshalOpen(alias(v), v.Extra, []string{"source", "requestId", "body", "encoding", "mimeType", "bytes", "exact"})
+}
+
+func (v *SensitiveResponseBodyReadResult) UnmarshalJSON(data []byte) error {
+	type alias SensitiveResponseBodyReadResult
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"source", "requestId", "body", "encoding", "mimeType", "bytes", "exact"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = SensitiveResponseBodyReadResult(decoded)
+	return nil
+}
+
+type SensitiveIndexedDbReadResult struct {
+	Source string `json:"source"`
+
+	FrameId float64 `json:"frameId"`
+
+	Database string `json:"database"`
+
+	Store string `json:"store"`
+
+	Value json.RawMessage `json:"value"`
+
+	Described float64 `json:"described"`
+
+	Bytes float64 `json:"bytes"`
+
+	Exact bool `json:"exact"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v SensitiveIndexedDbReadResult) MarshalJSON() ([]byte, error) {
+	type alias SensitiveIndexedDbReadResult
+	return marshalOpen(alias(v), v.Extra, []string{"source", "frameId", "database", "store", "value", "described", "bytes", "exact"})
+}
+
+func (v *SensitiveIndexedDbReadResult) UnmarshalJSON(data []byte) error {
+	type alias SensitiveIndexedDbReadResult
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"source", "frameId", "database", "store", "value", "described", "bytes", "exact"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = SensitiveIndexedDbReadResult(decoded)
+	return nil
+}
+
+type SensitiveReadResult = json.RawMessage
 
 type ExtractContentSource string
 
@@ -5938,18 +6652,20 @@ type NormalizedAccessibilityTreeParams struct {
 
 	Context Optional[float64] `json:"context,omitzero"`
 
+	Since Optional[string] `json:"since,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v NormalizedAccessibilityTreeParams) MarshalJSON() ([]byte, error) {
 	type alias NormalizedAccessibilityTreeParams
-	return marshalOpen(alias(v), v.Extra, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format", "scope", "find", "context"})
+	return marshalOpen(alias(v), v.Extra, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format", "scope", "find", "context", "since"})
 }
 
 func (v *NormalizedAccessibilityTreeParams) UnmarshalJSON(data []byte) error {
 	type alias NormalizedAccessibilityTreeParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format", "scope", "find", "context"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"selector", "maxDepth", "maxNodes", "compact", "interactiveOnly", "source", "format", "scope", "find", "context", "since"})
 	if err != nil {
 		return err
 	}
@@ -6082,6 +6798,61 @@ func (v *DomOutlineSearch) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type DomOutlineDeltaUnavailableReason string
+
+const (
+	DomOutlineDeltaUnavailableReasonNavigated DomOutlineDeltaUnavailableReason = "navigated"
+
+	DomOutlineDeltaUnavailableReasonExpired DomOutlineDeltaUnavailableReason = "expired"
+
+	DomOutlineDeltaUnavailableReasonEvicted DomOutlineDeltaUnavailableReason = "evicted"
+
+	DomOutlineDeltaUnavailableReasonScopeChanged DomOutlineDeltaUnavailableReason = "scope_changed"
+
+	DomOutlineDeltaUnavailableReasonBaseTruncated DomOutlineDeltaUnavailableReason = "base_truncated"
+
+	DomOutlineDeltaUnavailableReasonRefsPruned DomOutlineDeltaUnavailableReason = "refs_pruned"
+
+	DomOutlineDeltaUnavailableReasonDeltaTooLarge DomOutlineDeltaUnavailableReason = "delta_too_large"
+)
+
+func (v DomOutlineDeltaUnavailableReason) Valid() bool {
+	switch v {
+	case DomOutlineDeltaUnavailableReasonNavigated, DomOutlineDeltaUnavailableReasonExpired, DomOutlineDeltaUnavailableReasonEvicted, DomOutlineDeltaUnavailableReasonScopeChanged, DomOutlineDeltaUnavailableReasonBaseTruncated, DomOutlineDeltaUnavailableReasonRefsPruned, DomOutlineDeltaUnavailableReasonDeltaTooLarge:
+		return true
+	}
+	return false
+}
+
+type DomOutlineDelta struct {
+	Added json.RawMessage `json:"added"`
+
+	Changed json.RawMessage `json:"changed"`
+
+	Removed []string `json:"removed"`
+
+	RemovedFrames Optional[[]float64] `json:"removedFrames,omitzero"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v DomOutlineDelta) MarshalJSON() ([]byte, error) {
+	type alias DomOutlineDelta
+	return marshalOpen(alias(v), v.Extra, []string{"added", "changed", "removed", "removedFrames"})
+}
+
+func (v *DomOutlineDelta) UnmarshalJSON(data []byte) error {
+	type alias DomOutlineDelta
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"added", "changed", "removed", "removedFrames"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = DomOutlineDelta(decoded)
+	return nil
+}
+
 type DomOutlineResult struct {
 	Source string `json:"source"`
 
@@ -6103,18 +6874,26 @@ type DomOutlineResult struct {
 
 	Completeness Optional[DomOutlineCompleteness] `json:"completeness,omitzero"`
 
+	SnapshotId Optional[string] `json:"snapshotId,omitzero"`
+
+	Unchanged Optional[bool] `json:"unchanged,omitzero"`
+
+	Delta Optional[DomOutlineDelta] `json:"delta,omitzero"`
+
+	DeltaUnavailable Optional[DomOutlineDeltaUnavailableReason] `json:"deltaUnavailable,omitzero"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v DomOutlineResult) MarshalJSON() ([]byte, error) {
 	type alias DomOutlineResult
-	return marshalOpen(alias(v), v.Extra, []string{"source", "format", "nodes", "outline", "count", "scanned", "truncated", "scope", "search", "completeness"})
+	return marshalOpen(alias(v), v.Extra, []string{"source", "format", "nodes", "outline", "count", "scanned", "truncated", "scope", "search", "completeness", "snapshotId", "unchanged", "delta", "deltaUnavailable"})
 }
 
 func (v *DomOutlineResult) UnmarshalJSON(data []byte) error {
 	type alias DomOutlineResult
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"source", "format", "nodes", "outline", "count", "scanned", "truncated", "scope", "search", "completeness"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"source", "format", "nodes", "outline", "count", "scanned", "truncated", "scope", "search", "completeness", "snapshotId", "unchanged", "delta", "deltaUnavailable"})
 	if err != nil {
 		return err
 	}
@@ -6217,6 +6996,31 @@ func (v *AccessibilityTreeResult) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type NormalizedNetworkBodyCaptureParams struct {
+	UrlPattern Nullable[string] `json:"urlPattern"`
+
+	MaxResourceBytes float64 `json:"maxResourceBytes"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v NormalizedNetworkBodyCaptureParams) MarshalJSON() ([]byte, error) {
+	type alias NormalizedNetworkBodyCaptureParams
+	return marshalOpen(alias(v), v.Extra, []string{"urlPattern", "maxResourceBytes"})
+}
+
+func (v *NormalizedNetworkBodyCaptureParams) UnmarshalJSON(data []byte) error {
+	type alias NormalizedNetworkBodyCaptureParams
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"urlPattern", "maxResourceBytes"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = NormalizedNetworkBodyCaptureParams(decoded)
+	return nil
+}
+
 type NormalizedNetworkParams struct {
 	Clear bool `json:"clear"`
 
@@ -6228,18 +7032,20 @@ type NormalizedNetworkParams struct {
 
 	Capture NetworkCaptureAction `json:"capture"`
 
+	Bodies Nullable[NormalizedNetworkBodyCaptureParams] `json:"bodies"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v NormalizedNetworkParams) MarshalJSON() ([]byte, error) {
 	type alias NormalizedNetworkParams
-	return marshalOpen(alias(v), v.Extra, []string{"clear", "limit", "urlPattern", "source", "capture"})
+	return marshalOpen(alias(v), v.Extra, []string{"clear", "limit", "urlPattern", "source", "capture", "bodies"})
 }
 
 func (v *NormalizedNetworkParams) UnmarshalJSON(data []byte) error {
 	type alias NormalizedNetworkParams
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"clear", "limit", "urlPattern", "source", "capture"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"clear", "limit", "urlPattern", "source", "capture", "bodies"})
 	if err != nil {
 		return err
 	}
@@ -6279,18 +7085,20 @@ type CdpNetworkEntry struct {
 
 	Timestamp float64 `json:"timestamp"`
 
+	BodyAvailable bool `json:"bodyAvailable"`
+
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 func (v CdpNetworkEntry) MarshalJSON() ([]byte, error) {
 	type alias CdpNetworkEntry
-	return marshalOpen(alias(v), v.Extra, []string{"requestId", "url", "method", "resourceType", "status", "mimeType", "protocol", "fromCache", "fromDiskCache", "fromServiceWorker", "fromPrefetchCache", "redirect", "failureReason", "duration", "timestamp"})
+	return marshalOpen(alias(v), v.Extra, []string{"requestId", "url", "method", "resourceType", "status", "mimeType", "protocol", "fromCache", "fromDiskCache", "fromServiceWorker", "fromPrefetchCache", "redirect", "failureReason", "duration", "timestamp", "bodyAvailable"})
 }
 
 func (v *CdpNetworkEntry) UnmarshalJSON(data []byte) error {
 	type alias CdpNetworkEntry
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"requestId", "url", "method", "resourceType", "status", "mimeType", "protocol", "fromCache", "fromDiskCache", "fromServiceWorker", "fromPrefetchCache", "redirect", "failureReason", "duration", "timestamp"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"requestId", "url", "method", "resourceType", "status", "mimeType", "protocol", "fromCache", "fromDiskCache", "fromServiceWorker", "fromPrefetchCache", "redirect", "failureReason", "duration", "timestamp", "bodyAvailable"})
 	if err != nil {
 		return err
 	}
@@ -6332,6 +7140,8 @@ type NetworkResult struct {
 
 	Inflight float64 `json:"inflight"`
 
+	BodyCapture Optional[NormalizedNetworkBodyCaptureParams] `json:"bodyCapture,omitzero"`
+
 	Truncated bool `json:"truncated"`
 
 	Truncation NetworkResultTruncation `json:"truncation"`
@@ -6341,13 +7151,13 @@ type NetworkResult struct {
 
 func (v NetworkResult) MarshalJSON() ([]byte, error) {
 	type alias NetworkResult
-	return marshalOpen(alias(v), v.Extra, []string{"entries", "count", "total", "filteredTotal", "dropped", "abandoned", "source", "provenance", "integrity", "capture", "armed", "armedDuringCapture", "captureState", "ownershipHeld", "startedAt", "inflight", "truncated", "truncation"})
+	return marshalOpen(alias(v), v.Extra, []string{"entries", "count", "total", "filteredTotal", "dropped", "abandoned", "source", "provenance", "integrity", "capture", "armed", "armedDuringCapture", "captureState", "ownershipHeld", "startedAt", "inflight", "bodyCapture", "truncated", "truncation"})
 }
 
 func (v *NetworkResult) UnmarshalJSON(data []byte) error {
 	type alias NetworkResult
 	var decoded alias
-	extra, err := unmarshalOpen(data, &decoded, []string{"entries", "count", "total", "filteredTotal", "dropped", "abandoned", "source", "provenance", "integrity", "capture", "armed", "armedDuringCapture", "captureState", "ownershipHeld", "startedAt", "inflight", "truncated", "truncation"})
+	extra, err := unmarshalOpen(data, &decoded, []string{"entries", "count", "total", "filteredTotal", "dropped", "abandoned", "source", "provenance", "integrity", "capture", "armed", "armedDuringCapture", "captureState", "ownershipHeld", "startedAt", "inflight", "bodyCapture", "truncated", "truncation"})
 	if err != nil {
 		return err
 	}
@@ -8386,6 +9196,31 @@ func (v *InputObservationStatusInterruption) UnmarshalJSON(data []byte) error {
 	}
 	decoded.Extra = extra
 	*v = InputObservationStatusInterruption(decoded)
+	return nil
+}
+
+type WebStorageResultEntriesItem struct {
+	Key string `json:"key"`
+
+	Present bool `json:"present"`
+
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (v WebStorageResultEntriesItem) MarshalJSON() ([]byte, error) {
+	type alias WebStorageResultEntriesItem
+	return marshalOpen(alias(v), v.Extra, []string{"key", "present"})
+}
+
+func (v *WebStorageResultEntriesItem) UnmarshalJSON(data []byte) error {
+	type alias WebStorageResultEntriesItem
+	var decoded alias
+	extra, err := unmarshalOpen(data, &decoded, []string{"key", "present"})
+	if err != nil {
+		return err
+	}
+	decoded.Extra = extra
+	*v = WebStorageResultEntriesItem(decoded)
 	return nil
 }
 

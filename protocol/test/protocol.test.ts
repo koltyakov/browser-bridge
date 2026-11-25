@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   BUDGET_PRESETS,
+  BridgeError,
   BRIDGE_METHODS,
   BRIDGE_METHOD_REGISTRY,
   DEFAULT_DEVICE_SCALE_FACTOR,
@@ -23,6 +24,12 @@ import {
   MAX_INTERCEPT_URL_PATTERN_LENGTH,
   HAR_AUTO_INLINE_BYTES,
   MAX_SENSITIVE_VALUE_BYTES,
+  MAX_CDP_BODY_RESOURCE_BYTES,
+  MAX_CDP_BODY_TOTAL_BYTES,
+  SENSITIVE_READ_SOURCES,
+  STORAGE_TYPES,
+  isGatedSensitiveSource,
+  normalizeIndexedDbKey,
   ERROR_CODES,
   applyBudget,
   bridgeMethodNeedsTab,
@@ -78,6 +85,7 @@ import {
 } from '../src/index.js';
 import type {
   BridgeRequest,
+  ConsoleParams,
   PerformanceMetricsResult,
   TabCloseParams,
   WaitForParams,
@@ -844,6 +852,18 @@ test('normalizeConsoleParams rejects invalid level', () => {
   assert.equal(params.level, 'all');
 });
 
+test('normalizeConsoleParams accepts only a boolean resolveSources, default false', () => {
+  assert.equal(normalizeConsoleParams({}).resolveSources, false);
+  assert.equal(normalizeConsoleParams({ resolveSources: false }).resolveSources, false);
+  assert.equal(normalizeConsoleParams({ resolveSources: true }).resolveSources, true);
+  for (const value of ['true', 1, null, {}]) {
+    assert.throws(
+      () => normalizeConsoleParams({ resolveSources: value } as unknown as ConsoleParams),
+      (error: ErrorWithCode) => error.code === ERROR_CODES.INVALID_REQUEST
+    );
+  }
+});
+
 /** Ensure wait-for params validate state and clamp timeout. */
 test('normalizeWaitForParams validates state and clamps timeout', () => {
   const params = normalizeWaitForParams({
@@ -999,6 +1019,144 @@ test('normalizeStorageParams rejects explicit key lists above the documented bou
     () =>
       normalizeStorageParams({ keys: Array.from({ length: 101 }, (_, index) => `key-${index}`) }),
     (error: ErrorWithCode) => error.code === ERROR_CODES.INVALID_REQUEST
+  );
+});
+
+test('normalizeSensitiveReadParams discriminates response_body on source', () => {
+  assert.deepEqual(normalizeSensitiveReadParams({ source: 'response_body', requestId: '123.4' }), {
+    source: 'response_body',
+    requestId: '123.4',
+    encoding: 'text',
+    maxBytes: MAX_SENSITIVE_VALUE_BYTES,
+  });
+  assert.equal(
+    normalizeSensitiveReadParams({
+      source: 'response_body',
+      requestId: 'r',
+      encoding: 'base64',
+    }).encoding,
+    'base64'
+  );
+  for (const params of [
+    { source: 'response_body' },
+    { source: 'response_body', requestId: '' },
+    { source: 'response_body', requestId: ' padded ' },
+    { source: 'response_body', requestId: 'x'.repeat(257) },
+    { source: 'response_body', requestId: 7 },
+    { source: 'response_body', requestId: 'r', encoding: 'utf16' },
+    // A storage locator never silently applies to a body read.
+    { source: 'response_body', requestId: 'r', key: 'token' },
+  ]) {
+    assert.throws(
+      () => normalizeSensitiveReadParams(params),
+      (error: unknown) => error instanceof BridgeError && error.code === 'INVALID_REQUEST',
+      JSON.stringify(params)
+    );
+  }
+  assert.deepEqual(SENSITIVE_READ_SOURCES, [
+    'local_storage',
+    'session_storage',
+    'response_body',
+    'indexeddb',
+  ]);
+  assert.equal(isGatedSensitiveSource('response_body'), true);
+  assert.equal(isGatedSensitiveSource('indexeddb'), true);
+  assert.equal(isGatedSensitiveSource('cache'), true, 'unknown sources fail closed');
+  assert.equal(isGatedSensitiveSource(undefined), true);
+  assert.equal(isGatedSensitiveSource('local_storage'), false);
+  assert.equal(isGatedSensitiveSource('session_storage'), false);
+});
+
+test('an unknown sensitive source is a typed error listing every supported source', () => {
+  try {
+    normalizeSensitiveReadParams({ source: 'cache', cache: 'v1', url: '/' });
+    assert.fail('unknown source accepted');
+  } catch (error) {
+    assert(error instanceof BridgeError);
+    assert.equal(error.code, 'INVALID_REQUEST');
+    assert.match(error.message, /local_storage, session_storage, response_body, indexeddb/);
+    assert.deepEqual(error.details, {
+      reason: 'unsupported_source',
+      supportedSources: ['local_storage', 'session_storage', 'response_body', 'indexeddb'],
+    });
+  }
+});
+
+test('IndexedDB reads type JSON keys explicitly and reject unsupported keys', () => {
+  assert.deepEqual(
+    normalizeSensitiveReadParams({ source: 'indexeddb', database: 'app', store: 's', key: 'k' }),
+    {
+      source: 'indexeddb',
+      database: 'app',
+      store: 's',
+      key: 'k',
+      frameId: 0,
+      maxBytes: MAX_SENSITIVE_VALUE_BYTES,
+    }
+  );
+  assert.equal(normalizeIndexedDbKey(42), 42);
+  assert.deepEqual(normalizeIndexedDbKey({ type: 'date', value: 1_700_000_000_000 }), {
+    type: 'date',
+    value: 1_700_000_000_000,
+  });
+  assert.deepEqual(normalizeIndexedDbKey(['a', 1, { type: 'date', value: 0 }]), [
+    'a',
+    1,
+    { type: 'date', value: 0 },
+  ]);
+  for (const key of [
+    true,
+    null,
+    Number.NaN,
+    [['nested']],
+    { type: 'binary', value: 'AA==' },
+    { type: 'date', value: 1, extra: 1 },
+    Array.from({ length: 33 }, (_, index) => index),
+  ]) {
+    assert.throws(
+      () => normalizeIndexedDbKey(key),
+      (error: unknown) =>
+        error instanceof BridgeError &&
+        error.code === 'INVALID_REQUEST' &&
+        (error.details as { reason?: string }).reason === 'unsupported_key_type',
+      JSON.stringify(key)
+    );
+  }
+  for (const params of [
+    { source: 'indexeddb', store: 's', key: 1 },
+    { source: 'indexeddb', database: 'app', key: 1 },
+    { source: 'indexeddb', database: 'app', store: 's' },
+    { source: 'indexeddb', database: 'app', store: 's', key: 1, frameId: -1 },
+    { source: 'indexeddb', database: 'app', store: 's', key: 1, frameId: 1.5 },
+    { source: 'indexeddb', database: 'app', store: 's', key: 1, name: 'x' },
+  ]) {
+    assert.throws(
+      () => normalizeSensitiveReadParams(params),
+      (error: unknown) => error instanceof BridgeError && error.code === 'INVALID_REQUEST',
+      JSON.stringify(params)
+    );
+  }
+});
+
+test('page.get_storage accepts indexeddb and never falls back to local', () => {
+  assert.deepEqual(normalizeStorageParams({ type: 'indexeddb' }), {
+    type: 'indexeddb',
+    keys: null,
+  });
+  assert.deepEqual(STORAGE_TYPES, ['local', 'session', 'indexeddb']);
+  assert.throws(
+    () =>
+      normalizeStorageParams({ type: 'cache' } as unknown as Parameters<
+        typeof normalizeStorageParams
+      >[0]),
+    (error: unknown) =>
+      error instanceof BridgeError &&
+      error.code === 'INVALID_REQUEST' &&
+      (error.details as { reason?: string }).reason === 'unsupported_storage_type'
+  );
+  assert.throws(
+    () => normalizeStorageParams({ type: 'indexeddb', keys: ['sid'] }),
+    (error: unknown) => error instanceof BridgeError && error.code === 'INVALID_REQUEST'
   );
 });
 
@@ -1212,6 +1370,30 @@ test('DOM outline scope and literal search are opt-in, bounded, and source-speci
   assert.equal(normalizeAccessibilityTreeParams({ source: 'dom' }).find, undefined);
 });
 
+test('DOM outline since is a source=dom snapshotId and passes through unchanged', () => {
+  assert.equal(
+    normalizeAccessibilityTreeParams({ source: 'dom', since: 'ol_k3v9x2m4q8w1' }).since,
+    'ol_k3v9x2m4q8w1'
+  );
+  assert.equal(normalizeAccessibilityTreeParams({ source: 'dom' }).since, undefined);
+  for (const params of [
+    { since: 'ol_k3v9x2m4q8w1' },
+    { source: 'cdp', since: 'ol_k3v9x2m4q8w1' },
+    { source: 'dom', since: '' },
+    { source: 'dom', since: 'ol_ k3' },
+    { source: 'dom', since: 'x'.repeat(65) },
+    { source: 'dom', since: 42 },
+  ]) {
+    assert.throws(
+      () =>
+        normalizeAccessibilityTreeParams(
+          params as unknown as Parameters<typeof normalizeAccessibilityTreeParams>[0]
+        ),
+      { code: 'INVALID_REQUEST' }
+    );
+  }
+});
+
 test('normalizeAccessibilityTreeParams makes CDP outlines compact unless opted out', () => {
   assert.equal(normalizeAccessibilityTreeParams({ format: 'outline' }).compact, true);
   assert.equal(
@@ -1372,12 +1554,48 @@ test('accessibility and CDP network options normalize strictly', () => {
     urlPattern: null,
     source: 'cdp',
     capture: 'start',
+    bodies: null,
   });
   assert.throws(
     () => normalizeNetworkParams({ source: 'fetch-xhr', capture: 'stop' }),
     /only valid with source/
   );
   assert.throws(() => normalizeNetworkParams({ source: 'invalid' } as never), /source must be/);
+});
+
+test('CDP body capture is opt-in, bounded, and only valid when starting CDP capture', () => {
+  assert.deepEqual(normalizeNetworkParams({ source: 'cdp', capture: 'start', bodies: {} }).bodies, {
+    urlPattern: null,
+    maxResourceBytes: MAX_CDP_BODY_RESOURCE_BYTES,
+  });
+  assert.deepEqual(
+    normalizeNetworkParams({
+      source: 'cdp',
+      capture: 'start',
+      bodies: { urlPattern: ' https://api.example/*.json ', maxResourceBytes: 4096 },
+    }).bodies,
+    { urlPattern: 'https://api.example/*.json', maxResourceBytes: 4096 }
+  );
+  for (const params of [
+    { source: 'cdp', capture: 'read', bodies: {} },
+    { source: 'cdp', bodies: {} },
+    { source: 'fetch-xhr', bodies: {} },
+    { source: 'cdp', capture: 'start', bodies: [] },
+    { source: 'cdp', capture: 'start', bodies: { urlPattern: '' } },
+    { source: 'cdp', capture: 'start', bodies: { urlPattern: 'x'.repeat(2_049) } },
+    { source: 'cdp', capture: 'start', bodies: { maxResourceBytes: 0 } },
+    { source: 'cdp', capture: 'start', bodies: { maxResourceBytes: 5_242_881 } },
+    { source: 'cdp', capture: 'start', bodies: { maxResourceBytes: 1.5 } },
+    { source: 'cdp', capture: 'start', bodies: { postData: true } },
+  ]) {
+    assert.throws(
+      () => normalizeNetworkParams(params as never),
+      (error: unknown) => error instanceof BridgeError && error.code === 'INVALID_REQUEST',
+      JSON.stringify(params)
+    );
+  }
+  assert.equal(MAX_CDP_BODY_RESOURCE_BYTES, 5_242_880);
+  assert.equal(MAX_CDP_BODY_TOTAL_BYTES, 52_428_800);
 });
 
 test('normalizeNetworkInterceptAddParams safely defaults omitted action to continue', () => {

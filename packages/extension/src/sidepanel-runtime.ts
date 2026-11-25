@@ -39,8 +39,8 @@ export type ActionLogEntry = {
   continuationHint: string | null;
   severity?: 'info' | 'warning';
   sensitiveAccess?: {
-    source: 'local_storage' | 'session_storage';
-    category: 'storage_value';
+    source: 'local_storage' | 'session_storage' | 'response_body' | 'indexeddb';
+    category: 'storage_value' | 'response_body' | 'indexeddb_record';
     keyLength: number;
   } | null;
 };

@@ -147,6 +147,9 @@ pages with thousands of same-tag elements rather than typical pages. */
   const STALE_RECOVERY_TIME_MS = 3000;
   const MAX_PATCH_REGISTRY_SIZE = 2000;
   let registryPruned = false;
+  /** Counts prunes without being consumed, so a retained outline snapshot can
+  tell whether any of its refs may have been dropped since it was taken. */
+  let pruneEpoch = 0;
 
   let elementRegistryPruneIterator: IterableIterator<[string, Element]> | null = null;
 
@@ -247,6 +250,7 @@ Uses a reverse WeakMap for O(1) lookup instead of scanning the registry. */
     reverseRegistry.delete(element);
     elementDescriptors.delete(elementRef);
     registryPruned = true;
+    pruneEpoch += 1;
   }
 
   /** Keep semantic identity data small and independent of application DOM. */
@@ -584,6 +588,7 @@ registry at once. */
     elementRegistryPruneIterator = result.iterator;
     if (result.pruned) {
       registryPruned = true;
+      pruneEpoch += 1;
     }
   }
 
@@ -712,7 +717,9 @@ registry at once. */
 
   /** Start counting mutations on the first read that needs a revision. Frames
   the bridge never reads (most ads and embeds) then pay no observer cost.
-  Revisions compare reads within one document, so a late start is harmless. */
+  Revisions compare reads within one document, so a late start is harmless.
+  The observer sees the light DOM only: mutations inside shadow roots, property
+  changes such as checked or value, and focus do not count. */
   function ensureRevisionObserver(): void {
     if (revisionObserver || typeof MutationObserver !== 'function' || !document.documentElement) {
       return;
@@ -754,6 +761,8 @@ registry at once. */
 
   globalState.__BBX_CONTENT_REGISTRY__ = Object.freeze({
     consumePruned,
+    getPruneEpoch: () => pruneEpoch,
+    isRevisionTracked: () => revisionObserver !== null,
     getDocumentRevision,
     createContentId,
     refDocumentTag: REF_DOCUMENT_TAG,

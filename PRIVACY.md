@@ -1,6 +1,6 @@
 # Browser Bridge (BBX) Privacy Policy
 
-Last updated: 2026-07-23
+Last updated: 2026-11-24
 
 ## Overview
 
@@ -19,19 +19,23 @@ When you enable Browser Bridge for a Chrome window, Browser Bridge can access pa
 - Metadata-only HAR 1.2 documents exported from an explicitly armed CDP capture, including sanitized URLs and observed status, redirect, failure, cache, and service-worker metadata
 - Current JavaScript dialog information when observable and explicitly requested, including dialog type, bounded message text, and bounded default prompt text
 - `localStorage` and `sessionStorage` key metadata through ordinary inspection, and one exact value only through a deliberate `sensitive.read` request
+- One exact network response body per deliberate `sensitive.read` request, only after the user turns on "Allow reading response bodies" (off by default) and an agent starts a CDP capture that opts in to body buffering
+- IndexedDB metadata (database, object store and index names, versions, key paths, and record counts, never records) for each frame's own origin
+- One IndexedDB record per deliberate `sensitive.read` request, only with "Allow reading IndexedDB records" turned on
 - Screenshots or cropped image captures when explicitly requested
 - User-triggered interaction data and results such as clicks, native pointer movement/drag, DOM or native text dispatch, key presses, selection changes, dialog decisions, and navigation actions
 - Bounded semantic descriptors for optional stale-element recovery, represented in memory with normalized hashes and structural context rather than page text values or attributes written into the application DOM
 
-All-resource network inspection excludes request and response bodies, cookies,
-authorization values, and complete headers. It removes URL credentials and
-fragments, replaces query parameter values with a redaction marker, and
-summarizes data/blob URLs before returning them. Browser Bridge does not expose
-these excluded values through that feature. HAR exports use the same URL
-sanitization: schemes, hosts, paths, and query parameter names remain visible,
-but credentials, fragments, and query values do not. HAR request/response
-headers and cookies are empty, bodies are absent, and unavailable byte sizes and
-timing phases are reported as `-1`.
+The extension does not request Chrome's `cookies` permission. Neither
+`page.get_storage` nor `sensitive.read` can list browser cookies or retrieve a
+cookie value. Explicit page evaluation can still read cookies available to the
+page's own scripts through `document.cookie`, which excludes HttpOnly cookies.
+
+CDP network lists and HAR exports omit bodies, cookies, and authorization
+headers. Their URLs retain schemes, hosts, paths, and query parameter names
+but redact credentials, fragments, and query values. HAR request and response
+header and cookie arrays are empty; unavailable byte sizes and timing phases
+are reported as `-1`.
 
 Recovery telemetry contains only fixed category names, bounded counts, rates,
 timestamps, and active-loop flags. It does not include page content, URLs,
@@ -94,7 +98,7 @@ Browser Bridge keeps data only as long as needed for the current local session a
 - The `downloads` permission supports browser-native downloads, progress, pause/resume, and cancellation for downloads BBX starts. Downloaded files and browser download history follow Chrome's retention rules. Releasing a BBX handle does not delete either. BBX does not expose general download-history search.
 - Explicit trusted image paste overwrites the system clipboard with the supplied PNG and dispatches native paste into a focused editor. It does not read existing clipboard content.
 - Dialog message/default prompt text is returned to the requesting caller when inspected but is excluded from persisted action-log summaries and size diagnostics.
-- Exact sensitive values traverse the selected client in memory but are excluded from action summaries, diagnostic size counters, daemon logs, and automatic artifact storage.
+- Exact sensitive values traverse the selected client in memory but are excluded from action summaries, diagnostic size counters, daemon logs, and automatic artifact storage. IndexedDB database, store, and key names are not retained in action summaries either.
 - Patch rollback records and remembered element references live in the current document. Browser Bridge attempts patch rollback when access is disabled or switched, while page replacement/navigation removes document-local state.
 - Hashed semantic descriptors used for optional stale recovery are bounded in memory with the element registry and do not survive the document/registry lifecycle.
 

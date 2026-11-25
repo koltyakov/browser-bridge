@@ -60,7 +60,10 @@ export function createMethodInputs(definitions) {
     BRIDGE_METHODS.map((method) => {
       const entry = BRIDGE_METHOD_REGISTRY[method];
       const detail = entry.discovery;
-      const schema = record(inlineSchema(bindings[method], definitions), method);
+      const { schema, branches } = mergeUnionBinding(
+        record(inlineSchema(bindings[method], definitions), method),
+        method
+      );
       const properties = record(schema.properties, `${method}.properties`);
       if (detail) {
         assert(
@@ -97,6 +100,26 @@ export function createMethodInputs(definitions) {
             ? schema.required.filter((key) => entry.params.includes(String(key)))
             : []),
         additionalProperties: false,
+        // A discriminated union keeps each variant's exact locator fields.
+        ...(branches
+          ? {
+              anyOf: branches.map((branch) => {
+                const branchProperties = record(branch.properties, `${method}.anyOf.properties`);
+                return {
+                  type: 'object',
+                  properties: Object.fromEntries(
+                    entry.params
+                      .filter((key) => Object.hasOwn(branchProperties, key))
+                      .map((key) => [key, branchProperties[key]])
+                  ),
+                  required: (Array.isArray(branch.required) ? branch.required : []).filter((key) =>
+                    entry.params.includes(String(key))
+                  ),
+                  additionalProperties: false,
+                };
+              }),
+            }
+          : {}),
       };
       validateSchema(inputSchema, method);
       return [
@@ -110,6 +133,55 @@ export function createMethodInputs(definitions) {
       ];
     })
   );
+}
+
+/** Flatten a union of object bindings into one object whose properties are the
+ * union of every variant's properties and whose required keys are common to all
+ * variants. The variants are returned so the input schema can keep them.
+ * @param {Record<string, unknown>} schema
+ * @param {string} method
+ * @returns {{schema: Record<string, unknown>, branches: Record<string, unknown>[] | null}}
+ */
+function mergeUnionBinding(schema, method) {
+  if (!Array.isArray(schema.anyOf)) return { schema, branches: null };
+  const branches = schema.anyOf.map((branch, index) => record(branch, `${method}.anyOf[${index}]`));
+  /** @type {Record<string, Record<string, unknown>>} */
+  const properties = {};
+  for (const branch of branches) {
+    assert.equal(branch.type, 'object', `${method}: union bindings must be objects`);
+    for (const [key, child] of Object.entries(record(branch.properties, `${method}.properties`))) {
+      const next = record(child, `${method}.${key}`);
+      const existing = properties[key];
+      if (!existing) {
+        properties[key] = next;
+      } else if (JSON.stringify(existing) !== JSON.stringify(next)) {
+        if (
+          Array.isArray(existing.enum) &&
+          Array.isArray(next.enum) &&
+          existing.type === next.type
+        ) {
+          properties[key] = { ...existing, enum: [...new Set([...existing.enum, ...next.enum])] };
+        } else {
+          // Variants type the same locator differently (a storage key is a
+          // string, an IndexedDB key is any IndexedDbKey): accept either.
+          const variants = Array.isArray(existing.anyOf) ? existing.anyOf : [existing];
+          const nextVariants = Array.isArray(next.anyOf) ? next.anyOf : [next];
+          const merged = [...variants];
+          for (const variant of nextVariants)
+            if (!merged.some((known) => JSON.stringify(known) === JSON.stringify(variant)))
+              merged.push(variant);
+          properties[key] = { anyOf: merged };
+        }
+      }
+    }
+  }
+  const required = Object.keys(properties).filter((key) =>
+    branches.every((branch) => Array.isArray(branch.required) && branch.required.includes(key))
+  );
+  return {
+    schema: { type: 'object', properties, required, additionalProperties: true },
+    branches,
+  };
 }
 
 /** Render a JSON-compatible TypeScript RPC signature, not a host tool path.

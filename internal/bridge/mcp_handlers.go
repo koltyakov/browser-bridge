@@ -62,16 +62,16 @@ var mcpActions = map[string]map[string]string{
 		"describe": "dom.describe!|", "text": "dom.get_text!|textBudget", "attributes": "dom.get_attributes!|attributes",
 		"wait": "dom.wait_for|selector text state timeoutMs", "find_text": "dom.find_by_text|text exact selector maxResults includeHidden",
 		"find_role": "dom.find_by_role|role name exact selector maxResults includeHidden", "html": "dom.get_html!|outer maxLength",
-		"accessibility_tree": "dom.get_accessibility_tree|selector maxNodes maxDepth compact interactiveOnly source format scope find context",
+		"accessibility_tree": "dom.get_accessibility_tree|selector maxNodes maxDepth compact interactiveOnly source format scope find context since",
 		"baseline_create":    "dom.baseline.create|selector maxNodes maxDepth textBudget attributeAllowlist",
 		"baseline_compare":   "dom.baseline.compare|baselineId maxChanges", "baseline_describe": "dom.baseline.describe|baselineId", "baseline_release": "dom.baseline.release|baselineId",
 	},
 	"browser_styles_layout": {"computed": "styles.get_computed!|properties", "matched_rules": "styles.get_matched_rules!|", "box_model": "layout.get_box_model!|", "hit_test": "layout.hit_test|x y"},
 	"browser_page": {
-		"state": "page.get_state|", "evaluate": "page.evaluate|expression awaitPromise timeoutMs returnByValue", "console": "page.get_console|level clear limit",
+		"state": "page.get_state|", "evaluate": "page.evaluate|expression awaitPromise timeoutMs returnByValue", "console": "page.get_console|level clear limit resolveSources",
 		"handle_dialog": "page.handle_dialog|dialogAction:action promptText expectedDialogId", "wait_for_load": "page.wait_for_load_state|timeoutMs waitForLoad url urlMatch",
 		"storage": "page.get_storage|type keys", "text": "page.get_text|textBudget", "extract_content": "page.extract_content|format selector includeMetadata consistency textBudget settleTimeoutMs",
-		"network": "page.get_network|clear limit urlPattern source capture", "har": "network.export_har|limit urlPattern delivery", "performance": "performance.get_metrics|",
+		"network": "page.get_network|clear limit urlPattern source capture bodies", "har": "network.export_har|limit urlPattern delivery", "performance": "performance.get_metrics|",
 	},
 	"browser_navigation": {"navigate": "navigation.navigate|url waitForLoad timeoutMs", "reload": "navigation.reload|waitForLoad timeoutMs", "go_back": "navigation.go_back|waitForLoad timeoutMs", "go_forward": "navigation.go_forward|waitForLoad timeoutMs", "scroll": "viewport.scroll|top left behavior relative", "resize": "viewport.resize|width height deviceScaleFactor reset"},
 	"browser_tabs":       {"list": "tabs.list|limit offset", "create": "tabs.create|url active idleTtlMs", "close": "tabs.close|tabId", "activate": "tabs.activate|tabId"},
@@ -188,7 +188,7 @@ func (s *mcpSession) handleTool(ctx context.Context, name string, args object, e
 	case "browser_logs":
 		method, params = "log.tail", mcpPick(args, "limit")
 	case "browser_sensitive_read":
-		method, params = "sensitive.read", mcpPick(args, "source key")
+		method, params = "sensitive.read", mcpPick(args, "source key requestId encoding database store frameId")
 	default:
 		spec := mcpActions[name][args.text("action")]
 		if spec == "" {

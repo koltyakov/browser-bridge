@@ -63,11 +63,11 @@ actions still use frame-owned refs or ordinary locator routing.
 | `daemon.metrics`                   | No   | -          | system      | `-`                  | Daemon health, performance, and process-local recovery metrics                              |
 | `page.get_state`                   | Yes  | -          | page        | `page.read`          | URL, readiness, focus, viewport, and observable dialog status                              |
 | `page.evaluate`                    | Yes  | CDP        | page        | `page.evaluate`      | JS expression in page context; last resort                                                 |
-| `page.get_console`                 | Yes  | -          | page        | `page.read`          | Buffered console messages; filter by `level`, `limit`                                      |
+| `page.get_console`                 | Yes  | -          | page        | `page.read`          | Buffered console messages and error stacks; filter by `level`, `limit`; `resolveSources` maps frames through source maps |
 | `page.handle_dialog`               | Yes  | CDP        | page        | `navigation.control` | Inspect or explicitly accept/dismiss the currently observable dialog                       |
 | `page.wait_for_load_state`         | Yes  | -          | wait        | `page.read`          | Wait for truthful tab `complete` state and/or a URL condition                              |
-| `page.get_storage`                 | Yes  | -          | page        | `page.read`          | Bounded storage key/presence metadata; optional `keys`; never values                        |
-| `sensitive.read`                   | Yes  | -          | sensitive   | `sensitive.read`     | One exact local/session storage key; sequential, non-retryable, whole-or-error              |
+| `page.get_storage`                 | Yes  | -          | page        | `page.read`          | Bounded storage keys or IndexedDB metadata; optional `keys`; never values          |
+| `sensitive.read`                   | Yes  | -          | sensitive   | `sensitive.read`     | One storage key, or gated body or IndexedDB record; sequential, whole-or-error     |
 | `page.get_text`                    | Yes  | -          | page        | `page.read`          | Full page text; `textBudget` limits size, `offset` continues a truncated read              |
 | `page.extract_content`             | Yes  | -          | page        | `page.read`          | Node-processed semantic text/Markdown with bounded HTML snapshots and optional settlement   |
 | `page.get_network`                 | Yes  | Conditional | page        | `network.read`       | Fetch/XHR by default; explicit CDP all-resource capture lifecycle                          |

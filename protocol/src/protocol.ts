@@ -49,6 +49,7 @@ import {
   MAX_PERFORM_STEPS,
   MAX_PERFORM_TIMEOUT_MS,
   MAX_SENSITIVE_VALUE_BYTES,
+  MAX_CDP_BODY_RESOURCE_BYTES,
   MAX_TOUCH_POINTS,
   MAX_HTML_LENGTH,
   MAX_PRUNED_HTML_LENGTH,
@@ -1041,6 +1042,7 @@ const PERFORM_STEP_METHODS = new Set([
   'page.get_text',
   'dom.query',
   'dom.get_text',
+  'dom.get_accessibility_tree',
   'navigation.navigate',
 ]);
 
@@ -1223,7 +1225,17 @@ export function normalizeInputPerformParams(params: PerformParams = {}): Normali
         `steps[${index}].params must be an object.`
       );
     }
-    const rawParams = resolved.params;
+    let rawParams = resolved.params;
+    // A sequence reads the DOM outline; the CDP tree would attach the debugger.
+    if (method === 'dom.get_accessibility_tree') {
+      if (rawParams.source !== undefined && rawParams.source !== 'dom') {
+        throw new BridgeError(
+          ERROR_CODES.INVALID_REQUEST,
+          `steps[${index}] dom.get_accessibility_tree supports only source "dom".`
+        );
+      }
+      rawParams = { ...rawParams, source: 'dom' };
+    }
     const stepParams =
       executionMode && CDP_CAPABLE_STEP_METHODS.has(method) && rawParams.executionMode === undefined
         ? { ...rawParams, executionMode }
@@ -1553,10 +1565,15 @@ export function normalizeEvaluateParams(params: EvaluateParams = {}): Normalized
 
 export function normalizeConsoleParams(params: ConsoleParams = {}): NormalizedConsoleParams {
   const validLevels = ['all', 'log', 'warn', 'error', 'info', 'debug', 'exception', 'rejection'];
+  // Resolution makes network requests, so a malformed flag must not coerce to true.
+  if (params.resolveSources !== undefined && typeof params.resolveSources !== 'boolean') {
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'resolveSources must be a boolean.');
+  }
   return {
     level: validLevels.includes(String(params.level ?? '')) ? String(params.level) : 'all',
     clear: Boolean(params.clear),
     limit: clampInt(params.limit, 1, 200, 50),
+    resolveSources: params.resolveSources === true,
   };
 }
 
@@ -1721,26 +1738,58 @@ export function normalizeDragParams(params: DragParams = {}): NormalizedDragPara
   };
 }
 
+/** Every page.get_storage type this protocol version accepts. */
+export const STORAGE_TYPES: readonly import('./types.js').StorageType[] = Object.freeze([
+  'local',
+  'session',
+  'indexeddb',
+]);
+
 export function normalizeStorageParams(params: StorageParams = {}): NormalizedStorageParams {
+  const type = params.type ?? 'local';
+  if (!STORAGE_TYPES.includes(type)) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      `type must be one of ${STORAGE_TYPES.join(', ')}.`,
+      { reason: 'unsupported_storage_type', supportedTypes: [...STORAGE_TYPES] }
+    );
+  }
+  if (params.keys !== undefined && params.keys !== null && type !== 'local' && type !== 'session')
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'keys applies only to local and session.');
   const keys = Array.isArray(params.keys)
     ? params.keys.filter((key) => typeof key === 'string')
     : null;
   if (keys && keys.length > 100) {
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'keys must contain at most 100 strings.');
   }
-  return {
-    type: params.type === 'session' ? 'session' : 'local',
-    keys,
-  };
+  return { type, keys };
+}
+
+/** Every sensitive.read source this protocol version accepts. */
+export const SENSITIVE_READ_SOURCES: readonly import('./types.js').SensitiveReadSource[] =
+  Object.freeze(['local_storage', 'session_storage', 'response_body', 'indexeddb']);
+
+/** Sources each requiring its own access setting and the remote opt-in. Web Storage
+ * reads predate the gate and keep their behaviour. Anything else, including a
+ * source this build does not know, counts as gated so checks fail closed. */
+export function isGatedSensitiveSource(source: unknown): boolean {
+  return source !== 'local_storage' && source !== 'session_storage';
 }
 
 export function normalizeSensitiveReadParams(
   params: Record<string, unknown>
 ): NormalizedSensitiveReadParams {
+  if (params?.source === 'response_body') {
+    return normalizeSensitiveResponseBodyParams(params);
+  }
+  if (params?.source === 'indexeddb') {
+    return normalizeSensitiveIndexedDbParams(params);
+  }
   if (params?.source !== 'local_storage' && params?.source !== 'session_storage') {
     throw new BridgeError(
       ERROR_CODES.INVALID_REQUEST,
-      'source must be local_storage or session_storage.'
+      `source must be one of ${SENSITIVE_READ_SOURCES.join(', ')}.`,
+      { reason: 'unsupported_source', supportedSources: [...SENSITIVE_READ_SOURCES] }
     );
   }
   if (typeof params.key !== 'string') {
@@ -1755,6 +1804,124 @@ export function normalizeSensitiveReadParams(
   return {
     source: params.source,
     key: params.key,
+    maxBytes: MAX_SENSITIVE_VALUE_BYTES,
+  };
+}
+
+function normalizeSensitiveResponseBodyParams(
+  params: Record<string, unknown>
+): NormalizedSensitiveReadParams {
+  const invalid = (message: string) => new BridgeError(ERROR_CODES.INVALID_REQUEST, message);
+  for (const key of Object.keys(params)) {
+    // maxBytes is set by normalization itself; a caller value is ignored.
+    if (key !== 'source' && key !== 'requestId' && key !== 'encoding' && key !== 'maxBytes')
+      throw invalid(`${key} is not a response_body locator. Pass requestId and optional encoding.`);
+  }
+  if (
+    typeof params.requestId !== 'string' ||
+    !params.requestId ||
+    params.requestId.length > 256 ||
+    params.requestId.trim() !== params.requestId
+  ) {
+    throw invalid(
+      'requestId must be the exact non-empty requestId of a page.get_network source=cdp entry.'
+    );
+  }
+  const encoding = params.encoding ?? 'text';
+  if (encoding !== 'text' && encoding !== 'base64') {
+    throw invalid('encoding must be text or base64.');
+  }
+  return {
+    source: 'response_body',
+    requestId: params.requestId,
+    encoding,
+    maxBytes: MAX_SENSITIVE_VALUE_BYTES,
+  };
+}
+
+/** Reject keys that are not this source's locator. maxBytes is set by
+ * normalization itself, so a caller value is ignored rather than refused. */
+function assertLocatorKeys(
+  params: Record<string, unknown>,
+  source: string,
+  allowed: readonly string[]
+): void {
+  for (const key of Object.keys(params)) {
+    if (key !== 'source' && key !== 'maxBytes' && !allowed.includes(key))
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        `${key} is not a ${source} locator. Pass ${allowed.join(', ')}.`
+      );
+  }
+}
+
+const MAX_INDEXEDDB_KEY_PARTS = 32;
+
+/** Validate a JSON IndexedDB key: string, finite number, {type:"date", value},
+ * or a one-level array of those. Anything else is a typed error. */
+export function normalizeIndexedDbKey(value: unknown): import('./types.js').IndexedDbKey {
+  const unsupported = (message: string) =>
+    new BridgeError(ERROR_CODES.INVALID_REQUEST, message, {
+      reason: 'unsupported_key_type',
+      supportedKeyTypes: ['string', 'number', 'date', 'array'],
+    });
+  const part = (item: unknown): string | number | import('./types.js').IndexedDbDateKey => {
+    if (typeof item === 'string') {
+      if (item.length > 2_048)
+        throw unsupported('String key parts are limited to 2,048 characters.');
+      return item;
+    }
+    if (typeof item === 'number') {
+      if (!Number.isFinite(item)) throw unsupported('Number keys must be finite.');
+      return item;
+    }
+    if (item && typeof item === 'object' && !Array.isArray(item)) {
+      const record = item as Record<string, unknown>;
+      if (
+        record.type === 'date' &&
+        typeof record.value === 'number' &&
+        Number.isFinite(record.value) &&
+        Object.keys(record).length === 2
+      )
+        return { type: 'date', value: record.value };
+    }
+    throw unsupported(
+      'key must be a string, a finite number, {"type":"date","value":<epoch ms>}, or an array of those. Binary and nested array keys are not supported.'
+    );
+  };
+  if (Array.isArray(value)) {
+    if (value.length > MAX_INDEXEDDB_KEY_PARTS)
+      throw unsupported(`Array keys are limited to ${MAX_INDEXEDDB_KEY_PARTS} parts.`);
+    return value.map(part);
+  }
+  return part(value);
+}
+
+function normalizeSensitiveIndexedDbParams(
+  params: Record<string, unknown>
+): NormalizedSensitiveReadParams {
+  assertLocatorKeys(params, 'indexeddb', ['database', 'store', 'key', 'frameId']);
+  for (const name of ['database', 'store'] as const) {
+    if (typeof params[name] !== 'string' || (params[name] as string).length > 1_024)
+      throw new BridgeError(
+        ERROR_CODES.INVALID_REQUEST,
+        `${name} must be the exact name from page.get_storage type=indexeddb.`
+      );
+  }
+  if (!Object.hasOwn(params, 'key'))
+    throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'key is required for indexeddb.');
+  const frameId = params.frameId ?? 0;
+  if (typeof frameId !== 'number' || !Number.isSafeInteger(frameId) || frameId < 0)
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'frameId must be a frame ID from page.get_storage type=indexeddb.'
+    );
+  return {
+    source: 'indexeddb',
+    database: params.database as string,
+    store: params.store as string,
+    key: normalizeIndexedDbKey(params.key),
+    frameId,
     maxBytes: MAX_SENSITIVE_VALUE_BYTES,
   };
 }
@@ -1909,11 +2076,23 @@ export function normalizeAccessibilityTreeParams(
     throw new BridgeError(ERROR_CODES.INVALID_REQUEST, 'format must be tree or outline.');
   }
   const scoped =
-    params.scope !== undefined || params.find !== undefined || params.context !== undefined;
+    params.scope !== undefined ||
+    params.find !== undefined ||
+    params.context !== undefined ||
+    params.since !== undefined;
   if (scoped && source !== 'dom') {
     throw new BridgeError(
       ERROR_CODES.INVALID_REQUEST,
-      'scope, find, and context require source=dom.'
+      'scope, find, context, and since require source=dom.'
+    );
+  }
+  if (
+    params.since !== undefined &&
+    (typeof params.since !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(params.since))
+  ) {
+    throw new BridgeError(
+      ERROR_CODES.INVALID_REQUEST,
+      'since must be a snapshotId returned by an earlier source=dom read.'
     );
   }
   if (params.scope !== undefined && !['auto', 'modal', 'main', 'document'].includes(params.scope)) {
@@ -1957,6 +2136,7 @@ export function normalizeAccessibilityTreeParams(
     ...(source === 'dom' || format === 'outline' ? { format } : {}),
     ...(params.scope !== undefined ? { scope: params.scope } : {}),
     ...(params.find !== undefined ? { find: params.find, context: params.context ?? 1 } : {}),
+    ...(params.since !== undefined ? { since: params.since } : {}),
   };
 }
 
@@ -2038,7 +2218,49 @@ export function normalizeNetworkParams(params: NetworkParams = {}): NormalizedNe
         : null,
     source,
     capture,
+    bodies: normalizeNetworkBodyCapture(params.bodies, source, capture),
   };
+}
+
+function normalizeNetworkBodyCapture(
+  value: unknown,
+  source: NormalizedNetworkParams['source'],
+  capture: NormalizedNetworkParams['capture']
+): import('./types.js').NormalizedNetworkBodyCaptureParams | null {
+  if (value === undefined || value === null) return null;
+  const invalid = (message: string) => new BridgeError(ERROR_CODES.INVALID_REQUEST, message);
+  if (source !== 'cdp' || capture !== 'start')
+    throw invalid('bodies is only valid with source "cdp" and capture "start".');
+  if (typeof value !== 'object' || Array.isArray(value))
+    throw invalid('bodies must be an object with optional urlPattern and maxResourceBytes.');
+  const bodies = value as Record<string, unknown>;
+  for (const key of Object.keys(bodies)) {
+    if (key !== 'urlPattern' && key !== 'maxResourceBytes')
+      throw invalid(`bodies.${key} is not supported. Use urlPattern or maxResourceBytes.`);
+  }
+  let urlPattern: string | null = null;
+  if (bodies.urlPattern !== undefined && bodies.urlPattern !== null) {
+    if (
+      typeof bodies.urlPattern !== 'string' ||
+      !bodies.urlPattern.trim() ||
+      bodies.urlPattern.length > MAX_INTERCEPT_URL_PATTERN_LENGTH
+    )
+      throw invalid(
+        `bodies.urlPattern must be a non-empty glob of at most ${MAX_INTERCEPT_URL_PATTERN_LENGTH} characters.`
+      );
+    urlPattern = bodies.urlPattern.trim();
+  }
+  const maxResourceBytes = bodies.maxResourceBytes ?? MAX_CDP_BODY_RESOURCE_BYTES;
+  if (
+    typeof maxResourceBytes !== 'number' ||
+    !Number.isSafeInteger(maxResourceBytes) ||
+    maxResourceBytes < 1 ||
+    maxResourceBytes > MAX_CDP_BODY_RESOURCE_BYTES
+  )
+    throw invalid(
+      `bodies.maxResourceBytes must be an integer between 1 and ${MAX_CDP_BODY_RESOURCE_BYTES}.`
+    );
+  return { urlPattern, maxResourceBytes };
 }
 
 export function normalizeHarExportParams(
@@ -2340,7 +2562,7 @@ export function createRuntimeContext(): {
       'performance.get_metrics returns raw Chrome/CDP counters whose names and units vary; it is a point sample with no BBX navigation window or LCP/CLS/INP measurement',
       'viewport.resize to test responsive layouts',
       'Prefer screenshot.capture_element, or a tight screenshot.capture_region when element capture cannot express the needed area',
-      'page.get_storage reads localStorage/sessionStorage without evaluate',
+      'page.get_storage reads localStorage/sessionStorage keys and IndexedDB metadata without evaluate',
     ],
     flow: [
       'health.ping',

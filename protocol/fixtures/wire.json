@@ -109,5 +109,218 @@
       "error": { "code": "NOT_A_PROTOCOL_ERROR", "message": "bad", "details": null },
       "meta": { "protocol_version": "1.14" }
     }
+  },
+  {
+    "type": "AccessibilityTreeParams",
+    "valid": true,
+    "input": { "source": "dom", "since": "ol_k3v9x2m4q8w1a7c5" }
+  },
+  {
+    "type": "DomOutlineResult",
+    "valid": true,
+    "input": {
+      "source": "dom",
+      "format": "outline",
+      "count": 3,
+      "scanned": 40,
+      "truncated": false,
+      "snapshotId": "ol_p0z8n1b7c2d6e5f4",
+      "delta": {
+        "added": ["  - checkbox \"Buy milk\" [el_ab12_9]"],
+        "changed": ["- button \"Clear completed\" [el_ab12_4]"],
+        "removed": ["el_ab12_7"],
+        "removedFrames": [3]
+      }
+    }
+  },
+  {
+    "type": "DomOutlineResult",
+    "valid": true,
+    "input": {
+      "source": "dom",
+      "format": "tree",
+      "count": 1,
+      "scanned": 0,
+      "truncated": false,
+      "snapshotId": "ol_p0z8n1b7c2d6e5f4",
+      "delta": {
+        "added": [
+          { "ref": "el_ab12_9", "role": "checkbox", "name": "Buy milk", "depth": 1, "states": [] }
+        ],
+        "changed": [],
+        "removed": []
+      }
+    }
+  },
+  {
+    "type": "DomOutlineResult",
+    "valid": true,
+    "input": {
+      "source": "dom",
+      "format": "outline",
+      "count": 1,
+      "scanned": 0,
+      "truncated": false,
+      "snapshotId": "ol_p0z8n1b7c2d6e5f4",
+      "unchanged": true
+    }
+  },
+  {
+    "type": "DomOutlineResult",
+    "valid": true,
+    "input": {
+      "source": "dom",
+      "format": "outline",
+      "outline": "- button \"Save\" [el_ab12_1]",
+      "count": 1,
+      "scanned": 5,
+      "truncated": false,
+      "snapshotId": "ol_p0z8n1b7c2d6e5f4",
+      "deltaUnavailable": "navigated"
+    }
+  },
+  {
+    "type": "DomOutlineResult",
+    "valid": false,
+    "input": {
+      "source": "dom",
+      "format": "outline",
+      "count": 1,
+      "scanned": 5,
+      "truncated": false,
+      "deltaUnavailable": "stale"
+    }
+  },
+  {
+    "type": "SensitiveReadParams",
+    "valid": true,
+    "input": { "source": "local_storage", "key": "" }
+  },
+  {
+    "type": "SensitiveReadParams",
+    "valid": true,
+    "input": { "source": "response_body", "requestId": "1234.5", "encoding": "base64" }
+  },
+  { "type": "SensitiveReadParams", "valid": false, "input": { "source": "response_body" } },
+  {
+    "type": "SensitiveReadParams",
+    "valid": false,
+    "input": { "source": "cookie", "name": "sid", "domain": ".example.com", "path": "/" }
+  },
+  {
+    "type": "SensitiveReadParams",
+    "valid": true,
+    "input": {
+      "source": "indexeddb",
+      "database": "app",
+      "store": "users",
+      "key": ["team", 7, { "type": "date", "value": 1700000000000 }],
+      "frameId": 3
+    }
+  },
+  {
+    "type": "SensitiveReadParams",
+    "valid": false,
+    "input": { "source": "indexeddb", "database": "app", "store": "users", "key": true }
+  },
+  { "type": "SensitiveReadParams", "valid": false, "input": { "source": "cache", "url": "/" } },
+  {
+    "type": "SensitiveReadResult",
+    "valid": true,
+    "input": {
+      "source": "indexeddb",
+      "frameId": 0,
+      "database": "app",
+      "store": "files",
+      "value": { "id": "a", "blob": { "$bbxType": "Blob", "mimeType": "image/png", "size": 9 } },
+      "described": 1,
+      "bytes": 64,
+      "exact": true
+    }
+  },
+  { "type": "StorageParams", "valid": false, "input": { "type": "cookies" } },
+  { "type": "StorageParams", "valid": true, "input": { "type": "indexeddb" } },
+  { "type": "StorageParams", "valid": false, "input": { "type": "cache" } },
+  {
+    "type": "StorageResult",
+    "valid": true,
+    "input": {
+      "type": "indexeddb",
+      "frames": [
+        {
+          "frameId": 0,
+          "origin": "https://app.example.com",
+          "available": true,
+          "databases": [
+            {
+              "name": "app",
+              "version": 3,
+              "storeCount": 1,
+              "stores": [
+                {
+                  "name": "users",
+                  "keyPath": "id",
+                  "autoIncrement": false,
+                  "indexes": [
+                    { "name": "byName", "keyPath": "name", "unique": false, "multiEntry": false }
+                  ],
+                  "count": null
+                }
+              ]
+            }
+          ],
+          "total": 1,
+          "incomplete": ["time_budget"]
+        }
+      ],
+      "incompleteFrames": [5]
+    }
+  },
+  {
+    "type": "SensitiveReadResult",
+    "valid": true,
+    "input": {
+      "source": "response_body",
+      "requestId": "1234.5",
+      "body": "{\"ok\":true}",
+      "encoding": "text",
+      "mimeType": "application/json",
+      "bytes": 11,
+      "exact": true
+    }
+  },
+  {
+    "type": "SensitiveReadResult",
+    "valid": false,
+    "input": {
+      "source": "response_body",
+      "requestId": "1234.5",
+      "body": "x",
+      "encoding": "utf16",
+      "mimeType": "",
+      "bytes": 1,
+      "exact": true
+    }
+  },
+  {
+    "type": "NetworkParams",
+    "valid": true,
+    "input": {
+      "source": "cdp",
+      "capture": "start",
+      "bodies": { "urlPattern": "https://api.example/*", "maxResourceBytes": 65536 }
+    }
+  },
+  {
+    "type": "AccessSettings",
+    "valid": true,
+    "input": {
+      "allowCreatingTabs": true,
+      "allowClosingUserTabs": false,
+      "closeAiTabsWhenDone": true,
+      "allowOffDomainNavigation": false,
+      "allowResponseBodyReads": false,
+      "allowIndexedDBReads": false
+    }
   }
 ]

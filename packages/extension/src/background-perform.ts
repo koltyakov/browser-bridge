@@ -62,6 +62,7 @@ const READ_STEP_METHODS = new Set([
   'dom.query',
   'dom.get_text',
   'dom.wait_for',
+  'dom.get_accessibility_tree',
 ]);
 
 /** Failures after an action that mean the next document is not ready yet.

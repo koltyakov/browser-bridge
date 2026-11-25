@@ -19,7 +19,7 @@ export interface BrowserMethodParams {
 "dom.describe": { "elementRef"?: string; "target"?: { "elementRef"?: string; "selector"?: string; "role"?: string; "name"?: string; "text"?: string; "label"?: string; "placeholder"?: string; "testId"?: string; "exact"?: boolean; "nth"?: number; [key: string]: unknown } };
 "dom.find_by_role": { "role": string; "name"?: string; "exact"?: boolean; "selector"?: string; "maxResults"?: number; "includeHidden"?: boolean };
 "dom.find_by_text": { "text": string; "exact"?: boolean; "selector"?: string; "maxResults"?: number; "includeHidden"?: boolean };
-"dom.get_accessibility_tree": { "selector"?: string; "maxNodes"?: number; "maxDepth"?: number; "compact"?: boolean; "interactiveOnly"?: boolean; "source"?: "cdp" | "dom"; "format"?: "tree" | "outline"; "scope"?: "auto" | "modal" | "main" | "document"; "find"?: string; "context"?: number };
+"dom.get_accessibility_tree": { "selector"?: string; "maxNodes"?: number; "maxDepth"?: number; "compact"?: boolean; "interactiveOnly"?: boolean; "source"?: "cdp" | "dom"; "format"?: "tree" | "outline"; "scope"?: "auto" | "modal" | "main" | "document"; "find"?: string; "context"?: number; "since"?: string };
 "dom.get_attributes": { "elementRef"?: string; "target"?: { "elementRef"?: string; "selector"?: string; "role"?: string; "name"?: string; "text"?: string; "label"?: string; "placeholder"?: string; "testId"?: string; "exact"?: boolean; "nth"?: number; [key: string]: unknown }; "attributes"?: Array<string> };
 "dom.get_html": { "elementRef"?: string; "target"?: { "elementRef"?: string; "selector"?: string; "role"?: string; "name"?: string; "text"?: string; "label"?: string; "placeholder"?: string; "testId"?: string; "exact"?: boolean; "nth"?: number; [key: string]: unknown }; "outer"?: boolean; "maxLength"?: number; "prune"?: boolean };
 "dom.get_text": { "elementRef"?: string; "target"?: { "elementRef"?: string; "selector"?: string; "role"?: string; "name"?: string; "text"?: string; "label"?: string; "placeholder"?: string; "testId"?: string; "exact"?: boolean; "nth"?: number; [key: string]: unknown }; "textBudget"?: number; "offset"?: number };
@@ -66,10 +66,10 @@ export interface BrowserMethodParams {
 "network.intercept.remove": { "ruleId": string };
 "page.evaluate": { "expression"?: string; "awaitPromise"?: boolean; "timeoutMs"?: number; "returnByValue"?: boolean };
 "page.extract_content": { "format"?: "text" | "markdown"; "selector"?: string; "includeMetadata"?: boolean; "consistency"?: "best_effort" | "settled"; "textBudget"?: number; "settleTimeoutMs"?: number };
-"page.get_console": { "level"?: string; "clear"?: boolean; "limit"?: number };
-"page.get_network": { "clear"?: boolean; "limit"?: number; "urlPattern"?: string; "source"?: "fetch-xhr" | "cdp"; "capture"?: "read" | "start" | "clear" | "stop" };
+"page.get_console": { "level"?: string; "clear"?: boolean; "limit"?: number; "resolveSources"?: boolean };
+"page.get_network": { "clear"?: boolean; "limit"?: number; "urlPattern"?: string; "source"?: "fetch-xhr" | "cdp"; "capture"?: "read" | "start" | "clear" | "stop"; "bodies"?: { "urlPattern"?: string; "maxResourceBytes"?: number; [key: string]: unknown } };
 "page.get_state": Record<string, never>;
-"page.get_storage": { "type"?: "local" | "session"; "keys"?: Array<string> };
+"page.get_storage": { "type"?: "local" | "session" | "indexeddb"; "keys"?: Array<string> };
 "page.get_text": { "textBudget"?: number; "offset"?: number };
 "page.handle_dialog": { "action"?: "inspect" | "accept" | "dismiss"; "promptText"?: string; "expectedDialogId"?: string };
 "page.wait_for_load_state": { "waitForLoad"?: boolean; "timeoutMs"?: number; "url"?: string | null; "urlMatch"?: "exact" | "contains" | "regex" | null };
@@ -87,7 +87,7 @@ export interface BrowserMethodParams {
 "screenshot.capture_element": { "elementRef"?: string; "format"?: "png" | "jpeg" | "webp"; "quality"?: number; "delivery"?: "auto" | "inline" | "artifact"; "scale"?: number };
 "screenshot.capture_full_page": { "format"?: "png" | "jpeg" | "webp"; "quality"?: number; "delivery"?: "auto" | "inline" | "artifact"; "scale"?: number };
 "screenshot.capture_region": { "x": number; "y": number; "width": number; "height": number; "format"?: "png" | "jpeg" | "webp"; "quality"?: number; "delivery"?: "auto" | "inline" | "artifact"; "scale"?: number };
-"sensitive.read": { "source": "local_storage" | "session_storage"; "key": string };
+"sensitive.read": { "source": "local_storage" | "session_storage"; "key": string } | { "source": "response_body"; "requestId": string; "encoding"?: "text" | "base64" } | { "source": "indexeddb"; "key": string | number | { "type": "date"; "value": number; [key: string]: unknown } | Array<string | number | { "type": "date"; "value": number; [key: string]: unknown }>; "database": string; "store": string; "frameId"?: number };
 "session.export": { "sessionId": string; "format"?: "json" | "html" };
 "session.journal_delete": { "journalId": string };
 "session.journal_read": { "journalId": string; "offset"?: number; "maxBytes"?: number };

@@ -59,6 +59,23 @@ The remote token authenticates only the agent role. It cannot register as the
 Chrome extension, and TCP agents cannot invoke setup mutation such as
 `setup.install`, including through a loopback SSH tunnel.
 
+Gated sensitive reads (`sensitive.read` with `source` of `"response_body"`
+or `"indexeddb"`) are refused for TCP agents while proxy mode is on,
+because the daemon cannot tell an SSH tunnel from a plaintext LAN client. The
+refusal is `ACCESS_DENIED` with `details.reason:
+"remote_sensitive_reads_disabled"`; local and session storage reads and
+`page.get_storage` metadata are unaffected. To allow them, opt in on the browser machine as well as
+turning on **Allow reading response bodies** or **Allow reading IndexedDB records**
+in the side panel for the source you need:
+
+```bash
+bbx proxy enable --remote-sensitive-reads allow   # persisted in proxy.json
+bbx proxy enable --remote-sensitive-reads deny    # revoke
+```
+
+While proxy mode is on, local agents on the browser machine also connect over
+TCP and are refused unless this opt-in is set.
+
 ## 3. Register the remote on the dev machine
 
 ```bash

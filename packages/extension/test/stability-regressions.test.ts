@@ -212,11 +212,17 @@ test('tab cleanup cancels the debugger before awaiting emulation release behind 
 
 test('patch rollback visits child frames and restores patches in reverse order', async () => {
   const rolledBack: string[] = [];
+  const cleared: number[] = [];
   const cleanup = createTabCleanupController(createChromeFake() as unknown as typeof chrome, {
     ...cleanupDependencies(),
     listFrames: async () => [{ frameId: 0 }, { frameId: 7 }],
     sendFrameMessage: async (_tab, frameId, message) => {
       assert.equal(frameId, 7);
+      if (message.method === 'dom.outline.clear') {
+        cleared.push(frameId);
+        // An older content script rejects the method; rollback continues.
+        throw new Error('Unsupported method dom.outline.clear');
+      }
       if (message.method === 'patch.list') return [{ patchId: 'first' }, { patchId: 'second' }];
       rolledBack.push(String((message.params as { patchId: string }).patchId));
       return { rolledBack: true };
@@ -224,6 +230,7 @@ test('patch rollback visits child frames and restores patches in reverse order',
   });
   await cleanup.rollbackAllPatchesForTab(1);
   assert.deepEqual(rolledBack, ['second', 'first']);
+  assert.deepEqual(cleared, [7]);
 });
 
 test('patch cleanup retains touched frame IDs independently of frame enumeration and cache expiry', async () => {

@@ -14,6 +14,7 @@ import {
   DEFAULT_AGENT_TAB_IDLE_TTL_MS,
   RecoveryTelemetryCollector,
 } from '../../../protocol/src/index.js';
+import { createIndexedDbRecordReader } from './background-indexeddb.js';
 import {
   getErrorMessage,
   normalizeRuntimeErrorMessage,
@@ -70,6 +71,7 @@ import { getVersionNegotiationPayload } from './background-versioning.js';
 import { handleNavigationRequest as executeNavigationRequest } from './background-navigation.js';
 import { handlePageEvaluate as executePageEvaluate } from './background-evaluate.js';
 import { executeInputPerform } from './background-perform.js';
+import { outlineSnapshots } from './background-outline-snapshots.js';
 import { createMutationGate } from './background-mutation-gate.js';
 import {
   handleCreateTab as executeCreateTab,
@@ -109,6 +111,12 @@ import {
 import { createFetchInterceptor } from './background-fetch-intercept.js';
 import { createCdpNetworkCapture } from './background-cdp-network.js';
 import {
+  assertSensitiveDataReadsAllowed,
+  createSensitiveReadController,
+  decodeResponseBody,
+  isGatedSensitiveRequest,
+} from './background-sensitive-read.js';
+import {
   createContentScriptBridge,
   isRestrictedScriptingError,
 } from './background-content-script.js';
@@ -121,6 +129,7 @@ import {
   primeTabConsoleCapture,
   primeWindowConsoleCapture,
 } from './background-console.js';
+import { createSourceResolver, readTabLoadedScripts } from './background-source-maps.js';
 import { handleScreenshot } from './background-screenshots.js';
 import { captureVisualBaseline, invalidateVisualBaselines } from './background-visual-baselines.js';
 import {
@@ -184,6 +193,10 @@ const accessSettings = createAccessSettingsController(state, chrome, {
 });
 const accessSettingsInitialization = accessSettings.restore().catch(reportAsyncError);
 const domBaselines = createDomBaselineController();
+const sourceResolver = createSourceResolver({
+  fetch: (url, init) => fetch(url, init),
+  readLoadedScripts: (tabId) => readTabLoadedScripts(tabId, chrome),
+});
 const stagedFiles = createFileStaging();
 const loadedBuild = Object.freeze({
   sourceDigest: SOURCE_DIGEST,
@@ -478,6 +491,7 @@ const tabCleanupController = createTabCleanupController(chrome, {
       clear: (tabId) => invalidateVisualBaselines(activeNativePort(), tabId),
     },
     { name: 'DOM baselines', clear: (tabId) => domBaselines.clearTab(tabId) },
+    { name: 'outline snapshots', clear: (tabId) => outlineSnapshots.clearTab(tabId) },
     { name: 'WebMCP', clear: (tabId) => webmcp.clearTab(tabId) },
     {
       name: 'emulation',
@@ -514,6 +528,7 @@ const clearWindowBridgeState = async (
 ) => {
   requestLifetimes.disconnect();
   domBaselines.clearWindow(windowId);
+  sourceResolver.clear();
   await agentGroups.clearWindow(windowId).catch(reportAsyncError);
   await agentTabs.clear();
   await agentGroups.sync().catch(reportAsyncError);
@@ -625,9 +640,14 @@ const {
   clearEnabledWindowIfGone,
   primeTabConsoleCapture: (tabId) => primeTabConsoleCapture(tabId, chrome),
   readConsoleBuffer: (tabId, clear) => readConsoleBuffer(tabId, clear, chrome),
+  resolveConsoleSources: (tabId, entries) => sourceResolver.resolve(tabId, entries),
   ensureNetworkInterceptor: (tabId) => ensureNetworkInterceptor(tabId, chrome),
   readNetworkBuffer: (tabId, clear) => readNetworkBuffer(tabId, clear, chrome),
-  startCdpNetworkCapture: (tabId) => cdpNetworkCapture.start(tabId),
+  startCdpNetworkCapture: (tabId, bodies) => {
+    // Buffering bodies is pointless unless they may be read; deny up front.
+    if (bodies) assertSensitiveDataReadsAllowed(state, 'response_body');
+    return cdpNetworkCapture.start(tabId, { bodies });
+  },
   clearCdpNetworkCapture: (tabId) => cdpNetworkCapture.clear(tabId),
   readCdpNetworkCapture: (tabId, clear) => cdpNetworkCapture.read(tabId, clear),
   stopCdpNetworkCapture: (tabId) => cdpNetworkCapture.stop(tabId),
@@ -928,6 +948,7 @@ const {
     journals.disconnect();
     for (const tabId of recordings.tabIds()) void recordings.clear(tabId).catch(reportAsyncError);
     domBaselines.clearAll();
+    outlineSnapshots.clearAll();
     stagedFiles.clearAll();
     for (const tabId of resourceFetches)
       void chrome.scripting
@@ -1084,6 +1105,24 @@ function tabsOpenedBy(tabId: number, sinceMs: number): Array<{ tabId: number; ur
     .map((entry) => ({ tabId: entry.tabId, url: entry.url }));
 }
 
+const sensitiveReads = createSensitiveReadController({
+  state,
+  resolveRequestTarget: (request) => resolveRequestTarget(request),
+  captureAccess: () => captureWindowGrant(state),
+  readers: {
+    response_body: async (target, params) =>
+      decodeResponseBody(
+        await cdpNetworkCapture.readBody(target.tabId, params.requestId),
+        params.encoding,
+        params.maxBytes
+      ),
+    indexeddb: createIndexedDbRecordReader({
+      ensureContentScript,
+      frames: { listFrames, sendFrameMessage },
+    }),
+  },
+});
+
 const tabBoundRequestDependencies: Parameters<typeof executeTabBoundRequest>[1] = {
   captureAccess: () => captureWindowGrant(state),
   tabsOpenedBy,
@@ -1234,6 +1273,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
   mutationGate.invalidate(tabId);
   void webmcp.clearTab(tabId).catch(reportAsyncError);
   domBaselines.clearTab(tabId);
+  outlineSnapshots.clearTab(tabId);
   invalidateVisualBaselines(activeNativePort(), tabId);
   void clearActionLogForTab(tabId)
     .finally(() => emitUiState())
@@ -1734,6 +1774,12 @@ async function dispatchBridgeRequest(request: BridgeRequest): Promise<BridgeResp
           }
         },
       });
+    case 'sensitive.read':
+      // Gated sources never reach the content script's Web Storage reader;
+      // IndexedDB records go through the gate before a frame is asked.
+      return isGatedSensitiveRequest(request)
+        ? sensitiveReads.handle(request)
+        : executeTabBoundRequest(request, tabBoundRequestDependencies);
     default:
       if (isTabBoundMethod(request.method)) {
         return executeTabBoundRequest(request, tabBoundRequestDependencies);

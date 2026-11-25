@@ -64,8 +64,8 @@ export type ActionLogEntry = {
   continuationHint: string | null;
   severity?: 'info' | 'warning';
   sensitiveAccess?: {
-    source: 'local_storage' | 'session_storage';
-    category: 'storage_value';
+    source: 'local_storage' | 'session_storage' | 'response_body' | 'indexeddb';
+    category: 'storage_value' | 'response_body' | 'indexeddb_record';
     keyLength: number;
   } | null;
 };
@@ -325,6 +325,15 @@ export function normalizeActionLogEntry(entry: unknown): ActionLogEntry | null {
 
 function normalizeSensitiveAccess(value: object) {
   const candidate = value as Record<string, unknown>;
+  if (candidate.source === 'response_body') {
+    return {
+      source: 'response_body' as const,
+      category: 'response_body' as const,
+      keyLength: 0,
+    };
+  }
+  if (candidate.source === 'indexeddb')
+    return { source: 'indexeddb' as const, category: 'indexeddb_record' as const, keyLength: 0 };
   if (candidate.source !== 'local_storage' && candidate.source !== 'session_storage') {
     return null;
   }

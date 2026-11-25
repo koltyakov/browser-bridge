@@ -65,6 +65,8 @@
     globalThis as typeof globalThis & {
       __BBX_CONTENT_REGISTRY__?: {
         consumePruned: () => boolean;
+        getPruneEpoch?: () => number;
+        isRevisionTracked?: () => boolean;
         getDocumentRevision: () => number;
         getRegistrySize: () => number;
         getRequiredElement: (ref: string) => Element;
@@ -111,7 +113,9 @@
     getRequiredElement,
     normalizeDomQuery,
     rememberElement,
+    isRevisionTracked,
   } = registry;
+  const readPruneEpoch = () => registry.getPruneEpoch?.() ?? 0;
 
   type Budget = {
     maxNodes: number;
@@ -1500,9 +1504,10 @@ locator target. Hidden matches count: the action decides actionability. */
 shadow roots) without the debugger. Every line carries an elementRef that
 input methods accept directly, so agents can go from overview to action in
 one step. Hidden elements are skipped. */
-  function getAccessibilityOutline(
-    params: Record<string, unknown>
-  ): import('../../../protocol/src/types.js').DomOutlineResult {
+  function buildAccessibilityOutline(
+    params: Record<string, unknown>,
+    forSnapshot: boolean = false
+  ): BuiltOutline {
     const maxNodes = clamp(params.maxNodes ?? 150, 10, 5000);
     const maxDepth = clamp(params.maxDepth ?? 6, 1, 20);
     const interactiveOnly = params.interactiveOnly === true;
@@ -1521,12 +1526,21 @@ one step. Hidden elements are skipped. */
       import('../../../protocol/src/types.js').DomOutlineCompleteness['reasons'][number]
     >();
     if (scope?.fallbackReason === 'scope_scan_limit') reasons.add('scopeScanLimit');
+    // The mutation counter cannot see into shadow roots, and a custom element
+    // can attach one later without a light-DOM mutation. Landmark scope
+    // discovery also searches shadow roots outside the walked subtree.
+    let lightDomOnly =
+      forSnapshot &&
+      (!scope || scope.requested === 'document' || scope.resolved === 'selector') &&
+      (!root || isInLightDom(root));
     for (const element of walkOutlineCandidates(root)) {
       if (scanned >= OUTLINE_SCAN_LIMIT) {
         reasons.add('scanLimit');
         break;
       }
       scanned += 1;
+      if (lightDomOnly && (element.tagName.includes('-') || getShadowRoot(element)))
+        lightDomOnly = false;
       if (NON_RENDERED_TAGS.has(element.tagName)) continue;
       const roles = getElementRoles(element);
       let role = roles[0] ?? '';
@@ -1669,16 +1683,417 @@ one step. Hidden elements are skipped. */
         : {}),
       ...(search ? { search } : {}),
     };
+    const built = {
+      nodes,
+      elements: selected.map((entry) => entry.element),
+      // Positional cuts make a later diff report lines crossing the cut.
+      cut: reasons.has('maxNodes') || reasons.has('scanLimit'),
+      lightDomOnly,
+      scopeKey: !forSnapshot
+        ? ''
+        : root
+          ? `${scope?.resolved ?? 'selector'}:${rememberElement(root)}`
+          : 'document',
+    };
     if (params.format === 'tree') {
-      return { ...base, format: 'tree', nodes };
+      return { ...built, result: { ...base, format: 'tree', nodes } };
     }
-    const outline = nodes
-      .map(
-        (entry) =>
-          `${'  '.repeat(Math.min(entry.depth, 12))}- ${entry.role}${entry.name ? ` ${JSON.stringify(entry.name)}` : ''} [${entry.ref}]${entry.states.length ? ` ${entry.states.join(' ')}` : ''}${entry.matched ? ' [match]' : ''}`
-      )
-      .join('\n');
-    return { ...base, format: 'outline', outline };
+    const outline = nodes.map(formatOutlineLine).join('\n');
+    return { ...built, result: { ...base, format: 'outline', outline } };
+  }
+
+  type OutlineNode = import('../../../protocol/src/types.js').DomOutlineNode;
+  type OutlineResult = import('../../../protocol/src/types.js').DomOutlineResult;
+  type OutlineDeltaReason =
+    import('../../../protocol/src/types.js').DomOutlineDeltaUnavailableReason;
+  type BuiltOutline = {
+    result: OutlineResult;
+    nodes: OutlineNode[];
+    elements: Element[];
+    cut: boolean;
+    lightDomOnly: boolean;
+    scopeKey: string;
+  };
+
+  function formatOutlineLine(entry: OutlineNode): string {
+    return `${'  '.repeat(Math.min(entry.depth, 12))}- ${entry.role}${entry.name ? ` ${JSON.stringify(entry.name)}` : ''} [${entry.ref}]${entry.states.length ? ` ${entry.states.join(' ')}` : ''}${entry.matched ? ' [match]' : ''}`;
+  }
+
+  /** Whether an element is in the document tree rather than a shadow tree. */
+  function isInLightDom(element: Element): boolean {
+    let current: Node | null = element;
+    for (let hops = 0; current && hops < 10_000; hops += 1) {
+      if (current.nodeType === 11) return false;
+      current = current.parentNode;
+    }
+    return true;
+  }
+
+  // Outline snapshots are retained per document, so navigation discards them.
+  // They hold refs and 53-bit line hashes, never page text.
+  const OUTLINE_SNAPSHOT_LIMIT = 4;
+  /** Slightly longer than the background record, which expires first. */
+  const OUTLINE_SNAPSHOT_TTL_MS = 330_000;
+  const OUTLINE_TOMBSTONE_LIMIT = 16;
+  /** Property-driven lines rechecked by the no-walk path; more means walk. */
+  const OUTLINE_VOLATILE_LIMIT = 200;
+  /** A delta costing more than this share of the full outline is replaced by it. */
+  const OUTLINE_DELTA_MAX_SHARE = 0.6;
+  const OUTLINE_VALUE_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton', 'slider']);
+  /** Interactions that can change rendering without a DOM mutation: CSS
+  :hover, :focus and :checked, popovers, transitions. Capture phase sees
+  events that do not bubble. */
+  const OUTLINE_INTERACTION_EVENTS = [
+    'pointerover',
+    'pointerout',
+    'pointerdown',
+    'pointerup',
+    'mousedown',
+    'mouseup',
+    'click',
+    'focusin',
+    'focusout',
+    'input',
+    'change',
+    'keydown',
+    'keyup',
+    'toggle',
+    'transitionend',
+    'animationstart',
+    'animationend',
+  ];
+
+  type OutlineSnapshot = {
+    createdAt: number;
+    signature: string;
+    scopeKey: string;
+    revision: number;
+    pruneEpoch: number;
+    interactionEpoch: number;
+    viewport: string;
+    cut: boolean;
+    /** Whether a later read may trust the counters above instead of walking. */
+    walkFree: boolean;
+    count: number;
+    order: string[];
+    lines: Map<string, { hash: number; parent: string }>;
+    volatile: Array<{ ref: string; role: string; states: number }>;
+  };
+
+  const outlineSnapshots = new Map<string, OutlineSnapshot>();
+  const outlineTombstones = new Map<string, 'expired' | 'evicted'>();
+  let interactionEpoch = 0;
+  let interactionTracked = false;
+
+  function ensureInteractionTracking(): void {
+    if (interactionTracked || typeof document.addEventListener !== 'function') return;
+    const bump = () => {
+      interactionEpoch += 1;
+    };
+    for (const type of OUTLINE_INTERACTION_EVENTS)
+      document.addEventListener(type, bump, { capture: true, passive: true });
+    interactionTracked = true;
+  }
+
+  function viewportKey(): string {
+    return `${globalThis.innerWidth ?? 0}x${globalThis.innerHeight ?? 0}`;
+  }
+
+  /** cyrb53: two 32-bit lanes folded into a 53-bit integer. */
+  function hashOutlineText(value: string): number {
+    let first = 0xdeadbeef;
+    let second = 0x41c6ce57;
+    for (let index = 0; index < value.length; index += 1) {
+      const code = value.charCodeAt(index);
+      first = Math.imul(first ^ code, 2654435761);
+      second = Math.imul(second ^ code, 1597334677);
+    }
+    first = Math.imul(first ^ (first >>> 16), 2246822507);
+    first ^= Math.imul(second ^ (second >>> 13), 3266489909);
+    second = Math.imul(second ^ (second >>> 16), 2246822507);
+    second ^= Math.imul(first ^ (first >>> 13), 3266489909);
+    return 4294967296 * (2097151 & second) + (first >>> 0);
+  }
+
+  /** Params that decide which lines a read returns. format only changes how. */
+  function outlineSignature(params: Record<string, unknown>): string {
+    return JSON.stringify([
+      params.selector ? String(params.selector) : null,
+      clamp(params.maxNodes ?? 150, 10, 5000),
+      clamp(params.maxDepth ?? 6, 1, 20),
+      params.interactiveOnly === true,
+      params.scope ?? null,
+      typeof params.find === 'string' ? params.find.toLowerCase() : null,
+      typeof params.find === 'string' ? clamp(params.context ?? 1, 0, 3) : null,
+    ]);
+  }
+
+  /** Nearest ancestor line across shadow boundaries, by ref. */
+  function outlineParentRefs(built: BuiltOutline): string[] {
+    const refs = new Map<Element, string>();
+    built.elements.forEach((element, index) => refs.set(element, built.nodes[index].ref));
+    return built.elements.map((element) => {
+      let current: Node | null = element.parentNode;
+      for (let hops = 0; current && hops < 200; hops += 1) {
+        if (current.nodeType === 1) {
+          const ref = refs.get(current as Element);
+          if (ref !== undefined) return ref;
+        }
+        current =
+          current.nodeType === 11 && (current as ShadowRoot).host
+            ? (current as ShadowRoot).host
+            : current.parentNode;
+      }
+      return '';
+    });
+  }
+
+  function createOutlineSnapshot(built: BuiltOutline, signature: string): OutlineSnapshot {
+    const parents = outlineParentRefs(built);
+    const lines = new Map<string, { hash: number; parent: string }>();
+    const volatile: OutlineSnapshot['volatile'] = [];
+    built.nodes.forEach((node, index) => {
+      const parent = parents[index];
+      lines.set(node.ref, {
+        hash: hashOutlineText(
+          [
+            node.role,
+            node.name,
+            node.depth,
+            node.states.join(' '),
+            node.matched ? 1 : 0,
+            parent,
+          ].join('\u0000')
+        ),
+        parent,
+      });
+      if (OUTLINE_VALUE_ROLES.has(node.role) || built.elements[index].tagName === 'INPUT')
+        volatile.push({
+          ref: node.ref,
+          role: node.role,
+          states: hashOutlineText(node.states.join(' ')),
+        });
+    });
+    return {
+      createdAt: Date.now(),
+      signature,
+      scopeKey: built.scopeKey,
+      revision: getDocumentRevision(),
+      pruneEpoch: readPruneEpoch(),
+      interactionEpoch,
+      viewport: viewportKey(),
+      cut: built.cut,
+      walkFree:
+        built.lightDomOnly &&
+        interactionTracked &&
+        isRevisionTracked?.() === true &&
+        volatile.length <= OUTLINE_VOLATILE_LIMIT,
+      count: built.nodes.length,
+      order: built.nodes.map((node) => node.ref),
+      lines,
+      volatile,
+    };
+  }
+
+  /** Unchanged without a DOM walk: no light-DOM mutation, ref prune,
+  interaction, viewport change or property-driven state change since the base. */
+  function outlineUnchangedSince(base: OutlineSnapshot): boolean {
+    if (!base.walkFree) return false;
+    if (getDocumentRevision() !== base.revision) return false;
+    if (readPruneEpoch() !== base.pruneEpoch) return false;
+    if (interactionEpoch !== base.interactionEpoch || viewportKey() !== base.viewport) return false;
+    for (const entry of base.volatile) {
+      let element: Element;
+      try {
+        element = getRequiredElement(entry.ref);
+      } catch {
+        return false;
+      }
+      if (hashOutlineText(getOutlineStates(element, entry.role).join(' ')) !== entry.states)
+        return false;
+    }
+    return true;
+  }
+
+  function tombstoneOutlineSnapshot(id: string, reason: 'expired' | 'evicted'): void {
+    outlineTombstones.delete(id);
+    outlineTombstones.set(id, reason);
+    while (outlineTombstones.size > OUTLINE_TOMBSTONE_LIMIT) {
+      const oldest = outlineTombstones.keys().next();
+      if (oldest.done) break;
+      outlineTombstones.delete(oldest.value);
+    }
+  }
+
+  function storeOutlineSnapshot(id: string, snapshot: OutlineSnapshot): void {
+    outlineSnapshots.delete(id);
+    outlineTombstones.delete(id);
+    outlineSnapshots.set(id, snapshot);
+    while (outlineSnapshots.size > OUTLINE_SNAPSHOT_LIMIT) {
+      const oldest = outlineSnapshots.keys().next();
+      if (oldest.done) break;
+      outlineSnapshots.delete(oldest.value);
+      tombstoneOutlineSnapshot(oldest.value, 'evicted');
+    }
+  }
+
+  function expireOutlineSnapshots(now: number): void {
+    for (const [id, snapshot] of outlineSnapshots) {
+      if (now - snapshot.createdAt <= OUTLINE_SNAPSHOT_TTL_MS) continue;
+      outlineSnapshots.delete(id);
+      tombstoneOutlineSnapshot(id, 'expired');
+    }
+  }
+
+  /** Drop every retained outline base; called when access ends. */
+  function clearOutlineSnapshots(): { cleared: number } {
+    const cleared = outlineSnapshots.size;
+    outlineSnapshots.clear();
+    outlineTombstones.clear();
+    return { cleared };
+  }
+
+  /** Lines that moved among siblings that kept their parent. Per parent, the
+  longest run already in base order stays put; every other line moved. */
+  function movedOutlineLines(
+    base: OutlineSnapshot,
+    next: OutlineSnapshot,
+    survives: (ref: string) => boolean
+  ): Set<string> {
+    const position = new Map(base.order.map((ref, index) => [ref, index]));
+    const groups = new Map<string, string[]>();
+    for (const ref of next.order) {
+      if (!survives(ref)) continue;
+      const parent = next.lines.get(ref)?.parent ?? '';
+      const group = groups.get(parent) ?? [];
+      group.push(ref);
+      groups.set(parent, group);
+    }
+    const moved = new Set<string>();
+    for (const group of groups.values()) {
+      // Patience sort: tails[k] ends the best increasing run of length k + 1.
+      const tails: number[] = [];
+      const previous: number[] = [];
+      group.forEach((ref, index) => {
+        const value = position.get(ref) ?? 0;
+        let low = 0;
+        let high = tails.length;
+        while (low < high) {
+          const middle = (low + high) >> 1;
+          if ((position.get(group[tails[middle]]) ?? 0) < value) low = middle + 1;
+          else high = middle;
+        }
+        previous[index] = low > 0 ? tails[low - 1] : -1;
+        tails[low] = index;
+      });
+      const kept = new Set<number>();
+      let cursor = tails.length ? tails[tails.length - 1] : -1;
+      while (cursor >= 0) {
+        kept.add(cursor);
+        cursor = previous[cursor];
+      }
+      group.forEach((ref, index) => {
+        if (!kept.has(index)) moved.add(ref);
+      });
+    }
+    return moved;
+  }
+
+  function diffOutline(
+    base: OutlineSnapshot,
+    next: OutlineSnapshot,
+    nodes: OutlineNode[]
+  ): { added: OutlineNode[]; changed: OutlineNode[]; removed: string[] } {
+    const survives = (ref: string) => {
+      const before = base.lines.get(ref);
+      return before !== undefined && before.parent === next.lines.get(ref)?.parent;
+    };
+    const moved = movedOutlineLines(base, next, survives);
+    const added: OutlineNode[] = [];
+    const changed: OutlineNode[] = [];
+    nodes.forEach((node) => {
+      const before = base.lines.get(node.ref);
+      if (!before) added.push(node);
+      else if (before.hash !== next.lines.get(node.ref)?.hash || moved.has(node.ref))
+        changed.push(node);
+    });
+    const removed = base.order.filter((ref) => !next.lines.has(ref));
+    return { added, changed, removed };
+  }
+
+  function withoutOutlineBody(result: OutlineResult): OutlineResult {
+    const rest = { ...result };
+    delete rest.outline;
+    delete rest.nodes;
+    return rest;
+  }
+
+  /** Outline read with optional snapshot retention (snapshotId, set by the
+  background) and comparison with an earlier snapshot (since). A changed or
+  added line is emitted by the same code as a full read. */
+  function getAccessibilityOutline(params: Record<string, unknown>): OutlineResult {
+    const since = typeof params.since === 'string' && params.since ? params.since : null;
+    const snapshotId =
+      typeof params.snapshotId === 'string' && params.snapshotId ? params.snapshotId : null;
+    if (!since && !snapshotId) return buildAccessibilityOutline(params).result;
+    ensureInteractionTracking();
+    expireOutlineSnapshots(Date.now());
+    const signature = outlineSignature(params);
+    const format = params.format === 'tree' ? 'tree' : 'outline';
+    const base = since ? (outlineSnapshots.get(since) ?? null) : null;
+    let unavailable: OutlineDeltaReason | null = null;
+    if (since && !base) unavailable = outlineTombstones.get(since) ?? 'navigated';
+    else if (base && base.signature !== signature) unavailable = 'scope_changed';
+    else if (base?.cut) unavailable = 'base_truncated';
+    const withId = snapshotId ? { snapshotId } : {};
+    if (base && !unavailable && outlineUnchangedSince(base)) {
+      if (snapshotId) storeOutlineSnapshot(snapshotId, { ...base, createdAt: Date.now() });
+      return {
+        source: 'dom',
+        format,
+        count: base.count,
+        scanned: 0,
+        truncated: false,
+        unchanged: true,
+        ...withId,
+      };
+    }
+    const built = buildAccessibilityOutline(params, true);
+    const snapshot = createOutlineSnapshot(built, signature);
+    if (snapshotId) storeOutlineSnapshot(snapshotId, snapshot);
+    const full: OutlineResult = { ...built.result, ...withId };
+    if (!since) return full;
+    if (base && !unavailable) {
+      if (snapshot.pruneEpoch !== base.pruneEpoch) unavailable = 'refs_pruned';
+      else if (snapshot.scopeKey !== base.scopeKey) unavailable = 'scope_changed';
+      else if (snapshot.cut) unavailable = 'base_truncated';
+    }
+    if (!base || unavailable) return { ...full, deltaUnavailable: unavailable ?? 'navigated' };
+    const delta = diffOutline(base, snapshot, built.nodes);
+    if (!delta.added.length && !delta.changed.length && !delta.removed.length)
+      return { ...withoutOutlineBody(full), unchanged: true };
+    const fullSize = built.nodes.reduce(
+      (total, node) => total + formatOutlineLine(node).length + 1,
+      0
+    );
+    const deltaSize =
+      [...delta.added, ...delta.changed].reduce(
+        (total, node) => total + formatOutlineLine(node).length + 1,
+        0
+      ) + delta.removed.reduce((total, ref) => total + ref.length + 3, 0);
+    if (deltaSize > fullSize * OUTLINE_DELTA_MAX_SHARE)
+      return { ...full, deltaUnavailable: 'delta_too_large' };
+    return {
+      ...withoutOutlineBody(full),
+      delta:
+        format === 'tree'
+          ? delta
+          : {
+              added: delta.added.map(formatOutlineLine),
+              changed: delta.changed.map(formatOutlineLine),
+              removed: delta.removed,
+            },
+    };
   }
 
   /** Expose a synchronous read-only scan with per-scan lookup caches. */
@@ -1692,6 +2107,7 @@ one step. Hidden elements are skipped. */
     findByRole: scanned(findByRole),
     findByText: scanned(findByText),
     getAccessibilityOutline: scanned(getAccessibilityOutline),
+    clearOutlineSnapshots,
     isLocator,
     probeTarget: scanned(probeTarget),
     locateElements: scanned(locateElements),

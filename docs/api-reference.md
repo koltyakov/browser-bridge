@@ -197,10 +197,10 @@ Targeting a tab does not activate it. Reads, input, navigation, and screenshots 
 | ------------------------- | ------------------------------------------------------------------------ |
 | `page.get_state`          | Get URL, title, origin, and ready-state for the active page              |
 | `page.evaluate`           | Evaluate JavaScript in the page context                                  |
-| `page.get_console`        | Read buffered console output from the page                               |
+| `page.get_console`        | Read buffered console output and error stacks; optionally resolve them through source maps |
 | `page.handle_dialog`      | Inspect or explicitly act on the current JavaScript dialog               |
 | `page.wait_for_load_state` | Wait for truthful tab-complete state and/or an event-aware URL condition |
-| `page.get_storage`        | Read local or session storage key metadata without values                |
+| `page.get_storage`        | Read local/session storage keys or IndexedDB metadata; never values |
 | `page.get_text`           | Read bounded visible text from the page                                  |
 | `page.extract_content`    | Extract bounded semantic page content as text or Markdown without returning source HTML |
 | `page.get_network`        | Read buffered fetch/XHR activity or explicitly manage bounded all-resource CDP capture |
@@ -209,7 +209,7 @@ Targeting a tab does not activate it. Reads, input, navigation, and screenshots 
 
 | Method           | Description                                              |
 | ---------------- | -------------------------------------------------------- |
-| `sensitive.read` | Deliberately read one exact local or session storage value |
+| `sensitive.read` | Deliberately read one exact local/session storage value, or one captured CDP response body or IndexedDB record (gated by `allowResponseBodyReads` or `allowIndexedDBReads`, respectively) |
 
 ### Network
 
@@ -306,7 +306,59 @@ complete evidence. MCP text clipping keeps whole lines and actionable refs.
 If an explicit bridge token budget cannot hold the scoped result, the bridge
 returns `RESULT_TOO_LARGE` instead of generically shrinking refs or completeness
 metadata. Narrow the read or increase the budget.
-No baseline or delta is created by these reads.
+These reads create no `dom.baseline.*` handle; outline snapshots, below, are
+separate.
+
+#### DOM outline deltas
+
+Every `source: "dom"` read returns a `snapshotId`. Pass it as `since` on the
+next read of the same tab with the same `selector`, `scope`, `find`, `context`,
+`maxNodes`, `maxDepth` and `interactiveOnly`. The response has a new
+`snapshotId` and one of three shapes:
+
+| Shape | Meaning |
+| --- | --- |
+| `unchanged: true` | Nothing in the outline changed; the earlier lines and refs still apply. |
+| `delta: {added, changed, removed, removedFrames?}` | `added` and `changed` are ordinary outline lines (nodes with `format: "tree"`), in document order. `removed` lists refs. Child-frame lines sit under their `- iframe [frame N]` line, as in a full read. `removedFrames` lists child frames whose earlier lines are all gone; their current lines are in `added`. |
+| Full outline plus `deltaUnavailable` | No usable base. See the reasons below. |
+
+A line is changed when its role, name, states, depth, parent or position among
+its siblings changed. `count` is always the number of lines in the current
+outline.
+
+| `deltaUnavailable` | Cause |
+| --- | --- |
+| `navigated` | The base belongs to another document: the page navigated or reloaded, or the ID came from another tab. |
+| `expired` | The base is older than five minutes, or unknown to the extension. |
+| `evicted` | A tab keeps four snapshots; this one was the oldest. |
+| `scope_changed` | Different read params, a different scope root (such as a modal opening under `scope: "auto"`), or a selector that now matches in another frame. |
+| `base_truncated` | The base or this read hit `maxNodes` or the scan limit, so a delta would report lines crossing the cut. |
+| `refs_pruned` | The element registry dropped refs since the base. |
+| `delta_too_large` | The delta would cost more than about 60% of the outline. |
+
+Snapshots stay in the page's content script, one store per frame document, as
+refs and line hashes; no page text is retained. Navigation discards them, and
+ending window access clears them. A `since` from another tab never reaches a
+content script. When nothing changed in the light DOM, no interaction event
+fired, and no checkbox, value or focus state moved, the extension answers
+`unchanged` without walking the DOM. Pages with shadow roots or custom elements
+are always walked, because the mutation counter cannot see inside shadow trees.
+
+`input.perform` accepts `dom.get_accessibility_tree` as a step (always
+`source: "dom"`), so an action and the resulting delta take one call:
+
+```json
+{
+  "returnLastResult": true,
+  "steps": [
+    { "method": "input.click", "params": { "target": { "role": "button", "name": "Add" } } },
+    { "method": "dom.get_accessibility_tree", "params": { "since": "ol_k3v9x2m4q8w1" } }
+  ]
+}
+```
+
+A result without `snapshotId` comes from an extension that predates snapshots;
+read the full outline as before.
 
 ### Layout and styles
 
@@ -420,7 +472,7 @@ No baseline or delta is created by these reads.
 | `BRIDGE_TIMEOUT`          | Yes (1 s) | Extension took too long - retry with simpler call |
 | `NATIVE_HOST_UNAVAILABLE` | No        | Run `bbx doctor` to diagnose                      |
 | `RESULT_TOO_LARGE`        | No        | Exact sensitive value exceeds the atomic limit    |
-| `SENSITIVE_TARGET_NOT_FOUND` | No     | Requested exact storage key does not exist        |
+| `SENSITIVE_TARGET_NOT_FOUND` | No     | Requested exact storage key, response body or IndexedDB record is unavailable; see `details.reason` |
 
 ## Interaction contracts
 
@@ -438,7 +490,8 @@ hover, drag, type, fill, press_key, and touch. DOM events follow real device
 event order but are untrusted, so gesture-gated features such as audio may need CDP.
 `input.perform` runs known multi-step flows inside the extension without a model
 round-trip per action. It accepts input and wait steps plus `page.get_state`,
-`page.get_text`, `dom.query`, and `dom.get_text`. Set `returnLastResult: true` to
+`page.get_text`, `dom.query`, `dom.get_text`, and DOM-outline
+`dom.get_accessibility_tree`. Set `returnLastResult: true` to
 receive the final successful step as `lastResult.result`, bounded to 16384 UTF-8
 JSON bytes. Larger results are omitted with `lastResult.truncated: true`; narrow
 the read instead of replaying mutations. Sequence actions observe only when
@@ -479,6 +532,70 @@ Verify with a targeted wait or structured read.
   requires explicit start/read/clear/stop lifecycle, captures broader resource
   metadata, holds debugger ownership while armed, redacts URL secrets, and
   excludes bodies, cookies, authorization values, and complete headers.
+  CDP entries carry `bodyAvailable`.
+
+### Response bodies
+
+Response bodies are read one at a time with `sensitive.read`, never through
+`page.get_network`, HAR export, recordings, or artifacts.
+
+1. The user turns on **Allow reading response bodies**
+   (`accessSettings.settings.allowResponseBodyReads`, default off). Otherwise
+   both steps below return `ACCESS_DENIED` with
+   `details.reason: "policy_setting_disabled"`.
+2. Start capture with `page.get_network {source: "cdp", capture: "start",
+   bodies: {urlPattern, maxResourceBytes}}`. Without `bodies`, Chrome's
+   buffers stay at zero. With it, Chrome buffers up to `maxResourceBytes`
+   (default and maximum 5 MiB) per resource and 50 MiB per tab; request bodies
+   are never buffered. `urlPattern` is a case-sensitive glob matched against
+   the full request URL, and only matching bodies are readable.
+3. Read `sensitive.read {source: "response_body", requestId, encoding?}` for an
+   entry with `bodyAvailable: true`. The result is
+   `{source, requestId, body, encoding, mimeType, bytes, exact: true}`, whole,
+   at most 262,144 decoded bytes, inline only. Binary bodies need
+   `encoding: "base64"`; otherwise `INVALID_REQUEST` with
+   `details.reason: "unsupported_encoding"`, `mimeType`, and `bytes`.
+
+Only requests recorded by the same tab's current capture are readable.
+Restarting, `capture: "clear"`, `capture: "stop"`, the 10-minute expiry, or a
+debugger detach makes earlier `requestId` values unreadable. Failures use
+`SENSITIVE_TARGET_NOT_FOUND` with `details.reason` of `capture_not_armed`,
+`bodies_not_enabled`, `request_unknown`, `request_other_tab`,
+`body_not_matched`, `body_pending`, `request_failed`, `body_evicted`,
+`body_unavailable`, or `capture_stopped`. Over a remote proxy the daemon refuses
+the read with `ACCESS_DENIED` and `details.reason:
+"remote_sensitive_reads_disabled"` unless the browser machine opted in with
+`bbx proxy enable --remote-sensitive-reads allow`.
+
+### IndexedDB
+
+Metadata is listed with `page.get_storage`, like Web Storage keys: window access
+is enough and values are never returned.
+
+- `{type: "indexeddb"}` runs in each frame's own document and reports
+  `frames[] = {frameId, origin, available, databases, total, incomplete}`,
+  never merged across frames. Databases are opened only by names
+  `indexedDB.databases()` reports, without a version, closed at once and on
+  `versionchange`, so BBX never creates, upgrades, or blocks one. The walk is
+  bounded at 2 s, 20 databases, and 50 stores per frame; `incomplete` names the
+  bound that hit, and a `count` past the time bound is `null`.
+
+Values are read one at a time with `sensitive.read`, with `allowIndexedDBReads` enabled. The same remote-proxy restrictions apply as for response bodies:
+
+- `{source: "indexeddb", database, store, key, frameId?}` returns
+  `{source, frameId, database, store, value, described, bytes, exact: true}`
+  from the frame named by `frameId` (default 0, the top document). `key` is a
+  string, a finite number, `{type: "date", value: <epoch ms>}`, or a one-level
+  array of those; anything else is `INVALID_REQUEST`, `reason:
+  "unsupported_key_type"`. Non-JSON values, wherever nested, become
+  `{"$bbxType": "<type>", ...}` with a size or printable value; binary contents
+  are never returned. A missing database, store, or key is
+  `SENSITIVE_TARGET_NOT_FOUND` with `database_not_found`, `store_not_found`, or
+  `key_not_found`; an unknown `frameId` is `frame_not_found`; a blocked open is
+  `TIMEOUT`, `reason: "open_timeout"`.
+
+Both are whole or rejected whole at 262,144 bytes, never batched, and never
+retried.
 
 ### HAR export
 
@@ -506,6 +623,63 @@ disk-cache, prefetch-cache, and service-worker observations appear in `_bbx`.
 Result metadata reports `dropped` retained-buffer loss, `abandoned` unfinished
 activity discarded by capture lifecycle/bounds, and currently unfinished
 `inflight` requests, which are not HAR entries.
+
+### Console stacks and source maps
+
+`page.get_console` entries are `{level, args, ts, stack?}`. `stack` is present
+for uncaught exceptions, unhandled rejections whose reason has a stack, and
+`console.error` or `console.warn` calls that pass an `Error`. It holds at most
+eight `{function?, url, line, column}` frames parsed from at most 1,500
+characters of V8 stack text. Lines and columns are 1-based. Frame URLs are
+sanitized like other incidental URLs, so query values are redacted. `eval` and
+`new Function` frames report the call site that created the evaluated code. The
+page controls this text completely: frames are parsed defensively and anything
+malformed is dropped.
+
+`resolveSources: true` (default `false`) maps each returned frame through the
+script's source map. Each frame then gains either
+`source: {file, path, line, column, name?}` or `sourceUnavailable: "<reason>"`.
+`file` is the source as the map names it; bundler URLs such as `webpack://`
+are kept as written and relative sources are resolved against the map URL.
+`path` is `file` without its scheme, bundler namespace, or leading `./`.
+`sourcesContent` is never returned. File and symbol names are bounded and
+stripped of control and bidirectional formatting characters. A failed
+resolution never fails the read; the frame keeps its generated position.
+
+Resolution makes network requests from the extension service worker. It
+fetches the script and then its map, found through the `SourceMap` (or
+`X-SourceMap`) response header or the last `sourceMappingURL` comment. Limits:
+
+- Only frames whose URL exactly matches a script the tab's top document
+  loaded are resolved. The list comes from executable `document.scripts` and
+  `script` resource timing entries, read in the extension's isolated world.
+  Any other URL gets `not_a_loaded_script` and no request is made.
+- A page on the public web cannot point resolution at the user's machine or
+  network. A cross-origin script on a loopback, private, link-local, or
+  carrier-grade NAT address, a single-label host, or a private suffix such as
+  `.local` or `.internal` gets `local_network_script` and no request, unless
+  the document itself is on such a host. A public name that resolves to a
+  private address is not detected.
+- Only `http:` and `https:` scripts. The map must be same-origin with its
+  script, or an inline `data:` URL, which is decoded without a request.
+- `GET` only, no redirects, no referrer, a 5-second timeout per request, and
+  10 MiB per script and 20 MiB per map, enforced while the body streams.
+- Credentials are sent only when the script is same-origin with the tab's
+  document; otherwise they are omitted.
+- At most eight distinct scripts and eight seconds per read. Frames beyond
+  that get `budget_exhausted`.
+- Decoded maps are cached in service-worker memory by script URL and response
+  validator (`ETag`, `Last-Modified`, or length). An entry is reused without a
+  request for 60 seconds, then revalidated. The cache holds at most 16 maps,
+  is lost whenever the worker stops, and is cleared when window access ends.
+
+`sourceUnavailable` reasons: `unsupported_scheme`,
+`loaded_scripts_unavailable`, `not_a_loaded_script`, `ambiguous_script`,
+`local_network_script`,
+`budget_exhausted`, `fetch_timeout`, `script_fetch_failed`,
+`script_too_large`, `no_source_map`, `invalid_map_url`, `unsupported_map_url`,
+`cross_origin_map`, `map_fetch_failed`, `map_too_large`, `malformed_map`,
+`no_mapping`, and `resolution_failed`.
 
 ### Recovery telemetry
 

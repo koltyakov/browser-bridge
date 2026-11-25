@@ -74,7 +74,7 @@ Short version:
 | ------------------- | ------------------------------ | ----------------------------------- | ----------------- |
 | Page state          | `browser_page` (state)         | `bbx call page.get_state`           | CLI uses raw call |
 | JavaScript evaluate | `browser_page` (evaluate)      | `bbx eval <expression>`             | Equivalent        |
-| Console output      | `browser_page` (console)       | `bbx console [level]`               | Equivalent        |
+| Console output      | `browser_page` (console)       | `bbx console [level] [--resolve]`   | Equivalent        |
 | Handle JS dialog    | `browser_page` (handle_dialog) | `bbx call page.handle_dialog`       | Explicit inspect/accept/dismiss; debugger-backed |
 | Wait for load/URL   | `browser_page` (wait_for_load) | `bbx call page.wait_for_load_state` | Full and SPA navigation; truthful tab complete state |
 | Storage metadata    | `browser_page` (storage)       | `bbx storage [type] [keys]`         | Equivalent        |

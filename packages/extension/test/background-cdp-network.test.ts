@@ -877,3 +877,290 @@ test('CDP network safety TTL serializes and retries a failed stop', async () => 
   assert.equal(disableAttempts, 2);
   assert.equal(releases, 1);
 });
+
+function createBodyHarness(
+  options: {
+    body?: (requestId: string) => unknown;
+    onBodyRead?: (requestId: string) => void;
+  } = {}
+) {
+  const calls: Array<{ tabId: number; method: string; params: Record<string, unknown> }> = [];
+  const capture = createCdpNetworkCapture({
+    async acquireDebugger() {},
+    async releaseDebugger() {},
+    async sendCommand(target, method, params) {
+      calls.push({ tabId: target.tabId, method, params });
+      if (method === 'Network.getResponseBody') {
+        const requestId = String(params.requestId);
+        options.onBodyRead?.(requestId);
+        const result = options.body?.(requestId);
+        if (result instanceof Error) throw result;
+        return result ?? { body: `{"id":"${requestId}"}`, base64Encoded: false };
+      }
+      return {};
+    },
+  });
+  return { capture, calls };
+}
+
+function completeRequest(
+  capture: ReturnType<typeof createCdpNetworkCapture>,
+  tabId: number,
+  requestId: string,
+  url: string,
+  options: { mimeType?: string; fail?: boolean; finish?: boolean } = {}
+) {
+  capture.handleEvent(tabId, 'Network.requestWillBeSent', {
+    requestId,
+    type: 'Fetch',
+    timestamp: 1,
+    request: { url, method: 'GET', headers: { Authorization: 'Bearer hidden' } },
+  });
+  capture.handleEvent(tabId, 'Network.responseReceived', {
+    requestId,
+    type: 'Fetch',
+    response: { status: 200, mimeType: options.mimeType ?? 'application/json' },
+  });
+  if (options.finish === false) return;
+  capture.handleEvent(tabId, options.fail ? 'Network.loadingFailed' : 'Network.loadingFinished', {
+    requestId,
+    timestamp: 2,
+    errorText: 'net::ERR_FAILED',
+  });
+}
+
+async function bodyFailureReason(promise: Promise<unknown>): Promise<string> {
+  try {
+    await promise;
+  } catch (error) {
+    const typed = error as { code?: string; details?: { reason?: string; source?: string } };
+    assert.equal(typed.code, 'SENSITIVE_TARGET_NOT_FOUND');
+    assert.equal(typed.details?.source, 'response_body');
+    return typed.details?.reason ?? 'missing';
+  }
+  assert.fail('body read unexpectedly succeeded');
+}
+
+test('Network.enable keeps zero buffers without bodies and receives the caps with them', async () => {
+  const plain = createBodyHarness();
+  await plain.capture.start(1);
+  assert.deepEqual(plain.calls.find((call) => call.method === 'Network.enable')?.params, {
+    maxTotalBufferSize: 0,
+    maxResourceBufferSize: 0,
+    maxPostDataSize: 0,
+  });
+  completeRequest(plain.capture, 1, 'plain', 'https://api.example/a.json');
+  const plainRead = await plain.capture.read(1);
+  assert.equal(plainRead.entries[0]?.bodyAvailable, false);
+  assert.equal('bodyCapture' in plainRead, false);
+  assert.equal(await bodyFailureReason(plain.capture.readBody(1, 'plain')), 'bodies_not_enabled');
+  assert.equal(
+    plain.calls.some((call) => call.method === 'Network.getResponseBody'),
+    false,
+    'no body is requested from Chrome when bodies are off'
+  );
+
+  const buffered = createBodyHarness();
+  const started = await buffered.capture.start(1, {
+    bodies: { urlPattern: null, maxResourceBytes: 4096 },
+  });
+  assert.deepEqual(buffered.calls.find((call) => call.method === 'Network.enable')?.params, {
+    maxTotalBufferSize: 52_428_800,
+    maxResourceBufferSize: 4096,
+    maxPostDataSize: 0,
+  });
+  assert.deepEqual(started.bodyCapture, { urlPattern: null, maxResourceBytes: 4096 });
+  await buffered.capture.start(1, { bodies: { urlPattern: null, maxResourceBytes: 5_242_880 } });
+  assert.deepEqual(buffered.calls.at(-1)?.params, {
+    maxTotalBufferSize: 52_428_800,
+    maxResourceBufferSize: 5_242_880,
+    maxPostDataSize: 0,
+  });
+});
+
+test('a buffered body is read exactly and only for finished requests of this capture', async () => {
+  const { capture, calls } = createBodyHarness();
+  await capture.start(1, { bodies: { urlPattern: null, maxResourceBytes: 4096 } });
+  completeRequest(capture, 1, 'json-1', 'https://api.example/items.json');
+  completeRequest(capture, 1, 'pending', 'https://api.example/slow.json', { finish: false });
+  completeRequest(capture, 1, 'failed', 'https://api.example/broken.json', { fail: true });
+
+  const listed = await capture.read(1);
+  const available = Object.fromEntries(
+    listed.entries.map((entry) => [entry.requestId, entry.bodyAvailable])
+  );
+  assert.deepEqual(available, { 'json-1': true, failed: false });
+  for (const entry of listed.entries) {
+    assert.equal('body' in entry, false, 'bodies never appear in network lists');
+  }
+
+  assert.deepEqual(await capture.readBody(1, 'json-1'), {
+    requestId: 'json-1',
+    body: '{"id":"json-1"}',
+    base64Encoded: false,
+    mimeType: 'application/json',
+  });
+  assert.deepEqual(calls.at(-1), {
+    tabId: 1,
+    method: 'Network.getResponseBody',
+    params: { requestId: 'json-1' },
+  });
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'pending')), 'body_pending');
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'failed')), 'request_failed');
+  const readHar = await capture.readHar(1);
+  assert.equal(JSON.stringify(readHar).includes('json-1"}'), false);
+});
+
+test('unknown, other-tab, unarmed and evicted bodies each return their own reason', async () => {
+  const { capture } = createBodyHarness({
+    body: (requestId) =>
+      requestId === 'evicted'
+        ? new Error('{"code":-32000,"message":"No resource with given identifier found"}')
+        : requestId === 'broken'
+          ? new Error('Internal failure')
+          : undefined,
+  });
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'anything')), 'capture_not_armed');
+  await capture.start(1, { bodies: { urlPattern: null, maxResourceBytes: 4096 } });
+  await capture.start(2, { bodies: { urlPattern: null, maxResourceBytes: 4096 } });
+  completeRequest(capture, 1, 'evicted', 'https://api.example/old.json');
+  completeRequest(capture, 1, 'broken', 'https://api.example/broken.json');
+  completeRequest(capture, 2, 'tab-two', 'https://api.example/two.json');
+
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'missing')), 'request_unknown');
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'tab-two')), 'request_other_tab');
+  assert.equal(await bodyFailureReason(capture.readBody(3, 'tab-two')), 'request_other_tab');
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'evicted')), 'body_evicted');
+  assert.equal(
+    (await capture.read(1)).entries.find((entry) => entry.requestId === 'evicted')?.bodyAvailable,
+    false,
+    'an eviction is reflected in later lists'
+  );
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'evicted')), 'body_evicted');
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'broken')), 'body_unavailable');
+  assert.equal((await capture.readBody(2, 'tab-two')).body, '{"id":"tab-two"}');
+});
+
+test('bodies.urlPattern limits readable bodies even though Chrome buffers the whole tab', async () => {
+  const { capture, calls } = createBodyHarness();
+  await capture.start(1, {
+    bodies: { urlPattern: 'https://api.example/v1/*', maxResourceBytes: 4096 },
+  });
+  completeRequest(capture, 1, 'match', 'https://api.example/v1/users');
+  completeRequest(capture, 1, 'other', 'https://cdn.example/v1/users');
+  completeRequest(capture, 1, 'redirected', 'https://api.example/v1/start');
+  // A redirect keeps the requestId; the readable body belongs to the final URL.
+  capture.handleEvent(1, 'Network.requestWillBeSent', {
+    requestId: 'redirected',
+    type: 'Fetch',
+    request: { url: 'https://login.example/callback', method: 'GET' },
+    redirectResponse: { status: 302 },
+  });
+  const listed = await capture.read(1);
+  const available = Object.fromEntries(
+    listed.entries.map((entry) => [entry.requestId, entry.bodyAvailable])
+  );
+  assert.equal(available.match, true);
+  assert.equal(available.other, false);
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'other')), 'body_not_matched');
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'redirected')), 'body_not_matched');
+  assert.equal(
+    calls.filter((call) => call.method === 'Network.getResponseBody').length,
+    0,
+    'unmatched bodies are never fetched from Chrome'
+  );
+  assert.equal((await capture.readBody(1, 'match')).body, '{"id":"match"}');
+});
+
+test('stop, clear and restart make earlier requestIds unreadable and reset buffers', async () => {
+  const { capture, calls } = createBodyHarness();
+  await capture.start(1, { bodies: { urlPattern: null, maxResourceBytes: 4096 } });
+  completeRequest(capture, 1, 'before-clear', 'https://api.example/a.json');
+  await capture.clear(1);
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'before-clear')), 'request_unknown');
+
+  completeRequest(capture, 1, 'before-restart', 'https://api.example/b.json');
+  calls.length = 0;
+  // Restarting without bodies disables Network, dropping Chrome's buffer.
+  const restarted = await capture.start(1);
+  assert.deepEqual(
+    calls.map((call) => [call.method, call.params]),
+    [
+      ['Network.disable', {}],
+      ['Network.enable', { maxTotalBufferSize: 0, maxResourceBufferSize: 0, maxPostDataSize: 0 }],
+    ]
+  );
+  assert.equal('bodyCapture' in restarted, false);
+  completeRequest(capture, 1, 'after-restart', 'https://api.example/c.json');
+  assert.equal(
+    await bodyFailureReason(capture.readBody(1, 'before-restart')),
+    'bodies_not_enabled'
+  );
+  assert.equal((await capture.read(1)).entries[0]?.bodyAvailable, false);
+
+  await capture.start(1, { bodies: { urlPattern: null, maxResourceBytes: 4096 } });
+  completeRequest(capture, 1, 'before-stop', 'https://api.example/d.json');
+  calls.length = 0;
+  await capture.stop(1);
+  assert.deepEqual(
+    calls.map((call) => call.method),
+    ['Network.disable']
+  );
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'before-stop')), 'capture_not_armed');
+
+  calls.length = 0;
+  await capture.start(1);
+  assert.deepEqual(calls.at(-1)?.params, {
+    maxTotalBufferSize: 0,
+    maxResourceBufferSize: 0,
+    maxPostDataSize: 0,
+  });
+  completeRequest(capture, 1, 'later', 'https://api.example/e.json');
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'later')), 'bodies_not_enabled');
+});
+
+test('a debugger detach leaves no state claiming bodies, including during a read', async () => {
+  let detachDuringRead: (() => void) | null = null;
+  const { capture } = createBodyHarness({
+    onBodyRead: () => detachDuringRead?.(),
+  });
+  await capture.start(1, { bodies: { urlPattern: null, maxResourceBytes: 4096 } });
+  completeRequest(capture, 1, 'live', 'https://api.example/a.json');
+  detachDuringRead = () => void capture.handleDetach(1);
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'live')), 'capture_stopped');
+  const afterDetach = await capture.read(1);
+  assert.equal(afterDetach.armed, false);
+  assert.deepEqual(afterDetach.entries, []);
+  assert.equal('bodyCapture' in afterDetach, false);
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'live')), 'capture_not_armed');
+
+  detachDuringRead = null;
+  await capture.start(1, { bodies: { urlPattern: null, maxResourceBytes: 4096 } });
+  completeRequest(capture, 1, 'second', 'https://api.example/b.json');
+  await capture.handleDetach(1);
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'second')), 'capture_not_armed');
+});
+
+test('a failed buffer reconfiguration fails closed', async () => {
+  let failDisable = false;
+  const capture = createCdpNetworkCapture({
+    async acquireDebugger() {},
+    async releaseDebugger() {},
+    ttlRetryMs: 60_000,
+    async sendCommand(_target, method) {
+      if (method === 'Network.disable' && failDisable) throw new Error('disable failed');
+      return { body: 'x', base64Encoded: false };
+    },
+  });
+  await capture.start(1, { bodies: { urlPattern: null, maxResourceBytes: 4096 } });
+  completeRequest(capture, 1, 'kept', 'https://api.example/a.json');
+  failDisable = true;
+  await assert.rejects(
+    capture.start(1, { bodies: { urlPattern: null, maxResourceBytes: 1024 } }),
+    /disable failed/
+  );
+  assert.equal(await bodyFailureReason(capture.readBody(1, 'kept')), 'bodies_not_enabled');
+  assert.equal((await capture.read(1)).entries[0]?.bodyAvailable, false);
+  failDisable = false;
+  await capture.stop(1);
+});

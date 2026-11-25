@@ -23,6 +23,8 @@ interface ConsoleEntry {
   level: string;
   args: string[];
   ts: number;
+  /** Raw V8 stack text, at most 1,500 characters. */
+  stack?: string;
 }
 
 declare global {

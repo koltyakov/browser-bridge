@@ -18,6 +18,24 @@ const buildOnly = process.argv.includes('--build-only');
 
 /** @typedef {{ version: string, version_name?: string, minimum_chrome_version: string, icons?: Record<string, string> }} ExtensionManifest */
 
+/**
+ * Third-party packages bundled into the extension. The extension build does
+ * not bundle, so each package becomes one self-contained ES module under
+ * vendor/, with its licenses (and those of its dependencies) beside it.
+ * @type {ReadonlyArray<{ specifier: string, output: string, licenses: string[] }>}
+ */
+const VENDORED_MODULES = [
+  {
+    specifier: '@jridgewell/trace-mapping',
+    output: 'vendor/trace-mapping',
+    licenses: [
+      '@jridgewell/trace-mapping',
+      '@jridgewell/sourcemap-codec',
+      '@jridgewell/resolve-uri',
+    ],
+  },
+];
+
 const manifest = /** @type {ExtensionManifest} */ (await readJson(manifestPath));
 manifest.version = resolveVersion({ root: repoRoot }).version;
 
@@ -101,15 +119,18 @@ async function stageExtension() {
         setup(builder) {
           builder.onLoad(
             { filter: /packages[\\/]extension[\\/].*\.ts$/ },
-            async ({ path: source }) => ({
+            async ({ path: source }) => {
               // Source imports keep resolving against the repository for tsc.
               // Rewrite before compilation so source maps match the emitted code.
-              contents: (await fs.promises.readFile(source, 'utf8')).replaceAll(
+              let contents = (await fs.promises.readFile(source, 'utf8')).replaceAll(
                 '../../../protocol/src/',
                 '../protocol/'
-              ),
-              loader: 'ts',
-            })
+              );
+              for (const { specifier, output } of VENDORED_MODULES) {
+                contents = contents.replaceAll(`'${specifier}'`, `'../${output}.js'`);
+              }
+              return { contents, loader: 'ts' };
+            }
           );
         },
       },
@@ -122,6 +143,7 @@ async function stageExtension() {
     sourcemap: buildOnly ? 'linked' : false,
     tsconfigRaw: { compilerOptions: { useDefineForClassFields: true, verbatimModuleSyntax: true } },
   });
+  await stageVendoredModules();
   await copyIntoStage(path.join('packages', 'extension', 'assets'), 'assets');
   await copyIntoStage('LICENSE');
   const hash = createHash('sha256');
@@ -162,6 +184,48 @@ async function stageExtension() {
       `${JSON.stringify({ formatVersion: 1, complete: true, sourceDigest })}\n`
     );
     await fs.promises.rename(`${stampPath}.tmp`, stampPath);
+  }
+}
+
+/**
+ * Bundle each vendored package into vendor/ and write its licenses next to it.
+ * @returns {Promise<void>}
+ */
+async function stageVendoredModules() {
+  for (const { specifier, output, licenses } of VENDORED_MODULES) {
+    await build({
+      absWorkingDir: repoRoot,
+      stdin: {
+        contents: `export * from '${specifier}';\n`,
+        resolveDir: repoRoot,
+        sourcefile: `${output}.entry.js`,
+        loader: 'js',
+      },
+      outfile: path.join(stagingDir, `${output}.js`),
+      bundle: true,
+      format: 'esm',
+      platform: 'browser',
+      target: `chrome${manifest.minimum_chrome_version}`,
+      keepNames: false,
+      legalComments: 'none',
+      banner: {
+        js: `// Bundled from ${specifier}. Licenses: ${path.basename(output)}.LICENSE.txt`,
+      },
+      sourcemap: buildOnly ? 'linked' : false,
+    });
+    const notices = [];
+    for (const name of licenses) {
+      const packageDirectory = path.join(repoRoot, 'node_modules', ...name.split('/'));
+      const packageJson = /** @type {{ version?: string }} */ (
+        await readJson(path.join(packageDirectory, 'package.json'))
+      );
+      const license = await fs.promises.readFile(path.join(packageDirectory, 'LICENSE'), 'utf8');
+      notices.push(`${name}@${packageJson.version ?? 'unknown'}\n\n${license.trim()}\n`);
+    }
+    await fs.promises.writeFile(
+      path.join(stagingDir, `${output}.LICENSE.txt`),
+      notices.join(`\n${'-'.repeat(72)}\n\n`)
+    );
   }
 }
 

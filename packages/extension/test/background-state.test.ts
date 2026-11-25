@@ -888,6 +888,7 @@ test('background state rollbackAllPatchesForTab only rolls back tracked patch id
     })),
     [
       { tabId: 61, type: 'bridge.ping', method: undefined },
+      { tabId: 61, type: 'bridge.execute', method: 'dom.outline.clear' },
       { tabId: 61, type: 'bridge.execute', method: 'patch.list' },
       { tabId: 61, type: 'bridge.execute', method: 'patch.rollback' },
       { tabId: 61, type: 'bridge.execute', method: 'patch.rollback' },

@@ -794,6 +794,12 @@ func (d *daemon) route(p *peer, request object) {
 		return
 	}
 	request["params"] = value(params)
+	if method == "sensitive.read" {
+		if response := d.sensitiveReadPolicy(p, id, params); response != nil {
+			p.respond(response)
+			return
+		}
+	}
 	if err := validateMethodParams(method, params); err != nil {
 		p.respond(failure(id, "INVALID_REQUEST", err.Error()))
 		return
@@ -1353,6 +1359,58 @@ func (d *daemon) localStorageResponse(owner string, request, params object) obje
 		}
 	}
 	return serviceResponse(id, result, err, fallback)
+}
+
+// sensitiveReadSources lists every sensitive.read source in protocol order.
+var sensitiveReadSources = []string{"local_storage", "session_storage", "response_body", "indexeddb"}
+
+// gatedSensitiveSource reports whether a source sits behind the sensitive-data
+// gates. Web Storage predates them; any other value, known or not, is gated.
+func gatedSensitiveSource(source string) bool {
+	return source != "local_storage" && source != "session_storage"
+}
+
+// sensitiveReadPolicy rejects unknown sources with the supported list and
+// refuses gated sources from agents that may be on another machine, unless the
+// browser machine opted in. It runs before dispatch, so nothing reaches Chrome.
+func (d *daemon) sensitiveReadPolicy(p *peer, id string, params object) object {
+	source := params.text("source")
+	if !stringIn(source, sensitiveReadSources) {
+		response := failure(id, "INVALID_REQUEST", "source must be one of "+strings.Join(sensitiveReadSources, ", ")+".")
+		e := response.object("error")
+		e["details"] = value(object{"reason": value("unsupported_source"), "supportedSources": value(sensitiveReadSources), "dispatched": value(false)})
+		response["error"] = value(e)
+		return response
+	}
+	if !gatedSensitiveSource(source) || !d.remoteCapableAgent(p) || d.config.remoteSensitiveReads {
+		return nil
+	}
+	response := failure(id, "ACCESS_DENIED", "Gated sensitive reads are refused over the remote proxy transport. On the browser machine, run `bbx proxy enable --remote-sensitive-reads allow` to allow them.")
+	e := response.object("error")
+	e["details"] = value(object{"reason": value("remote_sensitive_reads_disabled"), "source": value(source), "setting": value("proxy.remoteSensitiveReads"), "dispatched": value(false)})
+	response["error"] = value(e)
+	return response
+}
+
+// remoteCapableAgent reports whether an agent connection may come from another
+// machine: a TCP agent while proxy mode is on, or any TCP agent when the daemon
+// binds a non-loopback address. A loopback bind without proxy mode (the default
+// Windows transport) is local-only. Unknown connection state counts as remote.
+func (d *daemon) remoteCapableAgent(p *peer) bool {
+	if p.role != "agent" {
+		return false
+	}
+	if p.conn == nil || p.conn.RemoteAddr() == nil {
+		return true
+	}
+	if network := p.conn.RemoteAddr().Network(); network == "unix" || network == "pipe" {
+		return false
+	}
+	if d.config.proxyTransport {
+		return true
+	}
+	host, _, err := net.SplitHostPort(d.config.bind)
+	return err != nil || !loopbackHost(host)
 }
 
 func localControlPeer(p *peer) bool {

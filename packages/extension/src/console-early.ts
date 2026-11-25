@@ -10,9 +10,10 @@
   const RELEASE_AFTER_MS = 15_000;
   const MAX_ENTRIES = 200;
   const MAX_ARG_CHARS = 500;
+  const MAX_STACK_CHARS = 1_500;
   const levels = ['log', 'warn', 'error', 'info', 'debug'];
   const methods = console as unknown as Record<string, (...args: unknown[]) => void>;
-  const buffer: Array<{ level: string; args: string[]; ts: number }> = [];
+  const buffer: Array<{ level: string; args: string[]; ts: number; stack?: string }> = [];
   const originals: Record<string, (...args: unknown[]) => void> = {};
   const wrappers: Record<string, (...args: unknown[]) => void> = {};
 
@@ -39,35 +40,70 @@
     }
   };
 
+  let readingStack = false;
+  // The page owns thrown values; a throwing or re-entrant stack getter yields
+  // no stack rather than an error inside page code.
+  const readStack = (value: unknown): string | undefined => {
+    if (readingStack || !value || typeof value !== 'object') return undefined;
+    readingStack = true;
+    try {
+      const stack = (value as { stack?: unknown }).stack;
+      return typeof stack === 'string' && stack ? stack.slice(0, MAX_STACK_CHARS) : undefined;
+    } catch {
+      return undefined;
+    } finally {
+      readingStack = false;
+    }
+  };
+  const isErrorLike = (value: unknown): boolean => {
+    try {
+      return value instanceof Error || Object.prototype.toString.call(value) === '[object Error]';
+    } catch {
+      return false;
+    }
+  };
+
   const record = {
     buffer,
     dropped: 0,
     adopted: false,
     release: (): void => {},
   };
-  const push = (level: string, args: string[]): void => {
-    buffer.push({ level, args, ts: Date.now() });
+  const push = (level: string, args: string[], stack?: string): void => {
+    const entry: { level: string; args: string[]; ts: number; stack?: string } = {
+      level,
+      args,
+      ts: Date.now(),
+    };
+    if (stack) entry.stack = stack;
+    buffer.push(entry);
     if (buffer.length > MAX_ENTRIES) {
       record.dropped += buffer.length - MAX_ENTRIES;
       buffer.splice(0, buffer.length - MAX_ENTRIES);
     }
   };
   const onError = (event: ErrorEvent): void => {
-    push('exception', [
-      event.message || 'Unknown error',
-      event.filename ? `${event.filename}:${event.lineno}:${event.colno}` : '',
-    ]);
+    push(
+      'exception',
+      [
+        event.message || 'Unknown error',
+        event.filename ? `${event.filename}:${event.lineno}:${event.colno}` : '',
+      ],
+      readStack(event.error)
+    );
   };
   const onRejection = (event: PromiseRejectionEvent): void => {
-    push('rejection', [String(event.reason).slice(0, MAX_ARG_CHARS)]);
+    push('rejection', [String(event.reason).slice(0, MAX_ARG_CHARS)], readStack(event.reason));
   };
 
   for (const level of levels) {
     const original = methods[level];
     if (typeof original !== 'function') continue;
     originals[level] = original;
+    const keepsStack = level === 'error' || level === 'warn';
     wrappers[level] = (...args: unknown[]) => {
-      push(level, args.map(serialize));
+      const error = keepsStack ? args.find(isErrorLike) : undefined;
+      push(level, args.map(serialize), error === undefined ? undefined : readStack(error));
       original.apply(console, args);
     };
     methods[level] = wrappers[level];

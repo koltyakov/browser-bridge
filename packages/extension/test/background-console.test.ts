@@ -14,7 +14,7 @@ import {
 import { readFile } from 'node:fs/promises';
 import { extensionFile } from '../../../tests/_helpers/extensionBuild.ts';
 
-type ConsoleEntry = { level: string; args: string[]; ts: number };
+type ConsoleEntry = { level: string; args: string[]; ts: number; stack?: string };
 type ExecuteScriptConfig = {
   target?: { tabId?: number };
   world?: string;
@@ -555,4 +555,189 @@ test('syncEarlyConsoleCapture registers once while enabled and unregisters when 
   await syncEarlyConsoleCapture(false, chromeObj);
   assert.deepEqual(calls, ['register', 'unregister']);
   await syncEarlyConsoleCapture(true, {});
+});
+
+type Listener = (event: Record<string, unknown>) => void;
+
+/** Capture window listeners so tests can fire error and rejection events. */
+function captureWindowListeners(t: { after: (fn: () => void) => void }): Map<string, Listener> {
+  const listeners = new Map<string, Listener>();
+  const savedAdd = Object.getOwnPropertyDescriptor(globalThis, 'addEventListener');
+  const savedRemove = Object.getOwnPropertyDescriptor(globalThis, 'removeEventListener');
+  Object.defineProperty(globalThis, 'addEventListener', {
+    configurable: true,
+    value: (type: string, listener: Listener) => listeners.set(type, listener),
+  });
+  Object.defineProperty(globalThis, 'removeEventListener', {
+    configurable: true,
+    value: (type: string, listener: Listener) => {
+      if (listeners.get(type) === listener) listeners.delete(type);
+    },
+  });
+  t.after(() => {
+    for (const [name, descriptor] of [
+      ['addEventListener', savedAdd],
+      ['removeEventListener', savedRemove],
+    ] as const) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else Reflect.deleteProperty(globalThis, name);
+    }
+  });
+  return listeners;
+}
+
+function errorWithStack(message: string, ...frames: string[]): Error {
+  const error = new Error(message);
+  error.stack = [`Error: ${message}`, ...frames.map((frame) => `    at ${frame}`)].join('\n');
+  return error;
+}
+
+test('the interceptor records stacks for exceptions, rejections, and logged errors', async (t) => {
+  clearInjectedConsoleState();
+  t.after(clearInjectedConsoleState);
+  for (const level of consoleLevels) t.mock.method(console, level, () => {});
+  const listeners = captureWindowListeners(t);
+  const chromeObj = createScriptExecutingChrome();
+  await ensureConsoleInterceptor(4, chromeObj);
+
+  listeners.get('error')?.({
+    message: 'Uncaught Error: thrown',
+    filename: 'https://app.test/app.js',
+    lineno: 1,
+    colno: 40,
+    error: errorWithStack('thrown', 'validate (https://app.test/app.js:1:40)'),
+  });
+  listeners.get('unhandledrejection')?.({
+    reason: errorWithStack('rejected', 'async load (https://app.test/app.js:2:7)'),
+  });
+  listeners.get('unhandledrejection')?.({ reason: 'plain string reason' });
+  console.error('wrapped', errorWithStack('logged', 'render (https://app.test/app.js:3:9)'));
+  console.warn(errorWithStack('warned', 'https://app.test/app.js:4:1'));
+  console.log(errorWithStack('log level keeps no stack', 'x (https://app.test/app.js:5:1)'));
+  const hostile = {
+    get stack(): string {
+      throw new Error('page getter');
+    },
+  };
+  listeners.get('error')?.({ message: 'hostile', error: hostile });
+  listeners.get('unhandledrejection')?.({ reason: { stack: 42 } });
+
+  const raw = getBuffer();
+  assert.deepEqual(
+    raw.map((entry) => [entry.level, typeof entry.stack]),
+    [
+      ['exception', 'string'],
+      ['rejection', 'string'],
+      ['rejection', 'undefined'],
+      ['error', 'string'],
+      ['warn', 'string'],
+      ['log', 'undefined'],
+      ['exception', 'undefined'],
+      ['rejection', 'undefined'],
+    ]
+  );
+
+  const { entries } = await readConsoleBuffer(4, false, chromeObj);
+  assert.deepEqual(
+    entries.map((entry) => entry.stack ?? null),
+    [
+      [{ function: 'validate', url: 'https://app.test/app.js', line: 1, column: 40 }],
+      [{ function: 'load', url: 'https://app.test/app.js', line: 2, column: 7 }],
+      null,
+      [{ function: 'render', url: 'https://app.test/app.js', line: 3, column: 9 }],
+      [{ url: 'https://app.test/app.js', line: 4, column: 1 }],
+      null,
+      null,
+      null,
+    ]
+  );
+  assert.deepEqual(entries[2].args, ['plain string reason']);
+});
+
+test('the interceptor bounds captured stack text in the page', async (t) => {
+  clearInjectedConsoleState();
+  t.after(clearInjectedConsoleState);
+  for (const level of consoleLevels) t.mock.method(console, level, () => {});
+  const listeners = captureWindowListeners(t);
+  await ensureConsoleInterceptor(4, createScriptExecutingChrome());
+  const frames = Array.from(
+    { length: 10_000 },
+    (_, index) => `f${index} (https://a.test/a.js:1:1)`
+  );
+  listeners.get('error')?.({ message: 'deep', error: errorWithStack('deep', ...frames) });
+  const [entry] = getBuffer();
+  assert.ok(entry.stack);
+  assert.equal(entry.stack.length, 1_500);
+});
+
+test('readConsoleBuffer parses raw stacks and drops malformed page-supplied stacks', async (t) => {
+  clearInjectedConsoleState();
+  t.after(clearInjectedConsoleState);
+  pageGlobal().__bb_console_buffer = [
+    {
+      level: 'exception',
+      args: ['boom'],
+      ts: 1,
+      stack: 'Error: boom\n    at run (https://app.test/app.js?token=secret:1:2)',
+    },
+    { level: 'exception', args: ['forged'], ts: 2, stack: [{ url: 'http://192.168.1.1/x.js' }] },
+    { level: 'exception', args: ['object'], ts: 3, stack: { url: 'x' } },
+    { level: 'exception', args: ['number'], ts: 4, stack: 7 },
+    { level: 'exception', args: ['garbage'], ts: 5, stack: 'no frames here' },
+    {
+      level: 'exception',
+      args: ['long'],
+      ts: 6,
+      stack: `Error\n${'    at f (https://app.test/a.js:1:1)\n'.repeat(5_000)}`,
+    },
+  ] as unknown as ConsoleEntry[];
+  const { entries } = await readConsoleBuffer(4, false, createScriptExecutingChrome());
+  assert.deepEqual(entries[0].stack, [
+    { function: 'run', url: 'https://app.test/app.js?token=%5Bredacted%5D', line: 1, column: 2 },
+  ]);
+  for (const entry of entries.slice(1, 5)) assert.equal('stack' in entry, false, entry.args[0]);
+  assert.equal(entries[5].stack?.length, 8);
+});
+
+test('document_start stacks survive adoption into the interceptor buffer', async (t) => {
+  clearInjectedConsoleState();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const level of consoleLevels) t.mock.method(console, level, () => {});
+  const page = globalThis as unknown as Record<string, unknown>;
+  t.after(() => {
+    clearInjectedConsoleState();
+    delete page.__bbx_console_early__;
+  });
+  const listeners = captureWindowListeners(t);
+  new Function(await readFile(extensionFile('src/console-early.js'), 'utf8'))();
+  listeners.get('error')?.({
+    message: 'early failure',
+    error: errorWithStack('early failure', 'boot (https://app.test/boot.js:1:5)'),
+  });
+  listeners.get('unhandledrejection')?.({
+    reason: errorWithStack('early rejection', 'init (https://app.test/boot.js:2:3)'),
+  });
+  console.error(errorWithStack('early log', 'mount (https://app.test/boot.js:3:1)'));
+  listeners.get('error')?.({
+    message: 'hostile early',
+    error: {
+      get stack(): string {
+        throw new Error('page getter');
+      },
+    },
+  });
+
+  const chromeObj = createScriptExecutingChrome();
+  await ensureConsoleInterceptor(7, chromeObj);
+  assert.equal(page.__bbx_console_early__, undefined);
+  const { entries } = await readConsoleBuffer(7, false, chromeObj);
+  assert.deepEqual(
+    entries.map((entry) => [entry.level, entry.stack?.[0]?.function ?? null]),
+    [
+      ['exception', 'boot'],
+      ['rejection', 'init'],
+      ['error', 'mount'],
+      ['exception', null],
+    ]
+  );
 });

@@ -138,10 +138,20 @@ func parseStyleShortcut(a *cliShortcutArgs) {
 }
 func parseStorageShortcut(a *cliShortcutArgs) {
 	a.params["type"] = value("local")
-	if a.arg(0) == "session" {
-		a.params["type"] = value("session")
+	switch a.arg(0) {
+	case "", "local":
+	case "session", "indexeddb":
+		a.params["type"] = value(a.arg(0))
+	default:
+		a.err = fmt.Errorf("Usage: storage [local|session|indexeddb] [keys...]")
+		return
 	}
 	if len(a.args) > 1 {
+		if kind := a.arg(0); kind == "indexeddb" {
+			// Metadata types list everything bounded; there are no keys to pick.
+			a.err = fmt.Errorf("Usage: storage %s (takes no keys)", kind)
+			return
+		}
 		a.params["keys"] = value(a.args[1:])
 	}
 }

@@ -16,6 +16,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   including their tab IDs and URLs.
 - Live chaos tests cover native-host loss, abandoned requests during daemon
   pauses, and extension reloads.
+- `dom.get_accessibility_tree` with `source: "dom"` returns a `snapshotId`.
+  Pass it as `since` to get `{unchanged: true}`, a `delta` of added and changed
+  outline lines plus removed refs, or the full outline with `deltaUnavailable`
+  (`navigated`, `expired`, `evicted`, `scope_changed`, `base_truncated`,
+  `refs_pruned`, `delta_too_large`). Child frames merge into the delta, and
+  `removedFrames` lists frames whose earlier lines are gone. Snapshots hold
+  refs and hashes only, are bound to their tab, and are cleared when window
+  access ends.
+- `input.perform` accepts `dom.get_accessibility_tree` (DOM outline only) as a
+  read step, so one call can act and return the outline delta.
+- Console entries from uncaught exceptions, rejections, and `console.error` or
+  `console.warn` calls that pass an `Error` include `stack`, up to eight parsed
+  `{function, url, line, column}` frames. `bbx console` shows the top frame.
+- `page.get_console {resolveSources: true}` and `bbx console --resolve` map
+  stack frames through external, inline `data:`, and index source maps. The
+  extension fetches only scripts the tab loaded, with `GET` only, no
+  redirects, same-origin or inline maps, size and time limits, and credentials
+  only on the document's origin. A page on the public web cannot point it at a
+  local-network host. `sourcesContent` is never returned.
+- Separate access settings for response bodies and IndexedDB records gate
+  the two `sensitive.read` sources below. Both default off. Denials use
+  `policy_setting_disabled` and work with `access.wait_for_change`. Local and
+  session storage reads are unchanged. Over the remote proxy these reads are
+  refused unless the browser machine runs
+  `bbx proxy enable --remote-sensitive-reads allow`.
+- `page.get_network {source: "cdp", capture: "start", bodies: {urlPattern,
+  maxResourceBytes}}` opts in to response-body buffering, up to 5 MiB per
+  resource and 50 MiB per tab. `sensitive.read {source: "response_body",
+  requestId}` then returns one exact body, whole and inline, up to 256 KiB.
+  CDP entries report `bodyAvailable`.
+- `page.get_storage` lists IndexedDB metadata per frame (`type: "indexeddb"`). `sensitive.read` reads one record by key.
 
 ### Changed
 
@@ -38,6 +69,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Content scripts load into background tabs on demand rather than injecting
   into every tab when access is enabled. Element refs no longer keep removed
   DOM subtrees alive.
+- The extension ships `@jridgewell/trace-mapping` (MIT) under `vendor/` with
+  its licences, for source map resolution.
+- `sensitive.read` params are discriminated on `source`. An unknown source
+  returns `INVALID_REQUEST` with `supportedSources`, and `page.get_storage`
+  rejects an unknown `type` instead of reading `localStorage`.
 
 ### Fixed
 

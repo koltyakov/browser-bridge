@@ -247,7 +247,8 @@ test('background dispatch routes health.ping through the native reply path', asy
   for (const key of ['loadedBuild', 'debugger', 'capture', 'domBaselines', 'recovery']) {
     assert.equal(Object.hasOwn(result, key), false, `compact ping included ${key}`);
   }
-  assert(Number(response.meta?.transport_approx_tokens) < 100);
+  // Keep the compact ping small, including all six access settings.
+  assert(Number(response.meta?.transport_approx_tokens) < 118);
 });
 
 test('background health diagnostics are explicit and leave compact activity costs small', async () => {
@@ -277,7 +278,7 @@ test('background health diagnostics are explicit and leave compact activity cost
     const entry = state.actionLog.filter((action) => action.method === 'health.ping').at(-1);
     assert(entry);
     assert.equal(entry.approxTokens, response.meta?.text_approx_tokens);
-    if (!diagnostics) assert(entry.approxTokens < 100);
+    if (!diagnostics) assert(entry.approxTokens < 118);
   }
 });
 
@@ -4145,4 +4146,168 @@ test('a load wait on a complete tab follows a navigation that starts just after 
   const response = await responsePromise;
   if (!response.ok) assert.fail(response.error.message);
   assert.equal((response.result as { url?: string }).url, 'https://example.com/thanks');
+});
+
+test('background dispatch resolves console stacks through source maps only on request', async (t) => {
+  const { readFile } = await import('node:fs/promises');
+  const fixtures = new URL('../../../tests/fixtures/source-maps/generated/', import.meta.url);
+  const code = await readFile(new URL('external.js', fixtures), 'utf8');
+  const map = await readFile(new URL('external.js.map', fixtures), 'utf8');
+  const scriptUrl = 'https://app.test/assets/external.js';
+  const column = code.indexOf('throw') + 1;
+  const executeScriptCalls: ExecuteScriptCall[] = [];
+  const activeTab = {
+    id: 73,
+    windowId: 7,
+    active: true,
+    title: 'Source map page',
+    url: 'https://app.test/',
+  } as chrome.tabs.Tab;
+  const chrome = createChromeFake({
+    tabs: {
+      async query(queryInfo: chrome.tabs.QueryInfo = {}) {
+        return queryInfo.active && queryInfo.windowId === 7 ? [activeTab] : [];
+      },
+      async get() {
+        return activeTab;
+      },
+    },
+    windows: {
+      async get(windowId: number) {
+        return { id: windowId };
+      },
+    },
+    scripting: {
+      async executeScript(injection: ExecuteScriptCall) {
+        executeScriptCalls.push(injection);
+        if (injection.world === 'ISOLATED') {
+          return [{ result: { documentUrl: 'https://app.test/', scripts: [scriptUrl] } }];
+        }
+        if (typeof injection.args?.[0] === 'boolean') {
+          return [
+            {
+              result: {
+                entries: [
+                  {
+                    level: 'exception',
+                    args: ['Error: alpha'],
+                    ts: 1,
+                    stack: `Error: alpha\n    at n (${scriptUrl}:1:${column})\n    at http://192.168.1.1/admin.js:1:1`,
+                  },
+                ],
+                dropped: 0,
+              },
+            },
+          ];
+        }
+        return [];
+      },
+    },
+  });
+  const fetched: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (input: string | URL) => {
+    const url = String(input);
+    // The development build polls its own stamp; record page-bound requests only.
+    if (!/^https?:/u.test(url)) return new Response('{}');
+    fetched.push(url);
+    if (url === scriptUrl) return new Response(code);
+    if (url === `${scriptUrl}.map`) return new Response(map);
+    return new Response('missing', { status: 404 });
+  });
+  const loaded = await loadBackground({
+    chrome,
+    query: `test-background-dispatch-page-console-sources-${Date.now()}`,
+  });
+  setEnabledWindow(loaded);
+
+  const plain = await loaded.dispatch(
+    createRequest({ id: 'console-plain', method: 'page.get_console', params: {} })
+  );
+  if (!plain.ok) assert.fail(plain.error.message);
+  assert.deepEqual((plain.result as { entries: unknown[] }).entries, [
+    {
+      level: 'exception',
+      args: ['Error: alpha'],
+      ts: 1,
+      stack: [
+        { function: 'n', url: scriptUrl, line: 1, column },
+        { url: 'http://192.168.1.1/admin.js', line: 1, column: 1 },
+      ],
+    },
+  ]);
+  assert.equal(fetched.length, 0, 'no network without resolveSources');
+  assert.equal(executeScriptCalls.filter((call) => call.world === 'ISOLATED').length, 0);
+
+  const resolved = await loaded.dispatch(
+    createRequest({
+      id: 'console-resolved',
+      method: 'page.get_console',
+      params: { resolveSources: true },
+    })
+  );
+  if (!resolved.ok) assert.fail(resolved.error.message);
+  const [entry] = (resolved.result as { entries: Array<{ stack: unknown[] }> }).entries;
+  assert.deepEqual(entry.stack, [
+    {
+      function: 'n',
+      url: scriptUrl,
+      line: 1,
+      column,
+      source: {
+        file: 'https://app.test/src/alpha.ts',
+        path: 'src/alpha.ts',
+        line: 6,
+        column: 5,
+      },
+    },
+    {
+      url: 'http://192.168.1.1/admin.js',
+      line: 1,
+      column: 1,
+      sourceUnavailable: 'not_a_loaded_script',
+    },
+  ]);
+  assert.deepEqual(fetched, [scriptUrl, `${scriptUrl}.map`]);
+
+  const again = await loaded.dispatch(
+    createRequest({
+      id: 'console-cached',
+      method: 'page.get_console',
+      params: { resolveSources: true },
+    })
+  );
+  assert.equal(again.ok, true);
+  assert.equal(fetched.length, 2, 'cached map reused');
+  // Ending window access clears decoded maps with the rest of the bridge state.
+  const clearWindowBridgeState = loaded.module.clearWindowBridgeState as (
+    windowId: number
+  ) => Promise<void>;
+  await clearWindowBridgeState(7);
+  setEnabledWindow(loaded);
+  const afterAccess = await loaded.dispatch(
+    createRequest({
+      id: 'console-after',
+      method: 'page.get_console',
+      params: { resolveSources: true },
+    })
+  );
+  assert.equal(afterAccess.ok, true);
+  assert.equal(fetched.length, 4, 'cache cleared when access ended');
+
+  assert.deepEqual(
+    executeScriptCalls.filter((call) => call.world === 'ISOLATED').map((call) => call.target),
+    [
+      { tabId: 73, frameIds: [0] },
+      { tabId: 73, frameIds: [0] },
+      { tabId: 73, frameIds: [0] },
+    ]
+  );
+
+  const invalid = await loaded.dispatch({
+    id: 'console-invalid',
+    method: 'page.get_console',
+    params: { resolveSources: 'yes' },
+  } as unknown as BridgeRequest);
+  assert.equal(invalid.ok, false);
+  if (!invalid.ok) assert.equal(invalid.error.code, ERROR_CODES.INVALID_REQUEST);
 });

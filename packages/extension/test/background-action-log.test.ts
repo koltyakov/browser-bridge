@@ -991,6 +991,108 @@ test('sensitive read success, failure, and oversize activity never retains value
   assert.doesNotMatch(writes.join('\n'), /private-token|"token"/);
 });
 
+test('response body reads log source and outcome only, and oversize encodings reject whole', async () => {
+  const state = createExtensionState();
+  const writes: string[] = [];
+  const chromeObj = {
+    tabs: openTabsApi,
+    storage: {
+      local: createStorageArea(),
+      session: {
+        async get() {
+          return {};
+        },
+        async set(value: unknown) {
+          writes.push(JSON.stringify(value));
+        },
+      },
+    },
+  } as unknown as typeof globalThis.chrome;
+  const controller = createActionLogController(state, chromeObj, {
+    async getCurrentTabState() {
+      return null;
+    },
+    async resolveRequestTarget() {
+      return { tabId: 7, windowId: 2, title: 'Example', url: 'https://example.test/' };
+    },
+    async emitUiState() {},
+  });
+  const canary = 'BBX_BODY_LOG_CANARY';
+  const request = createRequest({
+    id: 'body-log',
+    method: 'sensitive.read',
+    params: { source: 'response_body', requestId: 'request-77' },
+    meta: { token_budget: 1 },
+  });
+  const body = `{"secret":"${canary}"}`;
+  const response = enrichBridgeResponse(
+    request,
+    createSuccess(
+      request.id,
+      {
+        source: 'response_body',
+        requestId: 'request-77',
+        body,
+        encoding: 'text',
+        mimeType: 'application/json',
+        bytes: body.length,
+        exact: true,
+      },
+      { method: request.method }
+    )
+  );
+  assert.equal(response.ok, true);
+  if (response.ok) {
+    assert.equal((response.result as { body: string }).body, body, 'token budget never trims it');
+    assert.equal(response.meta.transport_bytes, undefined);
+  }
+  await controller.logBridgeAction(request, response, { tabId: 7, url: 'https://example.test/' });
+  // Control characters expand sixfold in JSON; such a body must fail whole.
+  const escaped = `${canary}${'\u0001'.repeat(262_144 - canary.length)}`;
+  const oversize = enrichBridgeResponse(
+    request,
+    createSuccess(
+      request.id,
+      {
+        source: 'response_body',
+        requestId: 'request-77',
+        body: escaped,
+        encoding: 'text',
+        mimeType: 'text/plain',
+        bytes: 262_144,
+        exact: true,
+      },
+      { method: request.method }
+    )
+  );
+  assert.equal(oversize.ok, false);
+  if (oversize.ok) assert.fail('Expected whole rejection');
+  assert.equal(oversize.error.code, ERROR_CODES.RESULT_TOO_LARGE);
+  assert.match(oversize.error.message, /response body is too large/);
+  assert.equal(JSON.stringify(oversize.error).includes(canary), false);
+  await controller.logBridgeAction(request, oversize, { tabId: 7, url: 'https://example.test/' });
+
+  assert.deepEqual(
+    state.actionLog.map((entry) => [entry.summary, entry.severity, entry.sensitiveAccess]),
+    [
+      [
+        'Sensitive response body read succeeded.',
+        'warning',
+        { source: 'response_body', category: 'response_body', keyLength: 0 },
+      ],
+      [
+        'Sensitive response body read failed: RESULT_TOO_LARGE.',
+        'warning',
+        { source: 'response_body', category: 'response_body', keyLength: 0 },
+      ],
+    ]
+  );
+  for (const sink of [JSON.stringify(state.actionLog), writes.join('\n')]) {
+    assert.equal(sink.includes(canary), false);
+    assert.equal(sink.includes('request-77'), false);
+  }
+});
+
 test('page evaluation activity warns without persisting returned values or sizes', async () => {
   const state = createExtensionState();
   const writes: string[] = [];

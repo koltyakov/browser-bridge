@@ -84,6 +84,17 @@ Out of scope:
 - Ordinary Web Storage reads return key/presence metadata only. The separate
   `sensitive.read` method requires one exact key, is excluded from batches and
   automatic retries, and returns a value whole or fails atomically.
+- `sensitive.read` response bodies additionally require the user's
+  `allowResponseBodyReads` setting (default off) and a CDP capture on the same
+  tab that opted in with `bodies`. Reads are limited to that capture's recorded
+  requests, capped at 256 KiB inline, and never written to logs, HAR, recordings,
+  or artifacts. Over the remote proxy the daemon refuses them unless the browser
+  machine sets `--remote-sensitive-reads allow`.
+- IndexedDB records require `allowIndexedDBReads` (default off) and follow the same remote refusal. IndexedDB is read in the owning frame's document,
+  opening only existing databases without a version and closing on
+  `versionchange`, so BBX never creates, upgrades, or blocks a database.
+  IndexedDB metadata (`page.get_storage`) never includes values or
+  records, and the action log keeps no database, store, or key names.
 - Fetch/XHR and console capture run in the inspected page's main JavaScript
   world. Results are therefore marked `integrity: "untrusted"`, copied through
   strict bounded schemas, and never treated as daemon or extension authority.
