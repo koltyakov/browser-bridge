@@ -93,6 +93,34 @@ test('activity, running work, and an active tab postpone closing', async () => {
   assert.deepEqual(closed, [4]);
 });
 
+test('idle close rechecks activity and ownership after looking up the tab', async () => {
+  for (const change of ['touch', 'busy', 'forget', 'replace']) {
+    const owned: Record<string, OwnedTabRecord> = { '4': { windowId: 7, enabledAt: 1 } };
+    const busy: number[] = [];
+    const { sweeper, advance, closed } = harness(owned, { busy });
+    sweeper.touch(4);
+    advance(16 * 60_000);
+    const sweep = sweeper.sweep();
+    // The sweep has checked the idle timeout and is awaiting getTab.
+    switch (change) {
+      case 'touch':
+        sweeper.touch(4);
+        break;
+      case 'busy':
+        busy.push(4);
+        break;
+      case 'forget':
+        delete owned['4'];
+        break;
+      case 'replace':
+        owned['4'] = { windowId: 7, enabledAt: 2, idleTtlMs: 0 };
+        break;
+    }
+    await sweep;
+    assert.deepEqual(closed, [], change);
+  }
+});
+
 test('tabs the agent did not open are never closed, and a record without activity starts the clock', async () => {
   const { sweeper, advance } = harness({ '8': { windowId: 7, enabledAt: 1, idleTtlMs: 60_000 } });
   sweeper.touch(99);

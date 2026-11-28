@@ -24,11 +24,15 @@ func isFileCommand(command string) bool {
 	definition := cliCommandByName(command)
 	return definition != nil && definition.file
 }
-func fileRoute(args []string) (object, []string, error) {
+func fileRoute(command string, args []string) (object, []string, error) {
 	flags := []string{"page.get_state"}
 	rest := []string{}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		// Leading flags are hoisted after the command, so reject the ones file
+		// commands ignore instead of reading them as positional arguments.
+		case "--preset", "--evidence-only":
+			return nil, nil, fmt.Errorf("%s is not supported by bbx %s", args[i], command)
 		case "--tab", "--extension", "--browser", "--profile":
 			if i+1 >= len(args) {
 				return nil, nil, fmt.Errorf("%s requires a value", args[i])
@@ -43,7 +47,7 @@ func fileRoute(args []string) (object, []string, error) {
 	return route, rest, err
 }
 func runFileCLI(ctx context.Context, c config, args []string) (runErr error) {
-	route, rest, err := fileRoute(args[1:])
+	route, rest, err := fileRoute(args[0], args[1:])
 	if err != nil {
 		return err
 	}

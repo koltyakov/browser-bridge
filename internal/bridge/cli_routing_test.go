@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -17,6 +18,39 @@ func TestHoistLeadingRoutingFlagsMovesFlagsAfterTheCommand(t *testing.T) {
 	request, err := parseCLI(hoistLeadingRoutingFlags([]string{"--tab", "7", "call", "page.get_state", "{}"}))
 	if err != nil || request.number("tab_id") != 7 {
 		t.Fatalf("parsed: %s %v", value(request), err)
+	}
+}
+
+func TestFileCommandAcceptsLeadingRoutingFlags(t *testing.T) {
+	cliUpdateTestHome(t)
+	t.Setenv("BBX_AUTO_UPDATE", "off")
+	for _, args := range [][]string{
+		{"--tab", "7", "--profile", "work", "record", "{}", "out.txt"},
+		{"record", "--tab", "7", "--profile", "work", "{}", "out.txt"},
+	} {
+		// record only checks the output extension after it has a tab and both positional arguments.
+		if err := run(context.Background(), args); err == nil || err.Error() != "recording output must be .json, .html, or .mp4" {
+			t.Fatalf("file command did not receive its routing and positional arguments: %v: %v", args, err)
+		}
+	}
+}
+
+func TestFileCommandRejectsUnsupportedOutputFlags(t *testing.T) {
+	cliUpdateTestHome(t)
+	t.Setenv("BBX_AUTO_UPDATE", "off")
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--evidence-only", "upload", "--tab", "7", "#file", "a.png"}, "--evidence-only is not supported by bbx upload"},
+		{[]string{"--preset", "quick", "record", "--tab", "7", "{}", "out.json"}, "--preset is not supported by bbx record"},
+		{[]string{"--tab", "7", "--preset", "quick", "download", "https://example.test/a", "a.bin"}, "--preset is not supported by bbx download"},
+		{[]string{"screenshot", "--evidence-only", "--tab", "7"}, "--evidence-only is not supported by bbx screenshot"},
+	} {
+		// The flag must fail before it is read as a target, path, or capture option.
+		if err := run(context.Background(), tc.args); err == nil || err.Error() != tc.want {
+			t.Errorf("%v: got %v, want %q", tc.args, err, tc.want)
+		}
 	}
 }
 

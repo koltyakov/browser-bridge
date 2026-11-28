@@ -446,6 +446,22 @@ func TestCLIUploadChunksAndCleanup(t *testing.T) {
 		t.Fatal("upload did not preserve bytes or release its handle")
 	}
 }
+func TestCLIReplayRequiresRecordingData(t *testing.T) {
+	for _, input := range []string{"", "partial", `{"project":"example"}`, "{\"project\":\"example\"}\n", "{\"kind\":\"frame\"}\n"} {
+		if _, err := parseCLIRecording([]byte(input)); err == nil {
+			t.Errorf("accepted unrelated or incomplete input: %q", input)
+		}
+	}
+	// A journal interrupted before its first event still has a usable header.
+	input := "{\"kind\":\"header\",\"sessionId\":\"session_1\"}\n{\"kind\":\"event\""
+	if r, err := parseCLIRecording([]byte(input)); err != nil || r.Gaps != 2 {
+		t.Fatalf("header followed by a partial record: %+v %v", r, err)
+	}
+	if r, err := parseCLIRecording([]byte(`{"frames":[],"events":[]}`)); err != nil || r.Gaps != 0 {
+		t.Fatalf("empty JSON recording: %+v %v", r, err)
+	}
+}
+
 func TestCLIReplayRecovery(t *testing.T) {
 	data := []byte("{\"kind\":\"event\",\"event\":{\"seq\":1,\"type\":\"click\",\"at\":100,\"origin\":\"trusted-event\",\"tabId\":1}}\n{\"kind\":\"event\",\"event\":{\"seq\":2,\"type\":\"request\",\"at\":200,\"tabId\":1}}\n{\"kind\":\"event-update\",\"event\":{\"seq\":2,\"type\":\"request\",\"at\":200,\"tabId\":1,\"status\":200}}\n{\"kind\":\"end\",\"gaps\":2,\"dropped\":3}\npartial")
 	r, err := parseCLIRecording(data)

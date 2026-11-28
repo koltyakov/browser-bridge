@@ -46,6 +46,28 @@ func TestCLIBatchAcceptsLocalDiscovery(t *testing.T) {
 	}
 }
 
+func TestCLIBatchExplicitTabValidation(t *testing.T) {
+	for _, tab := range []string{`"7"`, "false", "{}", "[]", "0", "-7", "7.5", "9007199254740992"} {
+		t.Run(tab, func(t *testing.T) {
+			raw := `[{"method":"page.get_state"},{"method":"page.get_text","tabId":` + tab + `}]`
+			calls, invalid, err := prepareCLIBatch([]byte(raw), "")
+			if err != nil || calls != nil || len(invalid) != 2 {
+				t.Fatalf("expected the whole batch to be rejected: %s %s %v", value(calls), value(invalid), err)
+			}
+			if !strings.Contains(invalid[0].text("summary"), "not executed") || !strings.Contains(invalid[1].object("error").text("message"), "tabId") {
+				t.Fatalf("missing per-item validation errors: %s", value(invalid))
+			}
+		})
+	}
+	for tab, want := range map[string]string{"null": "null", "7.0": "7", "7e0": "7", "9007199254740991": "9007199254740991"} {
+		raw := `[{"method":"page.get_text","tabId":` + tab + `}]`
+		calls, invalid, err := prepareCLIBatch([]byte(raw), "")
+		if err != nil || invalid != nil || len(calls) != 1 || string(calls[0]["tabId"]) != want {
+			t.Fatalf("valid tabId %s: %s %s %v", tab, value(calls), value(invalid), err)
+		}
+	}
+}
+
 func TestCLIBatchEvidenceOnlyFlag(t *testing.T) {
 	const calls = `[{"method":"page.get_text"}]`
 	request, err := parseCLI([]string{"batch", "--evidence-only", "--preset", "quick", calls})

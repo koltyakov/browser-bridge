@@ -85,6 +85,10 @@ func prepareCLIBatch(raw json.RawMessage, preset string) ([]object, []object, er
 		if message == "" && method == "sensitive.read" {
 			message = "sensitive.read is never allowed in batch execution. Call it sequentially."
 		}
+		tab, validTab := serviceInteger(call, "tabId")
+		if message == "" && cliPresent(call["tabId"]) && (!validTab || tab <= 0) {
+			message = "tabId must be a positive safe integer or null."
+		}
 		params := call.object("params")
 		if message == "" {
 			if _, exists := call["params"]; exists && params == nil {
@@ -117,8 +121,7 @@ func prepareCLIBatch(raw json.RawMessage, preset string) ([]object, []object, er
 		}
 		prepared := cliClone(call)
 		prepared["params"] = value(params)
-		tab := call.number("tabId")
-		if !catalog.Methods[method].boolean("tab") || tab <= 0 {
+		if !catalog.Methods[method].boolean("tab") || tab == 0 {
 			prepared["tabId"] = cliNull
 		} else {
 			prepared["tabId"] = value(tab)

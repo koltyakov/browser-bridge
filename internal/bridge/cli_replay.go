@@ -47,7 +47,7 @@ func parseCLIRecording(data []byte) (cliReplay, error) {
 		r.Gaps++
 	}
 	lines = lines[:len(lines)-1]
-	ended := false
+	hasHeader, ended := false, false
 	indexes := map[int64]int{}
 	for _, line := range lines {
 		if len(line) == 0 {
@@ -58,6 +58,10 @@ func parseCLIRecording(data []byte) (cliReplay, error) {
 			return r, fmt.Errorf("invalid journal record: %w", err)
 		}
 		switch entry.text("kind") {
+		case "header":
+			if entry.text("sessionId") != "" {
+				hasHeader = true
+			}
 		case "frame":
 			frame := entry.object("frame")
 			var at float64
@@ -83,10 +87,15 @@ func parseCLIRecording(data []byte) (cliReplay, error) {
 				r.Bodies = append(r.Bodies, body)
 			}
 		case "end":
-			ended = true
-			r.Gaps += entry.number("gaps")
-			r.Dropped = entry.number("dropped")
+			if entry.text("sessionId") != "" || (cliPresent(entry["gaps"]) && cliPresent(entry["dropped"])) {
+				ended = true
+				r.Gaps += entry.number("gaps")
+				r.Dropped = entry.number("dropped")
+			}
 		}
+	}
+	if !hasHeader && !ended && len(r.Frames) == 0 && len(r.Events) == 0 && len(r.Bodies) == 0 {
+		return r, errors.New("no recognizable recording journal records")
 	}
 	if !ended {
 		r.Gaps++

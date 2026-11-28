@@ -156,10 +156,10 @@ func run(ctx context.Context, args []string) error {
 	if handled, err := prepareNativeClient(ctx, c, invocation); handled || err != nil {
 		return cliForwardError(err)
 	}
+	args = hoistLeadingRoutingFlags(args)
 	if isFileCommand(args[0]) {
 		return runFileCLI(ctx, c, args)
 	}
-	args = hoistLeadingRoutingFlags(args)
 	if _, shortcut := shortcutMethods[args[0]]; !shortcut {
 		if _, method := catalog.Methods[args[0]]; !method && args[0] != "call" && args[0] != "batch" && args[0] != "eval" && args[0] != "intercept" {
 			return errors.New(unknownCommandMessage(args[0]))

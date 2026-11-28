@@ -104,6 +104,14 @@ export function createIdleTabSweeper(deps: IdleTabSweeperDeps): {
       // looking at an active tab, so leave it until they move on; a pinned tab
       // was claimed by the user.
       if (!tab || tab.windowId !== windowId || tab.active || tab.pinned) continue;
+      // Ownership or agent activity can change while tabs.get is in flight.
+      if (
+        deps.getEnabledWindowId() !== windowId ||
+        deps.getOwnedTabs()[key] !== record ||
+        lastActive.get(tabId) !== last ||
+        deps.isBusy(tabId)
+      )
+        continue;
       try {
         await deps.closeTab(tabId);
         lastActive.delete(tabId);
